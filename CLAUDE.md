@@ -14,6 +14,10 @@ npx tsx scripts/tag-vibes.ts         # AI vibe tagging (see flags below)
 npx tsx scripts/tag-vibes.ts --dry-run          # preview prompts, no DB writes
 npx tsx scripts/tag-vibes.ts --limit 10         # process only first 10 books
 npx tsx scripts/tag-vibes.ts --force            # re-tag books that already have AI vibes
+npx tsx scripts/enrich-isbndb.ts               # enrich books via ISBNdb (cover images, metadata)
+npx tsx scripts/enrich-isbndb.ts --dry-run     # list books that would be enriched, no API calls
+npx tsx scripts/enrich-isbndb.ts --limit 10    # process only first 10 books
+npx tsx scripts/enrich-isbndb.ts --force       # re-enrich books already looked up
 ```
 
 SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Editor, not via CLI.
@@ -41,6 +45,7 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Separator)
 - `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
+- `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 
 **MVP phases (complete):**
 1. ~~Book list UI with search~~ (done)
@@ -102,22 +107,12 @@ Two-tier vibe system: 17 canonical vibes for browsing/filtering + freeform descr
 - Rating promoted to hero area below status badges
 - VibeEditor repositioned between Personalized and Metadata cards
 
-### Phase 8: Data Enrichment via ISBNdb
+### ~~Phase 8: Data Enrichment via ISBNdb~~ (done)
 
-Two sub-phases: build the external data layer, then enrich the existing library.
-
-**8a. ISBNdb integration layer**
-- ISBNdb (paid API) as the external book data source — high-res cover images and rich metadata
-- New `scripts/enrich-books.ts` script (or `src/lib/isbndb.ts` service module) to look up books by ISBN
-- Fetch: cover image URL, page count, publisher, publication year, format, description/synopsis
-- Rate limiting and error handling for the ISBNdb API
-- `ISBNDB_API_KEY` env var
-
-**8b. Enrich existing library**
-- Backfill `cover_image_url` for books with ISBNs (highest-impact enrichment — hero area already supports it)
-- New DB columns: `page_count`, `publisher`, `publication_year`, `format` (new migration)
-- Bulk enrichment script with --dry-run/--limit/--force flags (same pattern as tag-vibes.ts)
-- Update BookDetail Metadata card to display new fields
+- `scripts/enrich-isbndb.ts` — bulk enrichment via ISBNdb API (cover images, page count, publisher, publication year, format, synopsis)
+- New DB columns: `page_count`, `publisher`, `publication_year`, `format`, `isbndb_enriched_at` (migration 006)
+- BookDetail Metadata card displays new fields; cover image + summary auto-render when populated
+- --dry-run/--limit/--force flags; 1 req/sec rate limiting; exponential backoff on 429/5xx
 
 ### Phase 9: Add Books
 
@@ -146,6 +141,8 @@ Two tables in Supabase:
 - `rating` — numeric 0-5 in 0.5 increments; null means unrated (catalog stored 0.0 for unrated)
 - `status` — read, unread, reading, unfinished (lowercased from catalog)
 - `is_favorite`, `is_up_next` — booleans from catalog flags
+- `page_count`, `publisher`, `publication_year`, `format` — enriched from ISBNdb
+- `isbndb_enriched_at` — timestamp of last ISBNdb lookup (null = not yet looked up; set even for 404s to prevent retries)
 
 **book_vibes** — Vibe tags for books. Each row links a vibe string to a book. Key fields:
 - `ai_assigned` / `user_confirmed` — tracks provenance; AI vibes start unconfirmed, users can confirm in the UI

@@ -195,6 +195,24 @@ export function BookDetail() {
 
             {book.isbn && <Section label="ISBN">{book.isbn}</Section>}
 
+            {book.page_count && (
+              <Section label="Pages">
+                {book.page_count.toLocaleString()}
+              </Section>
+            )}
+
+            {book.publisher && (
+              <Section label="Publisher">{book.publisher}</Section>
+            )}
+
+            {book.publication_year && (
+              <Section label="Published">{book.publication_year}</Section>
+            )}
+
+            {book.format && (
+              <Section label="Format">{book.format}</Section>
+            )}
+
             {book.date_started && (
               <Section label="Date Started">
                 {formatDate(book.date_started)}

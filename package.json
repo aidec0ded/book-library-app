@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "import": "tsx scripts/import-books.ts",
-    "tag-vibes": "tsx scripts/tag-vibes.ts"
+    "tag-vibes": "tsx scripts/tag-vibes.ts",
+    "enrich-isbndb": "tsx scripts/enrich-isbndb.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",

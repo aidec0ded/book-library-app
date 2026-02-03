@@ -26,6 +26,11 @@ export interface Book {
   is_up_next: boolean;
   notes: string | null;
   cover_image_url: string | null;
+  page_count: number | null;
+  publisher: string | null;
+  publication_year: number | null;
+  format: string | null;
+  isbndb_enriched_at: string | null;
   timing_month: number | null;
   timing_position: string | null;
   timing_raw: string | null;
