@@ -10,4 +10,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      "/api/isbndb": {
+        target: "https://api2.isbndb.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/isbndb/, ""),
+      },
+    },
+  },
 });

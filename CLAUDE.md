@@ -36,13 +36,15 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (BookList), `/books/:id` (BookDetail)
+- `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
+- `src/pages/AddBook.tsx` — ISBNdb search, preview, and add-to-library flow
+- `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping)
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Separator)
 - `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
@@ -114,11 +116,12 @@ Two-tier vibe system: 17 canonical vibes for browsing/filtering + freeform descr
 - BookDetail Metadata card displays new fields; cover image + summary auto-render when populated
 - --dry-run/--limit/--force flags; 1 req/sec rate limiting; exponential backoff on 429/5xx
 
-### Phase 9: Add Books
+### ~~Phase 9: Add Books~~ (done)
 
-- "Add Book" flow: search ISBNdb by title/author or enter ISBN directly, fetch metadata, user confirms and saves
-- No barcode scanning (web app — not a good fit)
-- Add Book UI: search form → results list → confirm/edit prefilled metadata → save to Supabase
+- `/add` route — search ISBNdb by title/author or enter ISBN directly, preview metadata, pick status, save to library
+- `src/lib/isbndb.ts` — frontend ISBNdb client via Vite dev proxy (`/api/isbndb` → `api2.isbndb.com`)
+- ISBN auto-detection skips straight to preview; duplicate warning if ISBN already in library
+- RLS INSERT + UPDATE policies on books (migration 007)
 
 ### Phase 10: Discovery & Wishlist (future)
 
@@ -166,6 +169,7 @@ Requires `.env` (not committed) with:
 - `ISBNDB_API_KEY` — for ISBNdb book data enrichment (Phase 8+)
 - `VITE_SUPABASE_URL` — same Supabase URL (exposed to browser via Vite)
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
+- `VITE_ISBNDB_API_KEY` — ISBNdb key for frontend Add Book search (proxied via Vite dev server)
 
 ## Code Style
 

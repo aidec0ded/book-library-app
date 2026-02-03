@@ -21,6 +21,12 @@ export function Layout() {
             >
               Vibes
             </Link>
+            <Link
+              to="/add"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Add Book
+            </Link>
           </nav>
         </div>
       </header>
