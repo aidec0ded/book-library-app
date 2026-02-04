@@ -28,6 +28,12 @@ export function Layout() {
               Chat
             </Link>
             <Link
+              to="/profile"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Profile
+            </Link>
+            <Link
               to="/add"
               className="text-sm text-muted-foreground hover:text-foreground"
             >

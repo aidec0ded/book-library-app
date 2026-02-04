@@ -27,6 +27,10 @@ npx tsx scripts/enrich-isbndb.ts --dry-run     # list books that would be enrich
 npx tsx scripts/enrich-isbndb.ts --limit 10    # process only first 10 books
 npx tsx scripts/enrich-isbndb.ts --force       # re-enrich books already looked up
 npm run dev:server                             # start chat API server (port 3001, auto-restarts)
+npx tsx scripts/generate-profile.ts            # generate reader profile via Claude API
+npx tsx scripts/generate-profile.ts --dry-run  # preview prompt, no API call or DB write
+npx tsx scripts/generate-profile.ts --force    # regenerate even if generated this month
+npx tsx scripts/generate-profile.ts --bootstrap # library data only (skip memory + conversations)
 ```
 
 Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
@@ -47,7 +51,7 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail)
+- `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/profile` (Profile)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes, potentials)
@@ -66,6 +70,12 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
 - `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
+- `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
+- `src/lib/profile.ts` — Profile CRUD + personal canon updates
+- `src/components/BookSearchModal.tsx` — Library search modal for canon editing
+- `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
+- `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
+- `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, opus model)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 
 **MVP phases (complete):**
@@ -161,12 +171,14 @@ The core loop: read → reflect → AI understanding deepens → better recommen
 - Session persistence via sessionStorage; conversation list with auto-generated titles
 - Note: memory tool integration bridges Phase 11 and Phase 12 — the AI can already begin building reader understanding
 
-**Phase 12: Reader Profile**
-- Data model for what the AI learns about the reader over time
-- Approach inspired by persona library pattern: store conversation messages, periodically run a summarization pass that distills insights into an evolving reader profile document
-- Profile captures: themes/styles that resonate, emotional responses to books, how tastes have shifted, what the reader values in literature
-- Profile is included in AI context for chat, recommendations, and Canon/Transformative Potential generation — keeps token usage efficient while maintaining deep personalization
-- Design decisions (embedding store vs. structured summaries, summarization triggers, profile schema) to be worked through at implementation time
+~~**Phase 12: Reader Profile**~~ (done)
+- `reader_profile` table stores periodic AI-generated profiles (each generation inserts a new row, history preserved)
+- `scripts/generate-profile.ts` synthesizes library data, memory files, and conversation history into structured profile via Claude Opus
+- Profile sections: reader identity, thematic pillars, taste evolution (with shift log), emotional patterns, reading life snapshot, personal canon
+- Profile included in chat system prompt via `server/profile-loader.ts` (cached 10min)
+- `/profile` page displays all sections; Personal Canon is the only user-editable section (add/remove books via library search modal)
+- Shift log and personal canon carry forward across regenerations
+- --dry-run, --force, --bootstrap flags; monthly cadence (manual script runs)
 
 ### Round 2: AI-Driven Output
 
@@ -239,7 +251,7 @@ Making the library joyful to visit — a space that reflects the reader's person
 
 ## Data Model
 
-Five tables in Supabase:
+Six tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -267,6 +279,11 @@ Five tables in Supabase:
 - `path` (PK) — virtual file path, must start with `/memories/`
 - `content` — file contents, managed by Claude via memory tool commands
 - `updated_at` — auto-updated via trigger
+
+**reader_profile** — Periodic AI-generated reader profiles. Each generation inserts a new row; latest fetched with `ORDER BY generated_at DESC LIMIT 1`. Key fields:
+- `generated_at` — when this profile was generated
+- `profile_data` (jsonb) — structured profile: reader_identity, thematic_pillars, taste_evolution, emotional_patterns, reading_life_snapshot, personal_canon
+- `generation_context` (jsonb) — metadata: model, book count, message count, token usage
 
 ## Data Import Quirks
 

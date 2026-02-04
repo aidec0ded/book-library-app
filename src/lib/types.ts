@@ -63,3 +63,44 @@ export interface Message {
   content: string;
   created_at: string;
 }
+
+export interface ThematicPillar {
+  name: string;
+  description: string;
+  example_books: string[];
+}
+
+export interface TasteShift {
+  noted_at: string;
+  description: string;
+}
+
+export interface TasteEvolution {
+  current_gravitational_pulls: string;
+  shift_log: TasteShift[];
+  consistent_throughlines: string;
+}
+
+export interface ReadingLifeSnapshot {
+  currently_reading: string[];
+  recently_finished: string[];
+  reading_pace_description: string;
+  status_breakdown: Record<string, number>;
+}
+
+export interface ReaderProfileData {
+  reader_identity: string;
+  thematic_pillars: ThematicPillar[];
+  taste_evolution: TasteEvolution;
+  emotional_patterns: string;
+  reading_life_snapshot: ReadingLifeSnapshot;
+  personal_canon: string[];
+}
+
+export interface ReaderProfile {
+  id: string;
+  generated_at: string;
+  profile_data: ReaderProfileData;
+  generation_context: Record<string, unknown> | null;
+  created_at: string;
+}

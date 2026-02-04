@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
 import { buildLibraryIndex } from "./library-index.js";
+import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
 
 config();
@@ -19,8 +20,11 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-function buildSystemPrompt(libraryIndex: string): string {
-  return `You are the reading companion for MoodLib, a personal book library app.
+function buildSystemPrompt(
+  libraryIndex: string,
+  readerProfile: string | null,
+): string {
+  let prompt = `You are the reading companion for MoodLib, a personal book library app.
 You are an empathetic, knowledgeable reading partner — not a search
 engine or recommendation algorithm.
 
@@ -36,11 +40,15 @@ connections between books, evolving tastes — record it in your memory.
 Check your memory at the start of each conversation.
 
 Keep your memory organized. Prefer updating existing files over creating
-new ones.
+new ones.`;
 
-## The Reader's Library
+  if (readerProfile) {
+    prompt += `\n\n## Reader Profile\n\n${readerProfile}`;
+  }
 
-${libraryIndex}`;
+  prompt += `\n\n## The Reader's Library\n\n${libraryIndex}`;
+
+  return prompt;
 }
 
 interface ChatRequest {
@@ -120,9 +128,12 @@ async function handleChat(
 
     if (histError) throw histError;
 
-    // Build system prompt with library index
-    const libraryIndex = await buildLibraryIndex(supabase);
-    const systemPrompt = buildSystemPrompt(libraryIndex);
+    // Build system prompt with library index and reader profile
+    const [libraryIndex, readerProfile] = await Promise.all([
+      buildLibraryIndex(supabase),
+      loadReaderProfile(supabase),
+    ]);
+    const systemPrompt = buildSystemPrompt(libraryIndex, readerProfile);
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
