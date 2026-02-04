@@ -30,8 +30,6 @@ interface BookForTagging {
   genre: string | null;
   category: string | null;
   timing_raw: string | null;
-  transformative_potential: string | null;
-  canon_potential: string | null;
 }
 
 interface VibeResult {
@@ -104,9 +102,6 @@ function formatBookBlock(book: BookForTagging, index: number): string {
   if (book.timing_raw) lines.push(`When to Read: ${book.timing_raw}`);
   if (book.summary) lines.push(`Summary: ${truncate(book.summary, 400)}`);
   if (book.notes) lines.push(`Notes: ${truncate(book.notes, 200)}`);
-  if (book.transformative_potential)
-    lines.push(`Transformative Potential: ${book.transformative_potential}`);
-  if (book.canon_potential) lines.push(`Canon Potential: ${book.canon_potential}`);
 
   return lines.join("\n");
 }
@@ -179,7 +174,7 @@ async function main() {
   let query = supabase
     .from("books")
     .select(
-      "id, title, author, summary, notes, genre, category, timing_raw, transformative_potential, canon_potential"
+      "id, title, author, summary, notes, genre, category, timing_raw"
     )
     .not("timing_raw", "is", null)
     .order("title");

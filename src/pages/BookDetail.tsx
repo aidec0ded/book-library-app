@@ -51,7 +51,7 @@ const RATING_OPTIONS: { label: string; value: string }[] = [
   }),
 ];
 
-type EditableField = "transformative_potential" | "canon_potential" | "notes";
+type EditableField = "notes";
 
 function EditableTextField({
   label,
@@ -87,7 +87,7 @@ function EditableTextField({
         <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
         <Textarea
           className="mt-1"
-          rows={field === "notes" ? 5 : 3}
+          rows={5}
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -325,37 +325,19 @@ export function BookDetail() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Personalized</CardTitle>
-          <CardDescription>Editorial notes and potential</CardDescription>
+          <CardDescription>AI insights and personal notes</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <EditableTextField
-            label="Transformative Potential"
-            value={book.transformative_potential}
-            field="transformative_potential"
-            saving={saving}
-            editingField={editingField}
-            onStartEdit={(field) => setEditingField(field)}
-            onSave={(field, draft) => {
-              const trimmed = draft.trim();
-              setEditingField(null);
-              handleFieldUpdate(field, trimmed || null);
-            }}
-            onCancel={() => setEditingField(null)}
-          />
-          <EditableTextField
-            label="Canon Potential"
-            value={book.canon_potential}
-            field="canon_potential"
-            saving={saving}
-            editingField={editingField}
-            onStartEdit={(field) => setEditingField(field)}
-            onSave={(field, draft) => {
-              const trimmed = draft.trim();
-              setEditingField(null);
-              handleFieldUpdate(field, trimmed || null);
-            }}
-            onCancel={() => setEditingField(null)}
-          />
+          {(book.status === "unread" || book.status === null) && (
+            <div>
+              <h3 className="text-sm font-medium text-muted-foreground">Predicted Rating</h3>
+              {book.predicted_rating != null ? (
+                <p className="mt-0.5 text-lg">{"\u2605"} {book.predicted_rating.toFixed(1)}</p>
+              ) : (
+                <p className="mt-0.5 text-sm italic text-muted-foreground">No predicted rating yet</p>
+              )}
+            </div>
+          )}
           <EditableTextField
             label="Notes"
             value={book.notes}

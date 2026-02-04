@@ -10,8 +10,6 @@ export async function updateBook(
       | "rating"
       | "is_favorite"
       | "is_up_next"
-      | "transformative_potential"
-      | "canon_potential"
       | "notes"
     >
   >,

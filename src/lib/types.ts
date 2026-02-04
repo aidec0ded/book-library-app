@@ -34,8 +34,8 @@ export interface Book {
   timing_month: number | null;
   timing_position: string | null;
   timing_raw: string | null;
-  transformative_potential: string | null;
-  canon_potential: string | null;
+  predicted_rating: number | null;
+  predicted_at: string | null;
   created_at: string;
 }
 

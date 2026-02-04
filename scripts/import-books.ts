@@ -35,8 +35,6 @@ interface BookRow {
   timing_month: number | null;
   timing_position: string | null;
   timing_raw: string | null;
-  transformative_potential: string | null;
-  canon_potential: string | null;
 }
 
 interface TimingResult {
@@ -226,8 +224,6 @@ function processCatalog(csvPath: string): Map<string, BookRow> {
       timing_month: null,
       timing_position: null,
       timing_raw: null,
-      transformative_potential: null,
-      canon_potential: null,
     };
 
     bookMap.set(key, book);
@@ -253,16 +249,12 @@ function processFictionList(
 
     const timing = parseWhenToRead(row["When to Read"] ?? "");
     const fictionNotes = row["Notes"]?.trim() || null;
-    const transformative = row["Transformative Potential"]?.trim() || null;
-    const canon = row["Canon Potential"]?.trim() || null;
 
     if (catalogMap.has(key)) {
       const existing = catalogMap.get(key)!;
       existing.timing_month = timing.timing_month;
       existing.timing_position = timing.timing_position;
       existing.timing_raw = timing.timing_raw || null;
-      existing.transformative_potential = transformative;
-      existing.canon_potential = canon;
 
       // Merge notes: catalog notes first, then fiction notes
       if (fictionNotes) {
@@ -295,8 +287,6 @@ function processFictionList(
         timing_month: timing.timing_month,
         timing_position: timing.timing_position,
         timing_raw: timing.timing_raw || null,
-        transformative_potential: transformative,
-        canon_potential: canon,
       });
     }
   }

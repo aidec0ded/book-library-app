@@ -74,8 +74,6 @@ interface BookRow {
   category: string | null;
   timing_raw: string | null;
   notes: string | null;
-  transformative_potential: string | null;
-  canon_potential: string | null;
   is_favorite: boolean;
   is_up_next: boolean;
   date_finished: string | null;
@@ -90,7 +88,7 @@ async function fetchAllBooks(): Promise<BookRow[]> {
     const { data, error } = await supabase
       .from("books")
       .select(
-        "id, title, author, status, rating, genre, category, timing_raw, notes, transformative_potential, canon_potential, is_favorite, is_up_next, date_finished",
+        "id, title, author, status, rating, genre, category, timing_raw, notes, is_favorite, is_up_next, date_finished",
       )
       .order("title")
       .range(from, from + PAGE_SIZE - 1);
@@ -191,10 +189,6 @@ function formatLibrary(books: BookRow[], vibeMap: Map<string, string[]>): string
     if (vibes) parts.push(`vibes: ${vibes.join(", ")}`);
     if (b.timing_raw) parts.push(`when: ${b.timing_raw}`);
     if (b.notes) parts.push(`notes: ${b.notes.slice(0, 200)}`);
-    if (b.transformative_potential)
-      parts.push(`transformative: ${b.transformative_potential.slice(0, 150)}`);
-    if (b.canon_potential)
-      parts.push(`canon: ${b.canon_potential.slice(0, 150)}`);
     return parts.join(" | ");
   });
   return lines.join("\n");

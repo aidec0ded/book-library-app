@@ -6,7 +6,7 @@ Personal book library app that recommends books based on mood, season, and vibe.
 
 MoodLib is built around a core belief: the value of a personal library isn't just what's on the shelves — it's in understanding how books affect you as a person, and using that understanding to guide what you read next.
 
-The app's central loop is: **read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally**. Ratings and notes alone don't capture why a book resonated. The AI reading companion (Phase 11) is the mechanism for deeper reflection — a place to discuss what you're reading, how it's making you feel, and how it connects to other books and ideas. Over time, the AI builds a reader profile that enables genuinely personal recommendations, Canon Potential and Transformative Potential assessments, and proactive suggestions grounded in the reader's evolving tastes.
+The app's central loop is: **read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally**. Ratings and notes alone don't capture why a book resonated. The AI reading companion (Phase 11) is the mechanism for deeper reflection — a place to discuss what you're reading, how it's making you feel, and how it connects to other books and ideas. Over time, the AI builds a reader profile that enables genuinely personal recommendations, predicted ratings, and proactive suggestions grounded in the reader's evolving tastes.
 
 Everything should feel personal. The app should celebrate the reader's own library and make them excited to "step into" it — not replicate a public review site or bookstore.
 
@@ -31,6 +31,10 @@ npx tsx scripts/generate-profile.ts            # generate reader profile via Cla
 npx tsx scripts/generate-profile.ts --dry-run  # preview prompt, no API call or DB write
 npx tsx scripts/generate-profile.ts --force    # regenerate even if generated this month
 npx tsx scripts/generate-profile.ts --bootstrap # library data only (skip memory + conversations)
+npx tsx scripts/predict-ratings.ts             # generate AI predicted ratings for unread books
+npx tsx scripts/predict-ratings.ts --dry-run   # preview prompt, no API calls or DB writes
+npx tsx scripts/predict-ratings.ts --limit 20  # process only first 20 books
+npx tsx scripts/predict-ratings.ts --force     # re-predict books that already have predictions
 ```
 
 Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
@@ -54,7 +58,7 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/profile` (Profile)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
-- `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes, potentials)
+- `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes) + predicted rating display
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
 - `src/lib/books.ts` — Book update helper (type-constrained to editable fields)
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
@@ -76,6 +80,7 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
 - `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
 - `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, opus model)
+- `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (batches of 20, Sonnet 4.5, --dry-run/--limit/--force flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 
 **MVP phases (complete):**
@@ -133,7 +138,7 @@ Two-tier vibe system: 17 canonical vibes for browsing/filtering + freeform descr
 ### ~~Phase 7: Book Detail Redesign~~ (done)
 
 - Responsive hero area with optional cover image (left on desktop, stacked on mobile)
-- "Personalized" card — Transformative Potential, Canon Potential, Notes (conditionally rendered)
+- "Personalized" card — Predicted Rating (unread books), Notes
 - "Metadata" card — Genre, Category, When to Read, ISBN, dates
 - Rating promoted to hero area below status badges
 - VibeEditor repositioned between Personalized and Metadata cards
@@ -157,9 +162,9 @@ Two-tier vibe system: 17 canonical vibes for browsing/filtering + freeform descr
 The core loop: read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally. Round 1 builds the input side of that loop — giving the user ways to tell the app how books make them feel, and giving the AI a place to listen and learn.
 
 ~~**Phase 10: Inline Editing on Book Detail**~~ (done)
-- Edit rating, notes, status, favorite, up next, transformative potential, canon potential directly from the book detail page
+- Edit rating, notes, status, favorite, up next directly from the book detail page
 - Optimistic updates with rollback on error; auto-save for dropdowns/toggles, click-to-edit with save/cancel for text fields
-- `src/lib/books.ts` — `updateBook` helper type-constrained to 7 editable fields
+- `src/lib/books.ts` — `updateBook` helper type-constrained to 5 editable fields
 - Personalized card always renders (not conditional on existing values)
 
 ~~**Phase 11: AI Reading Companion**~~ (done)
@@ -184,10 +189,12 @@ The core loop: read → reflect → AI understanding deepens → better recommen
 
 With the reflection loop feeding signal, the AI can start producing personalized value.
 
-**Phase 13: AI-Generated Canon & Transformative Potential**
-- AI populates Canon Potential and Transformative Potential for unread books based on the reader profile
-- These fields become living assessments that evolve as the AI's understanding of the reader deepens — not static one-time imports
-- May also regenerate/update entries for books already assessed, as the reader's tastes change over time
+~~**Phase 13: Predicted Ratings**~~ (done)
+- Replaced editorial `transformative_potential` and `canon_potential` text fields with AI-generated `predicted_rating` (numeric 0.5–5.0)
+- `scripts/predict-ratings.ts` generates predictions via Claude Sonnet 4.5 using reader profile, personal canon, and stratified calibration set
+- Predictions shown on BookDetail for unread books only; hidden for read/reading/unfinished
+- Batches of 20, --dry-run/--limit/--force flags; requires reader profile + ≥10 rated books
+- Migration 010 drops old columns and adds `predicted_rating` + `predicted_at`
 
 **Phase 14: Lists & Curation**
 - Data model for lists (name, description, ordered book references)
@@ -255,7 +262,8 @@ Six tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
-- `transformative_potential`, `canon_potential` — editorial notes from the fiction spreadsheet
+- `predicted_rating` — AI-predicted rating (0.5–5.0), generated by `predict-ratings.ts` based on reader profile
+- `predicted_at` — timestamp of last prediction (null = never predicted)
 - `rating` — numeric 0-5 in 0.5 increments; null means unrated (catalog stored 0.0 for unrated)
 - `status` — read, unread, reading, unfinished (lowercased from catalog)
 - `is_favorite`, `is_up_next` — booleans from catalog flags
