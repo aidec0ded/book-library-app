@@ -55,7 +55,7 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/profile` (Profile)
+- `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/lists` (ListsPage), `/lists/:id` (ListDetail), `/profile` (Profile)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes) + predicted rating display
@@ -82,6 +82,9 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, opus model)
 - `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (batches of 20, Sonnet 4.5, --dry-run/--limit/--force flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
+- `src/pages/ListsPage.tsx` — Lists index with create form and grid of list cards
+- `src/pages/ListDetail.tsx` — List detail with ordered books, reorder controls, add/remove, inline editing
+- `src/lib/lists.ts` — List CRUD operations (create, update, delete, add/remove/reorder items)
 
 **MVP phases (complete):**
 1. ~~Book list UI with search~~ (done)
@@ -196,12 +199,15 @@ With the reflection loop feeding signal, the AI can start producing personalized
 - Batches of 20, --dry-run/--limit/--force flags; requires reader profile + ≥10 rated books
 - Migration 010 drops old columns and adds `predicted_rating` + `predicted_at`
 
-**Phase 14: Lists & Curation**
-- Data model for lists (name, description, ordered book references)
-- Manual list creation and editing
+~~**Phase 14a: Lists & Curation (Manual)**~~ (done)
+- `lists` + `list_items` tables with ordered positions, cascade deletes, RLS (migration 011)
+- `/lists` index page with create form, `/lists/:id` detail with ordered books
+- Add/remove books via library search, reorder up/down, inline-edit name/description, delete list
+- `src/lib/lists.ts` CRUD module (9 functions)
+
+**Phase 14b: Lists & Curation (AI Generation)**
 - AI-generated lists using vibes, metadata, and reader profile ("books in your library for when you feel like this," "you've been reading a lot of cold autofiction — here's something more hopeful")
-- Personal canon as a specific list implementation
-- AI can generate lists proactively based on reading patterns, or on request
+- AI can generate lists proactively based on reading patterns, or on request via chat companion
 
 **Phase 15: Home Page Redesign**
 - Transform `/` from a filtered book list into a personalized library landing page
@@ -258,7 +264,7 @@ Making the library joyful to visit — a space that reflects the reader's person
 
 ## Data Model
 
-Six tables in Supabase:
+Eight tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -292,6 +298,17 @@ Six tables in Supabase:
 - `generated_at` — when this profile was generated
 - `profile_data` (jsonb) — structured profile: reader_identity, thematic_pillars, taste_evolution, emotional_patterns, reading_life_snapshot, personal_canon
 - `generation_context` (jsonb) — metadata: model, book count, message count, token usage
+
+**lists** — User-created curated book lists. Key fields:
+- `name` — required, non-empty
+- `description` — optional
+- `updated_at` — auto-updated via trigger
+
+**list_items** — Ordered book references within lists. Key fields:
+- `list_id` — FK to lists, CASCADE delete
+- `book_id` — FK to books, CASCADE delete
+- `position` — dense 1-based integer, renormalized on every mutation
+- `UNIQUE (list_id, book_id)` — prevents duplicate books in a list
 
 ## Data Import Quirks
 

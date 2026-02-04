@@ -22,6 +22,12 @@ export function Layout() {
               Vibes
             </Link>
             <Link
+              to="/lists"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Lists
+            </Link>
+            <Link
               to="/chat"
               className="text-sm text-muted-foreground hover:text-foreground"
             >

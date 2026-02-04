@@ -7,6 +7,8 @@ import { VibesPage } from "@/pages/VibesPage";
 import { AddBook } from "@/pages/AddBook";
 import { Chat } from "@/pages/Chat";
 import { Profile } from "@/pages/Profile";
+import { ListsPage } from "@/pages/ListsPage";
+import { ListDetail } from "@/pages/ListDetail";
 
 export function App() {
   return (
@@ -15,6 +17,8 @@ export function App() {
         <Route index element={<BookList />} />
         <Route path="seasonal" element={<SeasonalBooks />} />
         <Route path="vibes" element={<VibesPage />} />
+        <Route path="lists" element={<ListsPage />} />
+        <Route path="lists/:id" element={<ListDetail />} />
         <Route path="chat" element={<Chat />} />
         <Route path="profile" element={<Profile />} />
         <Route path="add" element={<AddBook />} />

@@ -104,3 +104,23 @@ export interface ReaderProfile {
   generation_context: Record<string, unknown> | null;
   created_at: string;
 }
+
+export interface List {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListItem {
+  id: string;
+  list_id: string;
+  book_id: string;
+  position: number;
+  added_at: string;
+}
+
+export interface ListWithCount extends List {
+  book_count: number;
+}
