@@ -70,9 +70,11 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/lib/chat.ts` — Conversation CRUD + SSE streaming client
 - `src/components/ChatMessage.tsx` — Chat message bubble component (user/assistant)
 - `src/components/ConversationList.tsx` — Past conversations panel (collapsible)
-- `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory tool loop, port 3001)
+- `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
+- `server/list-handler.ts` — List tool command executor (create, view, add_books, remove_books, delete)
+- `server/list-index.ts` — Builds existing-lists context for system prompt (cached 10min)
 - `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
 - `src/lib/profile.ts` — Profile CRUD + personal canon updates
@@ -205,9 +207,10 @@ With the reflection loop feeding signal, the AI can start producing personalized
 - Add/remove books via library search, reorder up/down, inline-edit name/description, delete list
 - `src/lib/lists.ts` CRUD module (9 functions)
 
-**Phase 14b: Lists & Curation (AI Generation)**
-- AI-generated lists using vibes, metadata, and reader profile ("books in your library for when you feel like this," "you've been reading a lot of cold autofiction — here's something more hopeful")
-- AI can generate lists proactively based on reading patterns, or on request via chat companion
+~~**Phase 14b: Lists & Curation (AI Generation)**~~ (done)
+- `manage_lists` custom tool added to chat companion (create, view, add_books, remove_books, delete)
+- AI can create/manage lists proactively based on reading patterns, or on request via chat
+- Books resolved by exact title match against library; list context included in system prompt
 
 **Phase 15: Home Page Redesign**
 - Transform `/` from a filtered book list into a personalized library landing page

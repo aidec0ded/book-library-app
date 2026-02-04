@@ -5,6 +5,8 @@ import { config } from "dotenv";
 import { buildLibraryIndex } from "./library-index.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
+import { executeListCommand, type ListCommand } from "./list-handler.js";
+import { buildListIndex } from "./list-index.js";
 
 config();
 
@@ -23,6 +25,7 @@ const anthropic = new Anthropic({
 function buildSystemPrompt(
   libraryIndex: string,
   readerProfile: string | null,
+  listIndex: string | null,
 ): string {
   let prompt = `You are the reading companion for MoodLib, a personal book library app.
 You are an empathetic, knowledgeable reading partner — not a search
@@ -40,10 +43,20 @@ connections between books, evolving tastes — record it in your memory.
 Check your memory at the start of each conversation.
 
 Keep your memory organized. Prefer updating existing files over creating
-new ones.`;
+new ones.
+
+You can create and manage curated book lists using your manage_lists tool.
+Create lists when the reader asks, or suggest them when you notice patterns
+(e.g. "You've mentioned several cold, atmospheric novels — want me to
+make a list?"). Always confirm before creating proactively.
+Reference books by their exact title as shown in the library.`;
 
   if (readerProfile) {
     prompt += `\n\n## Reader Profile\n\n${readerProfile}`;
+  }
+
+  if (listIndex) {
+    prompt += `\n\n${listIndex}`;
   }
 
   prompt += `\n\n## The Reader's Library\n\n${libraryIndex}`;
@@ -128,12 +141,13 @@ async function handleChat(
 
     if (histError) throw histError;
 
-    // Build system prompt with library index and reader profile
-    const [libraryIndex, readerProfile] = await Promise.all([
+    // Build system prompt with library index, reader profile, and list context
+    const [libraryIndex, readerProfile, listIndex] = await Promise.all([
       buildLibraryIndex(supabase),
       loadReaderProfile(supabase),
+      buildListIndex(supabase),
     ]);
-    const systemPrompt = buildSystemPrompt(libraryIndex, readerProfile);
+    const systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, listIndex);
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
@@ -156,7 +170,46 @@ async function handleChat(
           },
         ],
         messages: apiMessages,
-        tools: [{ type: "memory_20250818" as const, name: "memory" }],
+        tools: [
+          { type: "memory_20250818" as const, name: "memory" },
+          {
+            name: "manage_lists",
+            description:
+              "Create and manage curated book lists from the reader's library. Use this to build themed lists, reading recommendations, or collections based on conversation context. Books are referenced by their exact title as shown in the library index.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                action: {
+                  type: "string",
+                  enum: [
+                    "create",
+                    "view",
+                    "add_books",
+                    "remove_books",
+                    "delete",
+                  ],
+                  description: "The action to perform",
+                },
+                list_name: {
+                  type: "string",
+                  description:
+                    "Name of the list (required for all actions except view-all)",
+                },
+                description: {
+                  type: "string",
+                  description: "List description (used with create)",
+                },
+                books: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "Book titles exactly as they appear in the library (e.g. 'The Road')",
+                },
+              },
+              required: ["action"],
+            },
+          },
+        ],
         betas: ["context-management-2025-06-27"],
         max_tokens: 4096,
       });
@@ -192,10 +245,17 @@ async function handleChat(
 
         let result: string;
         try {
-          result = await executeMemoryCommand(
-            supabase,
-            block.input as MemoryCommand,
-          );
+          if (block.name === "manage_lists") {
+            result = await executeListCommand(
+              supabase,
+              block.input as ListCommand,
+            );
+          } else {
+            result = await executeMemoryCommand(
+              supabase,
+              block.input as MemoryCommand,
+            );
+          }
         } catch (err) {
           result = `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
