@@ -47,13 +47,14 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
-- `src/pages/BookDetail.tsx` — Full book metadata display
+- `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes, potentials)
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
+- `src/lib/books.ts` — Book update helper (type-constrained to editable fields)
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
 - `src/pages/AddBook.tsx` — ISBNdb search, preview, and add-to-library flow
 - `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping)
-- `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Separator)
+- `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Select, Separator, Textarea)
 - `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 
@@ -135,10 +136,11 @@ Two-tier vibe system: 17 canonical vibes for browsing/filtering + freeform descr
 
 The core loop: read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally. Round 1 builds the input side of that loop — giving the user ways to tell the app how books make them feel, and giving the AI a place to listen and learn.
 
-**Phase 10: Inline Editing on Book Detail**
-- Edit rating, notes, status, transformative potential, canon potential directly from the book detail page
-- Establishes browser-side writes for book metadata (INSERT policy already exists from Phase 9)
-- Foundation for all personalization — the app can't learn about the reader without editable fields
+~~**Phase 10: Inline Editing on Book Detail**~~ (done)
+- Edit rating, notes, status, favorite, up next, transformative potential, canon potential directly from the book detail page
+- Optimistic updates with rollback on error; auto-save for dropdowns/toggles, click-to-edit with save/cancel for text fields
+- `src/lib/books.ts` — `updateBook` helper type-constrained to 7 editable fields
+- Personalized card always renders (not conditional on existing values)
 
 **Phase 11: AI Reading Companion**
 - Single chat interface for discussing your whole reading life — not per-book threads, because how one book shapes your thinking about another is the point
