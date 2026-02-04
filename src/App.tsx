@@ -5,6 +5,7 @@ import { BookDetail } from "@/pages/BookDetail";
 import { SeasonalBooks } from "@/pages/SeasonalBooks";
 import { VibesPage } from "@/pages/VibesPage";
 import { AddBook } from "@/pages/AddBook";
+import { Chat } from "@/pages/Chat";
 
 export function App() {
   return (
@@ -13,6 +14,7 @@ export function App() {
         <Route index element={<BookList />} />
         <Route path="seasonal" element={<SeasonalBooks />} />
         <Route path="vibes" element={<VibesPage />} />
+        <Route path="chat" element={<Chat />} />
         <Route path="add" element={<AddBook />} />
         <Route path="books/:id" element={<BookDetail />} />
       </Route>

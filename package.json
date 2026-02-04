@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "import": "tsx scripts/import-books.ts",
     "tag-vibes": "tsx scripts/tag-vibes.ts",
-    "enrich-isbndb": "tsx scripts/enrich-isbndb.ts"
+    "enrich-isbndb": "tsx scripts/enrich-isbndb.ts",
+    "dev:server": "tsx --watch server/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",

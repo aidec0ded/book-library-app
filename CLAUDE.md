@@ -26,7 +26,10 @@ npx tsx scripts/enrich-isbndb.ts               # enrich books via ISBNdb (cover 
 npx tsx scripts/enrich-isbndb.ts --dry-run     # list books that would be enriched, no API calls
 npx tsx scripts/enrich-isbndb.ts --limit 10    # process only first 10 books
 npx tsx scripts/enrich-isbndb.ts --force       # re-enrich books already looked up
+npm run dev:server                             # start chat API server (port 3001, auto-restarts)
 ```
+
+Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
 
 SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Editor, not via CLI.
 
@@ -35,12 +38,12 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - React + Vite + TypeScript (frontend)
 - Supabase (PostgreSQL + auth + Row Level Security)
 - Tailwind + shadcn/ui for styling
-- Claude API (`@anthropic-ai/sdk`) for AI vibe tagging
+- Claude API (`@anthropic-ai/sdk`) for AI vibe tagging + reading companion chat
 - ESM throughout (`"type": "module"` in package.json)
 
 ## Architecture
 
-**Current:** Import pipeline + AI tagging pipeline + interactive frontend. Two CSV source files are parsed, merged on a normalized title+author key, and batch-inserted into Supabase. The `tag-vibes.ts` script bulk-tags fiction-list books with AI-generated vibes via Claude API. The React frontend provides a searchable, paginated book list, detail view with vibe editing, and seasonal recommendations.
+**Current:** Import pipeline + AI tagging pipeline + chat server + interactive frontend. Two CSV source files are parsed, merged on a normalized title+author key, and batch-inserted into Supabase. The `tag-vibes.ts` script bulk-tags fiction-list books with AI-generated vibes via Claude API. A standalone Node.js server (`server/index.ts`) handles Claude API streaming for the reading companion chat. The React frontend provides a searchable, paginated book list, detail view with vibe editing, seasonal recommendations, and an AI reading companion chat.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
@@ -55,6 +58,13 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/pages/AddBook.tsx` — ISBNdb search, preview, and add-to-library flow
 - `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping)
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Select, Separator, Textarea)
+- `src/pages/Chat.tsx` — AI reading companion chat page with streaming responses
+- `src/lib/chat.ts` — Conversation CRUD + SSE streaming client
+- `src/components/ChatMessage.tsx` — Chat message bubble component (user/assistant)
+- `src/components/ConversationList.tsx` — Past conversations panel (collapsible)
+- `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory tool loop, port 3001)
+- `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
+- `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
 - `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 
@@ -142,12 +152,14 @@ The core loop: read → reflect → AI understanding deepens → better recommen
 - `src/lib/books.ts` — `updateBook` helper type-constrained to 7 editable fields
 - Personalized card always renders (not conditional on existing values)
 
-**Phase 11: AI Reading Companion**
-- Single chat interface for discussing your whole reading life — not per-book threads, because how one book shapes your thinking about another is the point
-- Persisted conversation history (new `conversations` / `messages` table in Supabase)
-- AI has access to library data (books, ratings, notes, vibes) as context
-- Not a search tool — an empathetic, knowledgeable reading partner. Can discuss what you're reading, how it's affecting you, connections to other books, your evolving tastes
-- Initial version: functional chat with library context. Proactive suggestions come later once the reader profile exists.
+~~**Phase 11: AI Reading Companion**~~ (done)
+- Single chat interface at `/chat` for discussing your whole reading life — not per-book threads
+- Persisted conversation history (`conversations` + `messages` tables in Supabase)
+- AI has full library context (books, ratings, vibes) via system prompt with prompt caching
+- Claude memory tool (`memory_20250818`) for cross-conversation continuity — stores reader insights in `memory_files` table
+- Real-time streaming via SSE; standalone Node.js server on port 3001, proxied through Vite dev server
+- Session persistence via sessionStorage; conversation list with auto-generated titles
+- Note: memory tool integration bridges Phase 11 and Phase 12 — the AI can already begin building reader understanding
 
 **Phase 12: Reader Profile**
 - Data model for what the AI learns about the reader over time
@@ -227,7 +239,7 @@ Making the library joyful to visit — a space that reflects the reader's person
 
 ## Data Model
 
-Two tables in Supabase:
+Five tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -241,6 +253,20 @@ Two tables in Supabase:
 **book_vibes** — Vibe tags for books. Each row links a vibe string to a book. Key fields:
 - `ai_assigned` / `user_confirmed` — tracks provenance; AI vibes start unconfirmed, users can confirm in the UI
 - `is_canonical` (planned) — distinguishes the 17 canonical vibes used for browsing/filtering from freeform descriptive vibes. Canonical vibes are the primary discovery axis; freeform vibes provide richness for detail pages and future AI search.
+
+**conversations** — Chat conversations. Key fields:
+- `title` — AI-generated after first exchange (3-6 words)
+- `archived_at` — null means active; set to archive
+
+**messages** — Chat messages within conversations. Key fields:
+- `conversation_id` — FK to conversations, CASCADE delete
+- `role` — 'user' or 'assistant'
+- `content` — message text
+
+**memory_files** — Persistent memory for the AI reading companion (Claude memory tool). Key fields:
+- `path` (PK) — virtual file path, must start with `/memories/`
+- `content` — file contents, managed by Claude via memory tool commands
+- `updated_at` — auto-updated via trigger
 
 ## Data Import Quirks
 

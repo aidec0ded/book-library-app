@@ -48,3 +48,18 @@ export interface BookVibe {
   is_canonical: boolean;
   created_at: string;
 }
+
+export interface Conversation {
+  id: string;
+  started_at: string;
+  title: string | null;
+  archived_at: string | null;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
