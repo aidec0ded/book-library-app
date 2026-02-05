@@ -224,7 +224,7 @@ export function BookList() {
     }
 
     if (!showAll) {
-      q = q.not("timing_raw", "is", null);
+      q = q.or("timing_raw.not.is.null,status.eq.wishlist,status.eq.reading");
     }
 
     if (debouncedQuery) {
