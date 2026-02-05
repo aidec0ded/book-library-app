@@ -220,12 +220,13 @@ function passesFilters(book: ISBNdbBook, targetYear: number, targetMonth: number
   if (filterFiction) {
     if (!book.subjects || !book.subjects.some((s) => FICTION_SUBJECT_RE.test(s))) return false;
   }
-  // Reject books whose parsed pub date doesn't match the target search month
-  if (book.date_published) {
-    const { year: parsedYear, month: parsedMonth } = parsePubDate(book.date_published);
-    if (parsedMonth != null && parsedMonth !== targetMonth) return false;
-    if (parsedYear != null && parsedYear !== targetYear) return false;
-  }
+  // Reject books without a parseable publication date — we need a month to categorize them
+  if (!book.date_published) return false;
+  const { year: parsedYear, month: parsedMonth } = parsePubDate(book.date_published);
+  // Must have a parseable month to be useful as a new release
+  if (parsedMonth == null) return false;
+  if (parsedMonth !== targetMonth) return false;
+  if (parsedYear != null && parsedYear !== targetYear) return false;
   return true;
 }
 

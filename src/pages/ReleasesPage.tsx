@@ -73,6 +73,31 @@ export function ReleasesPage() {
       .then(([months, isbns]) => {
         setAvailableMonths(months);
         setLibraryIsbns(isbns);
+
+        // If the default month isn't in the available data, fall back to the
+        // closest available month so the Select always has a matching value.
+        if (months.length > 0) {
+          const hasSelected = months.some(
+            (m) => m.year === year && m.month === month,
+          );
+          if (!hasSelected) {
+            // Pick the month closest to the current date
+            const target = year * 12 + month;
+            let best = months[0];
+            let bestDist = Math.abs(best.year * 12 + best.month - target);
+            for (const m of months) {
+              const dist = Math.abs(m.year * 12 + m.month - target);
+              if (dist < bestDist) {
+                best = m;
+                bestDist = dist;
+              }
+            }
+            setYear(best.year);
+            setMonth(best.month);
+            setPage(1);
+          }
+        }
+
         setInitialized(true);
       })
       .catch(console.error);
