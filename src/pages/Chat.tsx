@@ -148,7 +148,7 @@ export function Chat() {
   const canSend = input.trim().length > 0 && !streaming;
 
   return (
-    <div className="flex h-[calc(100vh-73px)] flex-col">
+    <div className="flex h-[calc(100vh-53px)] flex-col lg:h-screen">
       <ConversationList
         conversations={conversations}
         activeId={conversationId}

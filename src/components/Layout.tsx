@@ -1,66 +1,29 @@
+import { useState } from "react";
 import { Link, Outlet } from "react-router-dom";
+import { Menu } from "lucide-react";
+import { Sidebar } from "@/components/Sidebar";
 
 export function Layout() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
-    <div className="min-h-screen">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-4xl items-center gap-6 px-4 py-4">
-          <Link to="/" className="text-xl font-bold tracking-tight">
-            MoodLib
-          </Link>
-          <nav className="flex gap-4">
-            <Link
-              to="/library"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Library
-            </Link>
-            <Link
-              to="/seasonal"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Seasonal
-            </Link>
-            <Link
-              to="/vibes"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Vibes
-            </Link>
-            <Link
-              to="/lists"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Lists
-            </Link>
-            <Link
-              to="/releases"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              New Releases
-            </Link>
-            <Link
-              to="/chat"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Chat
-            </Link>
-            <Link
-              to="/profile"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Profile
-            </Link>
-            <Link
-              to="/add"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Add Book
-            </Link>
-          </nav>
-        </div>
+    <div className="min-h-screen lg:pl-60">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Mobile header */}
+      <header className="flex items-center gap-3 border-b px-4 py-3 lg:hidden">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="rounded-md p-1 text-muted-foreground hover:text-foreground"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <Link to="/" className="font-serif text-lg font-bold tracking-tight">
+          MoodLib
+        </Link>
       </header>
-      <main className="mx-auto max-w-4xl px-4 py-6">
+
+      <main className="mx-auto max-w-5xl px-4 py-6">
         <Outlet />
       </main>
     </div>
