@@ -11,19 +11,52 @@ export async function fetchLists(): Promise<ListWithCount[]> {
 
   const { data: items, error: itemsError } = await supabase
     .from("list_items")
-    .select("list_id");
+    .select("list_id, book_id, position")
+    .order("position");
 
   if (itemsError) throw itemsError;
 
-  const counts = new Map<string, number>();
+  // Group items by list for counts and first-position book IDs
+  const listItemsMap = new Map<string, { book_id: string; position: number }[]>();
   for (const item of items) {
-    counts.set(item.list_id, (counts.get(item.list_id) ?? 0) + 1);
+    const group = listItemsMap.get(item.list_id) ?? [];
+    group.push({ book_id: item.book_id, position: item.position });
+    listItemsMap.set(item.list_id, group);
   }
 
-  return (lists ?? []).map((list) => ({
-    ...list,
-    book_count: counts.get(list.id) ?? 0,
-  }));
+  // Collect first-position book IDs for cover books
+  const coverBookIds = new Set<string>();
+  for (const [, listItems] of listItemsMap) {
+    if (listItems.length > 0) {
+      const sorted = listItems.sort((a, b) => a.position - b.position);
+      coverBookIds.add(sorted[0].book_id);
+    }
+  }
+
+  // Fetch cover books in one query
+  const coverBooksMap = new Map<string, { title: string; author: string; cover_image_url: string | null }>();
+  if (coverBookIds.size > 0) {
+    const { data: coverBooks, error: coverError } = await supabase
+      .from("books")
+      .select("id, title, author, cover_image_url")
+      .in("id", [...coverBookIds]);
+
+    if (coverError) throw coverError;
+    for (const book of coverBooks ?? []) {
+      coverBooksMap.set(book.id, book);
+    }
+  }
+
+  return (lists ?? []).map((list) => {
+    const listItems = listItemsMap.get(list.id) ?? [];
+    const firstItem = listItems.sort((a, b) => a.position - b.position)[0];
+    const coverBook = firstItem ? coverBooksMap.get(firstItem.book_id) ?? null : null;
+    return {
+      ...list,
+      book_count: listItems.length,
+      cover_book: coverBook,
+    };
+  });
 }
 
 export async function fetchList(id: string): Promise<List | null> {

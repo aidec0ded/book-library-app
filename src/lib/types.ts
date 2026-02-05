@@ -5,6 +5,7 @@ export interface BookSummary {
   status: string | null;
   rating: number | null;
   timing_raw: string | null;
+  cover_image_url: string | null;
 }
 
 export interface Book {
@@ -123,6 +124,7 @@ export interface ListItem {
 
 export interface ListWithCount extends List {
   book_count: number;
+  cover_book: { title: string; author: string; cover_image_url: string | null } | null;
 }
 
 export interface ShelfFilter {

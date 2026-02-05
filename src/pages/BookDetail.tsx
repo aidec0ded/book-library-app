@@ -246,7 +246,7 @@ export function BookDetail() {
         )}
         <div className="min-w-0 flex-1 space-y-3">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">{book.title}</h1>
+            <h1 className="font-serif text-3xl font-bold tracking-tight">{book.title}</h1>
             {book.subtitle && (
               <p className="text-lg text-muted-foreground">{book.subtitle}</p>
             )}

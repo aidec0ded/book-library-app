@@ -196,7 +196,7 @@ export function BookList() {
 
     let q = supabase
       .from("books")
-      .select("id, title, author, status, rating, timing_raw", {
+      .select("id, title, author, status, rating, timing_raw, cover_image_url", {
         count: "exact",
       })
       .order("title", { ascending: true })
@@ -375,7 +375,7 @@ export function BookList() {
 
         {/* Filter bar */}
         {filtersOpen && (
-          <div className="space-y-3 rounded-lg border p-4">
+          <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
             <div className="flex flex-wrap gap-3">
               {/* Status */}
               <div className="space-y-1">
@@ -514,20 +514,23 @@ export function BookList() {
             : `${count} book${count !== 1 ? "s" : ""}${summary ? ` — ${summary}` : ""}`}
         </div>
 
-        <div className="divide-y rounded-lg border">
-          {books.map((book) => (
-            <BookRow
-              key={book.id}
-              book={book}
-              vibes={vibeMap.get(book.id)}
-            />
-          ))}
-          {!loading && books.length === 0 && (
-            <div className="px-4 py-8 text-center text-muted-foreground">
+        {books.length > 0 ? (
+          <div className="divide-y rounded-lg border">
+            {books.map((book) => (
+              <BookRow
+                key={book.id}
+                book={book}
+                vibes={vibeMap.get(book.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          !loading && (
+            <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
               No books found.
             </div>
-          )}
-        </div>
+          )
+        )}
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between">

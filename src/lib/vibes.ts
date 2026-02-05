@@ -162,7 +162,7 @@ export async function fetchBooksByCanonicalVibe(
 
   const { data, count, error } = await supabase
     .from("books")
-    .select("id, title, author, status, rating, timing_raw", { count: "exact" })
+    .select("id, title, author, status, rating, timing_raw, cover_image_url", { count: "exact" })
     .in("id", bookIds)
     .order("title")
     .range(from, to);

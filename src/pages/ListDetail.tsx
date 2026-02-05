@@ -258,7 +258,7 @@ export function ListDetail() {
         </div>
       ) : (
         <h1
-          className="cursor-pointer rounded-md px-1 py-0.5 -mx-1 text-3xl font-bold tracking-tight hover:bg-muted/50"
+          className="cursor-pointer rounded-md px-1 py-0.5 -mx-1 font-serif text-3xl font-bold tracking-tight hover:bg-muted/50"
           onClick={() => handleStartEdit("name")}
         >
           {list.name}

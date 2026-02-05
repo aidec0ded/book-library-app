@@ -82,7 +82,7 @@ export function Profile() {
   if (!profile) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">Reader Profile</h1>
+        <h1 className="font-serif text-2xl font-bold">Reader Profile</h1>
         <Card>
           <CardContent className="py-8 text-center">
             <p className="text-muted-foreground">
@@ -106,7 +106,7 @@ export function Profile() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Reader Profile</h1>
+        <h1 className="font-serif text-2xl font-bold">Reader Profile</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Last generated {formatDate(profile.generated_at)}
         </p>

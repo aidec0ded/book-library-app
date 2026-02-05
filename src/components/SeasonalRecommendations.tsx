@@ -31,7 +31,7 @@ export function SeasonalRecommendations() {
       setLoading(true);
       const { data, error } = await supabase
         .from("books")
-        .select("id, title, author, status, rating, timing_raw")
+        .select("id, title, author, status, rating, timing_raw, cover_image_url")
         .eq("timing_month", month)
         .or(`timing_position.eq.${position},timing_position.is.null`)
         .order("title", { ascending: true });
@@ -66,7 +66,7 @@ export function SeasonalRecommendations() {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">What to Read Now</h2>
+          <h2 className="font-serif text-xl font-semibold">What to Read Now</h2>
           <p className="text-sm text-muted-foreground">
             Books for {getSeasonalName(month, position).toLowerCase()}
           </p>
@@ -86,17 +86,29 @@ export function SeasonalRecommendations() {
           <button
             key={book.id}
             onClick={() => navigate(`/books/${book.id}`)}
-            className="rounded-lg border p-4 text-left transition-colors hover:bg-muted/50"
+            className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
           >
-            <div className="truncate font-medium">{book.title}</div>
-            <div className="truncate text-sm text-muted-foreground">
-              {book.author}
-            </div>
-            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-              {book.rating !== null && book.rating > 0 && (
-                <span>{formatRating(book.rating)}</span>
-              )}
-              {book.timing_raw && <span>{book.timing_raw}</span>}
+            {book.cover_image_url ? (
+              <img
+                src={book.cover_image_url}
+                alt=""
+                className="h-16 w-11 shrink-0 rounded object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <div className="flex h-16 w-11 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-serif font-medium">{book.title}</div>
+              <div className="truncate text-sm text-muted-foreground">
+                {book.author}
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                {book.rating !== null && book.rating > 0 && (
+                  <span>{formatRating(book.rating)}</span>
+                )}
+                {book.timing_raw && <span>{book.timing_raw}</span>}
+              </div>
             </div>
           </button>
         ))}

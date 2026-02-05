@@ -35,8 +35,18 @@ export function BookRow({
       onClick={() => navigate(`/books/${book.id}`)}
       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
     >
+      {book.cover_image_url ? (
+        <img
+          src={book.cover_image_url}
+          alt=""
+          className="h-12 w-8 shrink-0 rounded object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground" />
+      )}
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">{book.title}</div>
+        <div className="truncate font-serif font-medium">{book.title}</div>
         <div className="flex items-center gap-2">
           <span className="truncate text-sm text-muted-foreground">
             {book.author}

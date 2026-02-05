@@ -4,12 +4,12 @@ import { Plus } from "lucide-react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { BookCover } from "@/components/BookCover";
 import { fetchLists, createList } from "@/lib/lists";
 import type { ListWithCount } from "@/lib/types";
 
@@ -46,7 +46,7 @@ export function ListsPage() {
         trimmedName,
         newDescription.trim() || null,
       );
-      setLists([{ ...list, book_count: 0 }, ...lists]);
+      setLists([{ ...list, book_count: 0, cover_book: null }, ...lists]);
       setNewName("");
       setNewDescription("");
       setShowCreateForm(false);
@@ -65,7 +65,7 @@ export function ListsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Lists</h1>
+          <h1 className="font-serif text-2xl font-bold">Lists</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Curated collections from your library
           </p>
@@ -136,33 +136,42 @@ export function ListsPage() {
       )}
 
       {lists.length === 0 && !showCreateForm ? (
-        <Card>
-          <CardContent className="py-8 text-center">
-            <p className="text-muted-foreground">
-              No lists yet. Create one to start curating books from your
-              library.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+          No lists yet. Create one to start curating books from your library.
+        </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
           {lists.map((list) => (
-            <Link key={list.id} to={`/lists/${list.id}`}>
-              <Card className="h-full transition-colors hover:bg-muted/50">
-                <CardHeader>
-                  <CardTitle className="text-base">{list.name}</CardTitle>
-                  {list.description && (
-                    <CardDescription className="line-clamp-2">
-                      {list.description}
-                    </CardDescription>
-                  )}
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    {list.book_count} {list.book_count === 1 ? "book" : "books"}
+            <Link
+              key={list.id}
+              to={`/lists/${list.id}`}
+              className="flex w-full items-center gap-4 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+            >
+              <div className="w-16 shrink-0">
+                {list.cover_book ? (
+                  <BookCover
+                    title={list.cover_book.title}
+                    author={list.cover_book.author}
+                    coverUrl={list.cover_book.cover_image_url}
+                    size="sm"
+                  />
+                ) : (
+                  <div className="flex aspect-[2/3] items-center justify-center rounded-md bg-secondary text-xs text-muted-foreground">
+                    Empty
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-serif text-base font-semibold">{list.name}</p>
+                {list.description && (
+                  <p className="text-sm text-muted-foreground line-clamp-1">
+                    {list.description}
                   </p>
-                </CardContent>
-              </Card>
+                )}
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {list.book_count} {list.book_count === 1 ? "book" : "books"}
+                </p>
+              </div>
             </Link>
           ))}
         </div>

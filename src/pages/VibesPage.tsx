@@ -89,7 +89,7 @@ export function VibesPage() {
           >
             &larr; All vibes
           </Link>
-          <h1 className="mt-1 text-2xl font-bold">
+          <h1 className="mt-1 font-serif text-2xl font-bold">
             {formatCanonicalVibe(selectedVibe)}
           </h1>
           {description && (
@@ -145,7 +145,7 @@ export function VibesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">Vibes</h1>
+        <h1 className="font-serif text-2xl font-bold">Vibes</h1>
         <p className="text-sm text-muted-foreground">
           Browse books by mood and reading experience
         </p>

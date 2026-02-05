@@ -54,7 +54,7 @@ export function SeasonalBooks() {
 
     let queryBuilder = supabase
       .from("books")
-      .select("id, title, author, status, rating, timing_raw", {
+      .select("id, title, author, status, rating, timing_raw, cover_image_url", {
         count: "exact",
       })
       .eq("timing_month", month)
@@ -97,7 +97,7 @@ export function SeasonalBooks() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">Seasonal Books</h1>
+        <h1 className="font-serif text-2xl font-bold">Seasonal Books</h1>
         <p className="text-sm text-muted-foreground">
           Browse books by when to read them
         </p>

@@ -201,7 +201,7 @@ export function AddBook() {
           )}
           <div className="min-w-0 flex-1 space-y-3">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">
+              <h1 className="font-serif text-3xl font-bold tracking-tight">
                 {selected.title}
               </h1>
               <p className="mt-1 text-muted-foreground">{author}</p>
@@ -298,7 +298,7 @@ export function AddBook() {
   // --- Search view ---
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">Add Book</h1>
+      <h1 className="font-serif text-2xl font-bold">Add Book</h1>
 
       <div className="space-y-4">
         <Input
