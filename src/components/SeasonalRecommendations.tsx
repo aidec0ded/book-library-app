@@ -19,8 +19,46 @@ function formatRating(rating: number | null): string {
   return "\u2605 " + rating.toFixed(1);
 }
 
-export function SeasonalRecommendations() {
+function SeasonalCard({ book }: { book: BookSummary }) {
   const navigate = useNavigate();
+  const [imgBroken, setImgBroken] = useState(false);
+
+  return (
+    <button
+      onClick={() => navigate(`/books/${book.id}`)}
+      className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+    >
+      {book.cover_image_url && !imgBroken ? (
+        <img
+          src={book.cover_image_url}
+          alt=""
+          className="h-16 w-11 shrink-0 rounded object-cover"
+          loading="lazy"
+          onError={() => setImgBroken(true)}
+          onLoad={(e) => {
+            if (e.currentTarget.naturalWidth === 0) setImgBroken(true);
+          }}
+        />
+      ) : (
+        <div className="flex h-16 w-11 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground" />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-serif font-medium">{book.title}</div>
+        <div className="truncate text-sm text-muted-foreground">
+          {book.author}
+        </div>
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          {book.rating !== null && book.rating > 0 && (
+            <span>{formatRating(book.rating)}</span>
+          )}
+          {book.timing_raw && <span>{book.timing_raw}</span>}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+export function SeasonalRecommendations() {
   const { month, position } = getCurrentTiming();
   const [allMatches, setAllMatches] = useState<BookSummary[]>([]);
   const [picks, setPicks] = useState<BookSummary[]>([]);
@@ -83,34 +121,7 @@ export function SeasonalRecommendations() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {picks.map((book) => (
-          <button
-            key={book.id}
-            onClick={() => navigate(`/books/${book.id}`)}
-            className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
-          >
-            {book.cover_image_url ? (
-              <img
-                src={book.cover_image_url}
-                alt=""
-                className="h-16 w-11 shrink-0 rounded object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <div className="flex h-16 w-11 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-serif font-medium">{book.title}</div>
-              <div className="truncate text-sm text-muted-foreground">
-                {book.author}
-              </div>
-              <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                {book.rating !== null && book.rating > 0 && (
-                  <span>{formatRating(book.rating)}</span>
-                )}
-                {book.timing_raw && <span>{book.timing_raw}</span>}
-              </div>
-            </div>
-          </button>
+          <SeasonalCard key={book.id} book={book} />
         ))}
       </div>
 

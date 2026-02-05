@@ -20,6 +20,31 @@ type ListItemWithBook = ListItem & { book: Book };
 
 type EditingField = "name" | "description";
 
+function CoverThumb({ url }: { url: string | null }) {
+  const [broken, setBroken] = useState(false);
+
+  if (url && !broken) {
+    return (
+      <img
+        src={url}
+        alt=""
+        className="h-10 w-7 shrink-0 rounded object-cover"
+        loading="lazy"
+        onError={() => setBroken(true)}
+        onLoad={(e) => {
+          if (e.currentTarget.naturalWidth === 0) setBroken(true);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-10 w-7 shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+      ?
+    </div>
+  );
+}
+
 export function ListDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -343,18 +368,7 @@ export function ListDetail() {
               <span className="w-6 shrink-0 text-center text-sm font-medium text-muted-foreground">
                 {item.position}
               </span>
-              {item.book.cover_image_url ? (
-                <img
-                  src={item.book.cover_image_url}
-                  alt=""
-                  className="h-10 w-7 shrink-0 rounded object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-10 w-7 shrink-0 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                  ?
-                </div>
-              )}
+              <CoverThumb url={item.book.cover_image_url} />
               <div className="min-w-0 flex-1">
                 <Link
                   to={`/books/${item.book.id}`}

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { formatCanonicalVibe } from "@/lib/canonical-vibes";
@@ -29,18 +30,23 @@ export function BookRow({
   vibes?: string[];
 }) {
   const navigate = useNavigate();
+  const [imgBroken, setImgBroken] = useState(false);
 
   return (
     <button
       onClick={() => navigate(`/books/${book.id}`)}
       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
     >
-      {book.cover_image_url ? (
+      {book.cover_image_url && !imgBroken ? (
         <img
           src={book.cover_image_url}
           alt=""
           className="h-12 w-8 shrink-0 rounded object-cover"
           loading="lazy"
+          onError={() => setImgBroken(true)}
+          onLoad={(e) => {
+            if (e.currentTarget.naturalWidth === 0) setImgBroken(true);
+          }}
         />
       ) : (
         <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground" />

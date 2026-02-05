@@ -3,6 +3,30 @@ import { X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Book } from "@/lib/types";
 
+function ModalCoverThumb({ url }: { url: string | null }) {
+  const [broken, setBroken] = useState(false);
+
+  if (url && !broken) {
+    return (
+      <img
+        src={url}
+        alt=""
+        className="h-10 w-7 rounded object-cover"
+        onError={() => setBroken(true)}
+        onLoad={(e) => {
+          if (e.currentTarget.naturalWidth === 0) setBroken(true);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-10 w-7 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+      ?
+    </div>
+  );
+}
+
 interface BookSearchModalProps {
   onSelect: (book: Book) => void;
   onClose: () => void;
@@ -99,17 +123,7 @@ export function BookSearchModal({ onSelect, onClose }: BookSearchModalProps) {
               onClick={() => onSelect(book)}
               className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-muted"
             >
-              {book.cover_image_url ? (
-                <img
-                  src={book.cover_image_url}
-                  alt=""
-                  className="h-10 w-7 rounded object-cover"
-                />
-              ) : (
-                <div className="flex h-10 w-7 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                  ?
-                </div>
-              )}
+              <ModalCoverThumb url={book.cover_image_url} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{book.title}</div>
                 <div className="truncate text-xs text-muted-foreground">

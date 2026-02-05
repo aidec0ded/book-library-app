@@ -53,6 +53,7 @@ export function AddBook() {
   const [selected, setSelected] = useState<ISBNdbBook | null>(null);
   const [view, setView] = useState<"search" | "preview">("search");
   const [status, setStatus] = useState("unread");
+  const [previewImgBroken, setPreviewImgBroken] = useState(false);
   const [duplicate, setDuplicate] = useState<{
     id: string;
     title: string;
@@ -96,6 +97,7 @@ export function AddBook() {
     setStatus("unread");
     setAddError(null);
     setDuplicate(null);
+    setPreviewImgBroken(false);
 
     // Check for duplicate by ISBN
     const isbn = book.isbn13 || book.isbn;
@@ -189,13 +191,17 @@ export function AddBook() {
 
         {/* Hero area */}
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-          {selected.image && (
+          {selected.image && !previewImgBroken && (
             <div className="shrink-0 self-center sm:self-start">
               <img
                 src={selected.image}
                 alt={`Cover of ${selected.title}`}
                 className="h-auto w-48 rounded-lg shadow-md sm:w-40"
                 loading="lazy"
+                onError={() => setPreviewImgBroken(true)}
+                onLoad={(e) => {
+                  if (e.currentTarget.naturalWidth === 0) setPreviewImgBroken(true);
+                }}
               />
             </div>
           )}

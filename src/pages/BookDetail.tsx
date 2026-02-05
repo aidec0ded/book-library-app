@@ -149,6 +149,7 @@ export function BookDetail() {
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
+  const [coverBroken, setCoverBroken] = useState(false);
 
   useEffect(() => {
     async function fetch() {
@@ -234,13 +235,17 @@ export function BookDetail() {
 
       {/* Hero area */}
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-        {book.cover_image_url && (
+        {book.cover_image_url && !coverBroken && (
           <div className="shrink-0 self-center sm:self-start">
             <img
               src={book.cover_image_url}
               alt={`Cover of ${book.title}`}
               className="h-auto w-48 rounded-lg shadow-md sm:w-40"
               loading="lazy"
+              onError={() => setCoverBroken(true)}
+              onLoad={(e) => {
+                if (e.currentTarget.naturalWidth === 0) setCoverBroken(true);
+              }}
             />
           </div>
         )}
