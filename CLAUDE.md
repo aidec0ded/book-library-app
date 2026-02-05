@@ -54,6 +54,18 @@ Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run 
 
 SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Editor, not via CLI.
 
+## Git Workflow
+
+Always follow this sequence when making code changes:
+
+1. **Branch** — Create a new branch from `main` before writing any code (`git checkout -b descriptive-branch-name`)
+2. **Code** — Make the changes
+3. **Verify** — Run `npm run build` to confirm no type errors or build failures
+4. **Commit** — Stage and commit with a clear message
+5. **Push** — Push the branch to origin (`git push -u origin branch-name`)
+
+Never commit directly to `main`. Each task or bug fix gets its own branch.
+
 ## Tech Stack
 
 - React + Vite + TypeScript (frontend)
