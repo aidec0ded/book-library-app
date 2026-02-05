@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -138,15 +138,23 @@ export function BookList() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query);
-      setPage(1);
     }, 300);
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Reset page when filters change
+  // Reset page when debounced query actually changes (not on mount).
+  // Uses a ref comparison instead of a mount guard so it works correctly
+  // with React 18 StrictMode double-mounting.
+  const prevDebouncedQuery = useRef(debouncedQuery);
   useEffect(() => {
-    setPage(1);
-  }, [status, rating, genre, month, selectedVibes, showAll]);
+    if (prevDebouncedQuery.current !== debouncedQuery) {
+      prevDebouncedQuery.current = debouncedQuery;
+      setPage(1);
+    }
+  }, [debouncedQuery]);
+
+  // Filter changes reset page via their event handlers below (not effects),
+  // so navigating back preserves the page from the URL.
 
   // Sync state to URL params
   useEffect(() => {
@@ -279,6 +287,7 @@ export function BookList() {
     setSelectedVibes((prev) =>
       prev.includes(tag) ? prev.filter((v) => v !== tag) : [...prev, tag],
     );
+    setPage(1);
   }
 
   function clearFilters() {
@@ -288,6 +297,7 @@ export function BookList() {
     setMonth("any");
     setSelectedVibes([]);
     setShowAll(false);
+    setPage(1);
   }
 
   const filterState = {
@@ -382,7 +392,7 @@ export function BookList() {
                 <label className="text-xs font-medium text-muted-foreground">
                   Status
                 </label>
-                <Select value={status} onValueChange={setStatus}>
+                <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
                   <SelectTrigger size="sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -401,7 +411,7 @@ export function BookList() {
                 <label className="text-xs font-medium text-muted-foreground">
                   Rating
                 </label>
-                <Select value={rating} onValueChange={setRating}>
+                <Select value={rating} onValueChange={(v) => { setRating(v); setPage(1); }}>
                   <SelectTrigger size="sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -420,7 +430,7 @@ export function BookList() {
                 <label className="text-xs font-medium text-muted-foreground">
                   Genre
                 </label>
-                <Select value={genre} onValueChange={setGenre}>
+                <Select value={genre} onValueChange={(v) => { setGenre(v); setPage(1); }}>
                   <SelectTrigger size="sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -440,7 +450,7 @@ export function BookList() {
                 <label className="text-xs font-medium text-muted-foreground">
                   Month
                 </label>
-                <Select value={month} onValueChange={setMonth}>
+                <Select value={month} onValueChange={(v) => { setMonth(v); setPage(1); }}>
                   <SelectTrigger size="sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -461,7 +471,7 @@ export function BookList() {
               <input
                 type="checkbox"
                 checked={showAll}
-                onChange={(e) => setShowAll(e.target.checked)}
+                onChange={(e) => { setShowAll(e.target.checked); setPage(1); }}
                 className="rounded"
               />
               <span className="text-muted-foreground">
