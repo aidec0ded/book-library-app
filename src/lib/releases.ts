@@ -3,21 +3,37 @@ import type { NewRelease } from "@/lib/types";
 
 const PAGE_SIZE = 24;
 
+export type ReleaseSort = "score" | "title";
+
 export async function fetchReleasesByMonth(
   year: number,
   month: number,
-  page: number
+  page: number,
+  sort: ReleaseSort = "score",
+  showDismissed: boolean = false,
 ): Promise<{ releases: NewRelease[]; total: number }> {
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  const { data, count, error } = await supabase
+  let query = supabase
     .from("new_releases")
     .select("*", { count: "exact" })
     .eq("pub_year", year)
-    .eq("pub_month", month)
-    .order("title")
-    .range(from, to);
+    .eq("pub_month", month);
+
+  if (!showDismissed) {
+    query = query.eq("dismissed", false);
+  }
+
+  if (sort === "score") {
+    query = query
+      .order("ai_score", { ascending: false, nullsFirst: false })
+      .order("title");
+  } else {
+    query = query.order("title");
+  }
+
+  const { data, count, error } = await query.range(from, to);
 
   if (error) throw error;
 
@@ -25,6 +41,24 @@ export async function fetchReleasesByMonth(
     releases: (data ?? []) as NewRelease[],
     total: count ?? 0,
   };
+}
+
+export async function dismissRelease(isbn13: string): Promise<void> {
+  const { error } = await supabase
+    .from("new_releases")
+    .update({ dismissed: true })
+    .eq("isbn13", isbn13);
+
+  if (error) throw error;
+}
+
+export async function undismissRelease(isbn13: string): Promise<void> {
+  const { error } = await supabase
+    .from("new_releases")
+    .update({ dismissed: false })
+    .eq("isbn13", isbn13);
+
+  if (error) throw error;
 }
 
 export async function fetchAvailableMonths(): Promise<

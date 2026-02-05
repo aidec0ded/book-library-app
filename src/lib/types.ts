@@ -145,4 +145,10 @@ export interface NewRelease {
   source: string;
   ingested_at: string;
   updated_at: string;
+  general_signal_score: number | null;
+  personal_score: number | null;
+  ai_score: number | null;
+  ai_rationale: string | null;
+  scored_at: string | null;
+  dismissed: boolean;
 }

@@ -4,7 +4,10 @@ import {
   fetchReleasesByMonth,
   fetchAvailableMonths,
   fetchLibraryIsbns,
+  dismissRelease,
+  undismissRelease,
 } from "@/lib/releases";
+import type { ReleaseSort } from "@/lib/releases";
 import { BookCover } from "@/components/BookCover";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +29,13 @@ function formatMonthLabel(year: number, month: number): string {
   return `${MONTH_NAMES[month - 1]} ${year}`;
 }
 
+function scoreBadgeColor(score: number): string {
+  if (score >= 8) return "bg-amber-100 text-amber-800 border-amber-300";
+  if (score >= 6) return "bg-emerald-100 text-emerald-800 border-emerald-300";
+  if (score >= 4) return "bg-neutral-100 text-neutral-600 border-neutral-300";
+  return "bg-neutral-50 text-neutral-400 border-neutral-200";
+}
+
 export function ReleasesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -40,6 +50,8 @@ export function ReleasesPage() {
   const [year, setYear] = useState(initialYear);
   const [month, setMonth] = useState(initialMonth);
   const [page, setPage] = useState(initialPage);
+  const [sort, setSort] = useState<ReleaseSort>("score");
+  const [showDismissed, setShowDismissed] = useState(false);
 
   const [releases, setReleases] = useState<NewRelease[]>([]);
   const [total, setTotal] = useState(0);
@@ -74,18 +86,18 @@ export function ReleasesPage() {
     setSearchParams(params, { replace: true });
   }, [year, month, page, defaultYear, defaultMonth, setSearchParams]);
 
-  // Fetch releases when year/month/page changes
+  // Fetch releases when year/month/page/sort/showDismissed changes
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await fetchReleasesByMonth(year, month, page);
+      const result = await fetchReleasesByMonth(year, month, page, sort, showDismissed);
       setReleases(result.releases);
       setTotal(result.total);
     } catch (err) {
       console.error("Error fetching releases:", err);
     }
     setLoading(false);
-  }, [year, month, page]);
+  }, [year, month, page, sort, showDismissed]);
 
   useEffect(() => {
     void fetchData();
@@ -100,8 +112,44 @@ export function ReleasesPage() {
     setExpandedId(null);
   }
 
+  function handleSortChange(newSort: ReleaseSort) {
+    setSort(newSort);
+    setPage(1);
+    setExpandedId(null);
+  }
+
   function toggleExpanded(id: string) {
     setExpandedId((prev) => (prev === id ? null : id));
+  }
+
+  async function handleDismiss(isbn13: string) {
+    // Optimistic update
+    setReleases((prev) => prev.map((r) =>
+      r.isbn13 === isbn13 ? { ...r, dismissed: true } : r
+    ));
+    if (!showDismissed) {
+      setReleases((prev) => prev.filter((r) => r.isbn13 !== isbn13));
+      setTotal((prev) => prev - 1);
+      setExpandedId(null);
+    }
+    try {
+      await dismissRelease(isbn13);
+    } catch (err) {
+      console.error("Error dismissing release:", err);
+      void fetchData();
+    }
+  }
+
+  async function handleUndismiss(isbn13: string) {
+    setReleases((prev) => prev.map((r) =>
+      r.isbn13 === isbn13 ? { ...r, dismissed: false } : r
+    ));
+    try {
+      await undismissRelease(isbn13);
+    } catch (err) {
+      console.error("Error undismissing release:", err);
+      void fetchData();
+    }
   }
 
   const totalPages = Math.ceil(total / 24);
@@ -109,6 +157,8 @@ export function ReleasesPage() {
   const expandedRelease = expandedId
     ? releases.find((r) => r.id === expandedId) ?? null
     : null;
+  const scoredCount = releases.filter((r) => r.ai_score != null).length;
+  const anyScored = scoredCount > 0 || releases.length === 0;
 
   // No data at all
   if (initialized && availableMonths.length === 0) {
@@ -130,28 +180,76 @@ export function ReleasesPage() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="font-serif text-2xl font-bold">New Releases</h1>
-        {availableMonths.length > 0 && (
-          <Select value={selectedMonthKey} onValueChange={handleMonthChange}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {availableMonths.map((m) => (
-                <SelectItem key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
-                  {formatMonthLabel(m.year, m.month)} ({m.count.toLocaleString()})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Sort toggle */}
+          <div className="flex rounded-md border">
+            <button
+              onClick={() => handleSortChange("score")}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                sort === "score"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted"
+              }`}
+            >
+              Recommended
+            </button>
+            <button
+              onClick={() => handleSortChange("title")}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                sort === "title"
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted"
+              }`}
+            >
+              All
+            </button>
+          </div>
+
+          {availableMonths.length > 0 && (
+            <Select value={selectedMonthKey} onValueChange={handleMonthChange}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {availableMonths.map((m) => (
+                  <SelectItem key={`${m.year}-${m.month}`} value={`${m.year}-${m.month}`}>
+                    {formatMonthLabel(m.year, m.month)} ({m.count.toLocaleString()})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
-      {/* Count */}
-      <p className="text-sm text-muted-foreground">
-        {loading
-          ? "Loading..."
-          : `${total.toLocaleString()} release${total !== 1 ? "s" : ""} in ${formatMonthLabel(year, month)}`}
-      </p>
+      {/* Count + scoring status */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {loading
+            ? "Loading..."
+            : `${total.toLocaleString()} release${total !== 1 ? "s" : ""} in ${formatMonthLabel(year, month)}`}
+        </p>
+        <div className="flex items-center gap-3">
+          {!loading && !anyScored && (
+            <p className="text-xs text-muted-foreground">
+              Not scored yet. Run: <code className="rounded bg-secondary px-1 py-0.5">npx tsx scripts/score-releases.ts --month {year}-{String(month).padStart(2, "0")}</code>
+            </p>
+          )}
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={showDismissed}
+              onChange={(e) => {
+                setShowDismissed(e.target.checked);
+                setPage(1);
+                setExpandedId(null);
+              }}
+              className="rounded"
+            />
+            Show dismissed
+          </label>
+        </div>
+      </div>
 
       {/* Grid */}
       {!loading && releases.length > 0 && (
@@ -167,8 +265,17 @@ export function ReleasesPage() {
                 onClick={() => toggleExpanded(release.id)}
                 className={`group relative text-left transition-opacity ${
                   expandedId && expandedId !== release.id ? "opacity-60" : ""
-                }`}
+                } ${release.dismissed ? "opacity-40" : ""}`}
               >
+                {/* Score badge */}
+                {release.ai_score != null && (
+                  <div
+                    className={`absolute top-1 left-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold shadow-sm ${scoreBadgeColor(release.ai_score)}`}
+                  >
+                    {Math.round(release.ai_score)}
+                  </div>
+                )}
+
                 {/* In Library badge */}
                 {inLibrary && (
                   <Badge
@@ -258,6 +365,30 @@ export function ReleasesPage() {
                   </p>
                 )}
 
+                {/* AI rationale */}
+                {expandedRelease.ai_rationale && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-sm text-amber-900">
+                      <span className="font-medium">Why this book: </span>
+                      {expandedRelease.ai_rationale}
+                    </p>
+                    {(expandedRelease.general_signal_score != null || expandedRelease.personal_score != null) && (
+                      <p className="mt-1.5 text-xs text-amber-700">
+                        {[
+                          expandedRelease.general_signal_score != null
+                            ? `Signal: ${expandedRelease.general_signal_score}/10`
+                            : null,
+                          expandedRelease.personal_score != null
+                            ? `Personal: ${expandedRelease.personal_score}/10`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" \u00b7 ")}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {expandedRelease.subjects.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {expandedRelease.subjects.map((subject) => (
@@ -268,11 +399,29 @@ export function ReleasesPage() {
                   </div>
                 )}
 
-                {(libraryIsbns.has(expandedRelease.isbn13) ||
-                  (expandedRelease.isbn10 != null &&
-                    libraryIsbns.has(expandedRelease.isbn10))) && (
-                  <Badge variant="secondary">In Library</Badge>
-                )}
+                <div className="flex items-center gap-3">
+                  {(libraryIsbns.has(expandedRelease.isbn13) ||
+                    (expandedRelease.isbn10 != null &&
+                      libraryIsbns.has(expandedRelease.isbn10))) && (
+                    <Badge variant="secondary">In Library</Badge>
+                  )}
+
+                  {expandedRelease.dismissed ? (
+                    <button
+                      onClick={() => handleUndismiss(expandedRelease.isbn13)}
+                      className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Undo dismiss
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleDismiss(expandedRelease.isbn13)}
+                      className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Not interested
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>

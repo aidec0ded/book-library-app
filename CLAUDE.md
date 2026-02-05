@@ -43,6 +43,11 @@ npx tsx scripts/ingest-releases.ts --months 6  # adjust window size (default 3)
 npx tsx scripts/ingest-releases.ts --language en  # English-language books only
 npx tsx scripts/ingest-releases.ts --binding hardcover  # hardcover binding only
 npx tsx scripts/ingest-releases.ts --fiction   # fiction genres only (subject-based filter)
+npx tsx scripts/score-releases.ts              # AI score releases for current month
+npx tsx scripts/score-releases.ts --dry-run    # preview prompt, no API calls or DB writes
+npx tsx scripts/score-releases.ts --limit 10   # process only first 10 releases
+npx tsx scripts/score-releases.ts --month 2026-02  # score a specific month
+npx tsx scripts/score-releases.ts --force      # re-score already-scored releases
 ```
 
 Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
@@ -100,9 +105,10 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/components/BookCover.tsx` — Cover image with styled placeholder fallback (sm/lg sizes)
 - `src/components/DonutChart.tsx` — Pure SVG donut chart for library stats
 - `server/greeting-handler.ts` — AI greeting generation via Claude API with 1hr cache
-- `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, cover grid, expanded detail, pagination
-- `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference)
-- `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, --dry-run/--limit/--month/--months flags)
+- `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, score badges, sort toggle, rationale display, dismiss, pagination
+- `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference, dismiss/undismiss)
+- `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
+- `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 4.5, --dry-run/--limit/--month/--force flags)
 
 **MVP phases (complete):**
 1. ~~Book list UI with search~~ (done)
@@ -244,10 +250,12 @@ Extends the personalization loop beyond books already in the library.
 - `/releases` browse page with month selector, cover grid, expanded detail panel, "In Library" badges, pagination
 - --dry-run/--limit/--month/--months flags; 1.1s rate limiting; exponential backoff on 429/5xx
 
-**Phase 17: Personalized New Release Filtering**
-- AI uses reader profile to surface the books from each week's/month's releases most likely to resonate
-- Curated "To Buy" list with explanations for why each book was recommended
-- Replaces the manual workflow of checking Kirkus, Goodreads, BookBrowse, etc.
+~~**Phase 17: Personalized New Release Filtering**~~ (done)
+- `scripts/score-releases.ts` scores releases on general signal (1-10) and personal match (1-10), computes weighted `ai_score` (60% personal, 40% general)
+- Works with or without reader profile (general signal only if no profile)
+- Scoring columns on `new_releases`: `general_signal_score`, `personal_score`, `ai_score`, `ai_rationale`, `scored_at`, `dismissed` (migration 013)
+- `/releases` browse page: score badges on grid cards (color-tiered), "Recommended"/"All" sort toggle, AI rationale in expanded detail, "Not interested" dismiss
+- `ingest-releases.ts` now validates parsed `pub_month`/`pub_year` against target month to filter stray-month books
 
 **Phase 18: Wishlist & Want-to-Read**
 - "Want to read" status for books not yet owned
@@ -336,6 +344,12 @@ Nine tables in Supabase:
 - `pub_year`, `pub_month` — parsed from `date_published` for efficient month queries
 - `cover_image_url`, `synopsis`, `binding`, `page_count` — display metadata
 - `source` — data source identifier (default `isbndb`), for future multi-source support
+- `general_signal_score` — AI-scored general notability (1-10, null = unscored)
+- `personal_score` — AI-scored personal relevance (1-10, null = unscored or no profile)
+- `ai_score` — combined score (weighted: 60% personal + 40% general), used for default sort
+- `ai_rationale` — 1-sentence explanation of score
+- `scored_at` — timestamp of last scoring (null = never scored)
+- `dismissed` — boolean, user can dismiss uninteresting releases (default false)
 - No FK to `books` — cross-referenced by ISBN at query time for "In Library" badges
 
 ## Data Import Quirks

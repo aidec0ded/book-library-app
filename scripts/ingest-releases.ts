@@ -201,7 +201,7 @@ function isFirstEdition(edition: string): boolean {
   return /\b(1st|first)\b/.test(lower);
 }
 
-function passesFilters(book: ISBNdbBook): boolean {
+function passesFilters(book: ISBNdbBook, targetYear: number, targetMonth: number): boolean {
   if (filterLanguage) {
     const lang = book.language?.trim().toLowerCase();
     if (!lang) return false;
@@ -219,6 +219,12 @@ function passesFilters(book: ISBNdbBook): boolean {
   }
   if (filterFiction) {
     if (!book.subjects || !book.subjects.some((s) => FICTION_SUBJECT_RE.test(s))) return false;
+  }
+  // Reject books whose parsed pub date doesn't match the target search month
+  if (book.date_published) {
+    const { year: parsedYear, month: parsedMonth } = parsePubDate(book.date_published);
+    if (parsedMonth != null && parsedMonth !== targetMonth) return false;
+    if (parsedYear != null && parsedYear !== targetYear) return false;
   }
   return true;
 }
@@ -315,7 +321,7 @@ async function main() {
         }
 
         for (const book of response.books) {
-          if (!passesFilters(book)) {
+          if (!passesFilters(book, year, month)) {
             totalFiltered++;
             continue;
           }
@@ -350,7 +356,7 @@ async function main() {
         }
 
         for (const book of response.books) {
-          if (!passesFilters(book)) {
+          if (!passesFilters(book, year, month)) {
             totalFiltered++;
             continue;
           }
