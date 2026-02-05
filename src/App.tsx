@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import { Layout } from "@/components/Layout";
+import { Home } from "@/pages/Home";
 import { BookList } from "@/pages/BookList";
 import { BookDetail } from "@/pages/BookDetail";
 import { SeasonalBooks } from "@/pages/SeasonalBooks";
@@ -14,7 +15,8 @@ export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<BookList />} />
+        <Route index element={<Home />} />
+        <Route path="library" element={<BookList />} />
         <Route path="seasonal" element={<SeasonalBooks />} />
         <Route path="vibes" element={<VibesPage />} />
         <Route path="lists" element={<ListsPage />} />

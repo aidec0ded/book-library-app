@@ -201,7 +201,7 @@ export function BookDetail() {
     return (
       <div className="space-y-2">
         <div className="text-destructive">{error ?? "Book not found."}</div>
-        <Link to="/" className="text-sm underline">
+        <Link to="/library" className="text-sm underline">
           Back to list
         </Link>
       </div>

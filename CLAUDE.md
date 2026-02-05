@@ -55,7 +55,7 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/lists` (ListsPage), `/lists/:id` (ListDetail), `/profile` (Profile)
+- `src/App.tsx` — React Router: `/` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/lists` (ListsPage), `/lists/:id` (ListDetail), `/profile` (Profile)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes) + predicted rating display
@@ -87,6 +87,11 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/pages/ListsPage.tsx` — Lists index with create form and grid of list cards
 - `src/pages/ListDetail.tsx` — List detail with ordered books, reorder controls, add/remove, inline editing
 - `src/lib/lists.ts` — List CRUD operations (create, update, delete, add/remove/reorder items)
+- `src/pages/Home.tsx` — Personalized home page with greeting, currently reading, suggestions, recent additions, library stats
+- `src/lib/home.ts` — Home page data queries (currently reading, AI suggestions, recent additions, library stats, greeting)
+- `src/components/BookCover.tsx` — Cover image with styled placeholder fallback (sm/lg sizes)
+- `src/components/DonutChart.tsx` — Pure SVG donut chart for library stats
+- `server/greeting-handler.ts` — AI greeting generation via Claude API with 1hr cache
 
 **MVP phases (complete):**
 1. ~~Book list UI with search~~ (done)
@@ -212,11 +217,11 @@ With the reflection loop feeding signal, the AI can start producing personalized
 - AI can create/manage lists proactively based on reading patterns, or on request via chat
 - Books resolved by exact title match against library; list context included in system prompt
 
-**Phase 15: Home Page Redesign**
-- Transform `/` from a filtered book list into a personalized library landing page
-- Currently-reading book, seasonal picks, recently added, AI-curated suggestions
-- Contextual greeting from the AI grounded in real conversational context (e.g., "How's Project Hail Mary going? You were really moved after your last session.")
-- Current book list view moves to `/library` or `/browse`
+~~**Phase 15: Home Page Redesign**~~ (done)
+- `/` is now a personalized dashboard with AI greeting, currently reading, seasonal suggestions, recent additions, library stats
+- Book list moved to `/library`; warm typography (Libre Baskerville) and gold/brown color palette applied globally
+- AI greeting via `GET /api/greeting` (1hr cache, Claude-generated from reader profile + recent conversation)
+- BookCover and DonutChart reusable components
 
 ### Round 3: Discovery & New Releases
 

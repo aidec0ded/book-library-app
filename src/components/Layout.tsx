@@ -10,6 +10,12 @@ export function Layout() {
           </Link>
           <nav className="flex gap-4">
             <Link
+              to="/library"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Library
+            </Link>
+            <Link
               to="/seasonal"
               className="text-sm text-muted-foreground hover:text-foreground"
             >

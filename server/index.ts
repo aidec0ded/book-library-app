@@ -7,6 +7,7 @@ import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
 import { executeListCommand, type ListCommand } from "./list-handler.js";
 import { buildListIndex } from "./list-index.js";
+import { getGreeting } from "./greeting-handler.js";
 
 config();
 
@@ -79,7 +80,7 @@ function writeSSE(
 
 function setCorsHeaders(res: http.ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -351,6 +352,21 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/chat") {
     void handleChat(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/greeting") {
+    void (async () => {
+      try {
+        const greeting = await getGreeting(supabase, anthropic);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ greeting }));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: message }));
+      }
+    })();
     return;
   }
 
