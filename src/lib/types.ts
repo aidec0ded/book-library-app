@@ -124,3 +124,25 @@ export interface ListItem {
 export interface ListWithCount extends List {
   book_count: number;
 }
+
+export interface NewRelease {
+  id: string;
+  isbn13: string;
+  isbn10: string | null;
+  title: string;
+  authors: string[];
+  publisher: string | null;
+  date_published: string | null;
+  pub_year: number | null;
+  pub_month: number | null;
+  cover_image_url: string | null;
+  synopsis: string | null;
+  subjects: string[];
+  binding: string | null;
+  page_count: number | null;
+  language: string | null;
+  edition: string | null;
+  source: string;
+  ingested_at: string;
+  updated_at: string;
+}

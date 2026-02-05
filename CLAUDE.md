@@ -35,6 +35,14 @@ npx tsx scripts/predict-ratings.ts             # generate AI predicted ratings f
 npx tsx scripts/predict-ratings.ts --dry-run   # preview prompt, no API calls or DB writes
 npx tsx scripts/predict-ratings.ts --limit 20  # process only first 20 books
 npx tsx scripts/predict-ratings.ts --force     # re-predict books that already have predictions
+npx tsx scripts/ingest-releases.ts             # ingest new releases from ISBNdb (3-month window)
+npx tsx scripts/ingest-releases.ts --dry-run   # preview API calls and counts, no DB writes
+npx tsx scripts/ingest-releases.ts --limit 50  # cap total releases upserted
+npx tsx scripts/ingest-releases.ts --month 2026-03  # query a single specific month
+npx tsx scripts/ingest-releases.ts --months 6  # adjust window size (default 3)
+npx tsx scripts/ingest-releases.ts --language en  # English-language books only
+npx tsx scripts/ingest-releases.ts --binding hardcover  # hardcover binding only
+npx tsx scripts/ingest-releases.ts --fiction   # fiction genres only (subject-based filter)
 ```
 
 Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
@@ -55,7 +63,7 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/lists` (ListsPage), `/lists/:id` (ListDetail), `/profile` (Profile)
+- `src/App.tsx` — React Router: `/` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/lists` (ListsPage), `/lists/:id` (ListDetail), `/releases` (ReleasesPage), `/profile` (Profile)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes) + predicted rating display
@@ -92,6 +100,9 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/components/BookCover.tsx` — Cover image with styled placeholder fallback (sm/lg sizes)
 - `src/components/DonutChart.tsx` — Pure SVG donut chart for library stats
 - `server/greeting-handler.ts` — AI greeting generation via Claude API with 1hr cache
+- `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, cover grid, expanded detail, pagination
+- `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference)
+- `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, --dry-run/--limit/--month/--months flags)
 
 **MVP phases (complete):**
 1. ~~Book list UI with search~~ (done)
@@ -227,10 +238,11 @@ With the reflection loop feeding signal, the AI can start producing personalized
 
 Extends the personalization loop beyond books already in the library.
 
-**Phase 16: New Releases Ingestion**
-- Data source for weekly/monthly book releases (ISBNdb, Google Books API, publishing calendars — evaluate options at implementation time)
-- Store release data separately from the user's library
-- Browse interface for new and upcoming books
+~~**Phase 16: New Releases Ingestion**~~ (done)
+- `new_releases` table stores books ingested from ISBNdb, separate from the user's library (migration 012)
+- `scripts/ingest-releases.ts` queries ISBNdb by publication month, pages through results, batch upserts into Supabase
+- `/releases` browse page with month selector, cover grid, expanded detail panel, "In Library" badges, pagination
+- --dry-run/--limit/--month/--months flags; 1.1s rate limiting; exponential backoff on 429/5xx
 
 **Phase 17: Personalized New Release Filtering**
 - AI uses reader profile to surface the books from each week's/month's releases most likely to resonate
@@ -272,7 +284,7 @@ Making the library joyful to visit — a space that reflects the reader's person
 
 ## Data Model
 
-Eight tables in Supabase:
+Nine tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -317,6 +329,14 @@ Eight tables in Supabase:
 - `book_id` — FK to books, CASCADE delete
 - `position` — dense 1-based integer, renormalized on every mutation
 - `UNIQUE (list_id, book_id)` — prevents duplicate books in a list
+
+**new_releases** — Books ingested from ISBNdb for discovery browsing. Key fields:
+- `isbn13` (UNIQUE) — enables upsert-safe re-runs
+- `authors`, `subjects` — `text[]` arrays preserving ISBNdb structure
+- `pub_year`, `pub_month` — parsed from `date_published` for efficient month queries
+- `cover_image_url`, `synopsis`, `binding`, `page_count` — display metadata
+- `source` — data source identifier (default `isbndb`), for future multi-source support
+- No FK to `books` — cross-referenced by ISBN at query time for "In Library" badges
 
 ## Data Import Quirks
 

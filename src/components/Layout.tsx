@@ -34,6 +34,12 @@ export function Layout() {
               Lists
             </Link>
             <Link
+              to="/releases"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              New Releases
+            </Link>
+            <Link
               to="/chat"
               className="text-sm text-muted-foreground hover:text-foreground"
             >

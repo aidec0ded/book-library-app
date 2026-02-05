@@ -10,6 +10,7 @@ import { Chat } from "@/pages/Chat";
 import { Profile } from "@/pages/Profile";
 import { ListsPage } from "@/pages/ListsPage";
 import { ListDetail } from "@/pages/ListDetail";
+import { ReleasesPage } from "@/pages/ReleasesPage";
 
 export function App() {
   return (
@@ -21,6 +22,7 @@ export function App() {
         <Route path="vibes" element={<VibesPage />} />
         <Route path="lists" element={<ListsPage />} />
         <Route path="lists/:id" element={<ListDetail />} />
+        <Route path="releases" element={<ReleasesPage />} />
         <Route path="chat" element={<Chat />} />
         <Route path="profile" element={<Profile />} />
         <Route path="add" element={<AddBook />} />
