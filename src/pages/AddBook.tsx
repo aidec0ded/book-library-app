@@ -269,6 +269,7 @@ export function AddBook() {
                 <SelectItem value="reading">Reading</SelectItem>
                 <SelectItem value="read">Read</SelectItem>
                 <SelectItem value="unfinished">Unfinished</SelectItem>
+                <SelectItem value="wishlist">Wishlist</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -6,8 +6,10 @@ import {
   fetchLibraryIsbns,
   dismissRelease,
   undismissRelease,
+  addReleaseToWishlist,
 } from "@/lib/releases";
 import type { ReleaseSort } from "@/lib/releases";
+import { ExternalLink } from "lucide-react";
 import { BookCover } from "@/components/BookCover";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -62,6 +64,7 @@ export function ReleasesPage() {
   >([]);
   const [libraryIsbns, setLibraryIsbns] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [addedIsbns, setAddedIsbns] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
 
   // Fetch available months + library ISBNs once
@@ -149,6 +152,16 @@ export function ReleasesPage() {
     } catch (err) {
       console.error("Error undismissing release:", err);
       void fetchData();
+    }
+  }
+
+  async function handleWishlist(release: NewRelease) {
+    try {
+      await addReleaseToWishlist(release);
+      setLibraryIsbns((prev) => new Set(prev).add(release.isbn13));
+      setAddedIsbns((prev) => new Set(prev).add(release.isbn13));
+    } catch (err) {
+      console.error("Error adding to wishlist:", err);
     }
   }
 
@@ -402,8 +415,22 @@ export function ReleasesPage() {
                 <div className="flex items-center gap-3">
                   {(libraryIsbns.has(expandedRelease.isbn13) ||
                     (expandedRelease.isbn10 != null &&
-                      libraryIsbns.has(expandedRelease.isbn10))) && (
+                      libraryIsbns.has(expandedRelease.isbn10))) ? (
                     <Badge variant="secondary">In Library</Badge>
+                  ) : addedIsbns.has(expandedRelease.isbn13) ? (
+                    <button
+                      disabled
+                      className="rounded-md border bg-muted px-3 py-1.5 text-xs text-muted-foreground"
+                    >
+                      Added
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleWishlist(expandedRelease)}
+                      className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      Want to Read
+                    </button>
                   )}
 
                   {expandedRelease.dismissed ? (
@@ -420,6 +447,18 @@ export function ReleasesPage() {
                     >
                       Not interested
                     </button>
+                  )}
+
+                  {expandedRelease.isbn13 && (
+                    <a
+                      href={`https://bookshop.org/books?keywords=${expandedRelease.isbn13}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Bookshop.org
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   )}
                 </div>
               </div>

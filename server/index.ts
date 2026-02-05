@@ -6,6 +6,10 @@ import { buildLibraryIndex } from "./library-index.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
 import { executeListCommand, type ListCommand } from "./list-handler.js";
+import {
+  executeWishlistCommand,
+  type WishlistCommand,
+} from "./wishlist-handler.js";
 import { buildListIndex } from "./list-index.js";
 import { getGreeting } from "./greeting-handler.js";
 
@@ -50,7 +54,12 @@ You can create and manage curated book lists using your manage_lists tool.
 Create lists when the reader asks, or suggest them when you notice patterns
 (e.g. "You've mentioned several cold, atmospheric novels — want me to
 make a list?"). Always confirm before creating proactively.
-Reference books by their exact title as shown in the library.`;
+Reference books by their exact title as shown in the library.
+
+You can manage the reader's wishlist using your manage_wishlist tool.
+When the reader mentions a book they want to read that isn't in their
+library, offer to add it to their wishlist. You can also view and
+remove books from the wishlist.`;
 
   if (readerProfile) {
     prompt += `\n\n## Reader Profile\n\n${readerProfile}`;
@@ -210,6 +219,32 @@ async function handleChat(
               required: ["action"],
             },
           },
+          {
+            name: "manage_wishlist",
+            description:
+              "Add books to or manage the reader's wishlist — books they want to read but don't own yet. Use when the reader expresses interest in a book not in their library, or asks about their wishlist.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                action: {
+                  type: "string",
+                  enum: ["add", "view", "remove"],
+                  description: "The action to perform",
+                },
+                title: {
+                  type: "string",
+                  description:
+                    "Book title (required for add and remove)",
+                },
+                author: {
+                  type: "string",
+                  description:
+                    "Book author (used with add for better records)",
+                },
+              },
+              required: ["action"],
+            },
+          },
         ],
         betas: ["context-management-2025-06-27"],
         max_tokens: 4096,
@@ -250,6 +285,11 @@ async function handleChat(
             result = await executeListCommand(
               supabase,
               block.input as ListCommand,
+            );
+          } else if (block.name === "manage_wishlist") {
+            result = await executeWishlistCommand(
+              supabase,
+              block.input as WishlistCommand,
             );
           } else {
             result = await executeMemoryCommand(

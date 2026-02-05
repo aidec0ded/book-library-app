@@ -88,6 +88,42 @@ export async function fetchAvailableMonths(): Promise<
   );
 }
 
+export async function addReleaseToWishlist(release: NewRelease): Promise<string> {
+  // Check for existing book by ISBN
+  const { data: existing } = await supabase
+    .from("books")
+    .select("id")
+    .eq("isbn", release.isbn13)
+    .maybeSingle();
+
+  if (existing) {
+    return existing.id as string;
+  }
+
+  const { data, error } = await supabase
+    .from("books")
+    .insert({
+      isbn: release.isbn13,
+      title: release.title,
+      author: release.authors.join(", ") || "Unknown",
+      cover_image_url: release.cover_image_url,
+      publisher: release.publisher,
+      publication_year: release.pub_year,
+      page_count: release.page_count,
+      format: release.binding,
+      summary: release.synopsis,
+      status: "wishlist",
+      is_favorite: false,
+      is_up_next: false,
+      isbndb_enriched_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id as string;
+}
+
 export async function fetchLibraryIsbns(): Promise<Set<string>> {
   const { data, error } = await supabase
     .from("books")

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
+import { ExternalLink } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +42,7 @@ function Section({
   );
 }
 
-const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished"] as const;
+const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
 
 const RATING_OPTIONS: { label: string; value: string }[] = [
   { label: "Unrated", value: "unrated" },
@@ -275,47 +276,53 @@ export function BookDetail() {
               </SelectContent>
             </Select>
 
-            {/* Favorite toggle */}
-            <Badge
-              variant={book.is_favorite ? "default" : "outline"}
-              className={`cursor-pointer select-none ${!book.is_favorite ? "opacity-50 hover:opacity-80" : ""}`}
-              onClick={() => handleFieldUpdate("is_favorite", !book.is_favorite)}
-            >
-              Favorite
-            </Badge>
+            {/* Favorite toggle (hidden for wishlist) */}
+            {book.status !== "wishlist" && (
+              <Badge
+                variant={book.is_favorite ? "default" : "outline"}
+                className={`cursor-pointer select-none ${!book.is_favorite ? "opacity-50 hover:opacity-80" : ""}`}
+                onClick={() => handleFieldUpdate("is_favorite", !book.is_favorite)}
+              >
+                Favorite
+              </Badge>
+            )}
 
-            {/* Up Next toggle */}
-            <Badge
-              variant={book.is_up_next ? "default" : "outline"}
-              className={`cursor-pointer select-none ${!book.is_up_next ? "opacity-50 hover:opacity-80" : ""}`}
-              onClick={() => handleFieldUpdate("is_up_next", !book.is_up_next)}
-            >
-              Up Next
-            </Badge>
-          </div>
-          {/* Rating dropdown */}
-          <div className="flex items-center gap-2">
-            <Select
-              value={ratingDisplayValue}
-              onValueChange={(val) =>
-                handleFieldUpdate("rating", val === "unrated" ? null : parseFloat(val))
-              }
-            >
-              <SelectTrigger size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RATING_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {saving === "rating" && (
-              <span className="text-xs text-muted-foreground">Saving...</span>
+            {/* Up Next toggle (hidden for wishlist) */}
+            {book.status !== "wishlist" && (
+              <Badge
+                variant={book.is_up_next ? "default" : "outline"}
+                className={`cursor-pointer select-none ${!book.is_up_next ? "opacity-50 hover:opacity-80" : ""}`}
+                onClick={() => handleFieldUpdate("is_up_next", !book.is_up_next)}
+              >
+                Up Next
+              </Badge>
             )}
           </div>
+          {/* Rating dropdown (hidden for wishlist) */}
+          {book.status !== "wishlist" && (
+            <div className="flex items-center gap-2">
+              <Select
+                value={ratingDisplayValue}
+                onValueChange={(val) =>
+                  handleFieldUpdate("rating", val === "unrated" ? null : parseFloat(val))
+                }
+              >
+                <SelectTrigger size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RATING_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {saving === "rating" && (
+                <span className="text-xs text-muted-foreground">Saving...</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -328,7 +335,7 @@ export function BookDetail() {
           <CardDescription>AI insights and personal notes</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {(book.status === "unread" || book.status === null) && (
+          {(book.status === "unread" || book.status === "wishlist" || book.status === null) && (
             <div>
               <h3 className="text-sm font-medium text-muted-foreground">Predicted Rating</h3>
               {book.predicted_rating != null ? (
@@ -384,6 +391,20 @@ export function BookDetail() {
             )}
 
             {book.isbn && <Section label="ISBN">{book.isbn}</Section>}
+
+            {book.isbn && (
+              <Section label="Buy">
+                <a
+                  href={`https://bookshop.org/books?keywords=${book.isbn}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                >
+                  Bookshop.org
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </Section>
+            )}
 
             {book.page_count && (
               <Section label="Pages">
