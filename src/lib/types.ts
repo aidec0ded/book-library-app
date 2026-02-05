@@ -125,6 +125,41 @@ export interface ListWithCount extends List {
   book_count: number;
 }
 
+export interface ShelfFilter {
+  status?: string;
+  genre?: string;
+  rating_min?: number;
+  timing_month?: number;
+  vibes?: string[];
+  is_favorite?: boolean;
+  is_up_next?: boolean;
+}
+
+export type ShelfType = "manual" | "auto";
+
+export interface Shelf {
+  id: string;
+  name: string;
+  description: string | null;
+  shelf_type: ShelfType;
+  filter: ShelfFilter | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShelfItem {
+  id: string;
+  shelf_id: string;
+  book_id: string;
+  position: number;
+  added_at: string;
+}
+
+export interface ShelfWithCover extends Shelf {
+  book_count: number;
+  cover_book: Pick<Book, "id" | "title" | "author" | "cover_image_url"> | null;
+}
+
 export interface NewRelease {
   id: string;
   isbn13: string;

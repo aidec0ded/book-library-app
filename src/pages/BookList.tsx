@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { BookRow } from "@/components/BookRow";
 import { SeasonalRecommendations } from "@/components/SeasonalRecommendations";
+import { ShelvesView } from "@/components/ShelvesView";
 import {
   fetchBookIdsByCanonicalVibes,
   fetchCanonicalVibesForBooks,
@@ -97,6 +98,7 @@ export function BookList() {
   const initialMonth = searchParams.get("month") ?? "any";
   const initialVibes = parseVibesParam(searchParams.get("vibes"));
   const initialShowAll = searchParams.get("all") === "1";
+  const view = searchParams.get("view") === "shelves" ? "shelves" : "list";
 
   const [query, setQuery] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
@@ -157,6 +159,7 @@ export function BookList() {
     if (month !== "any") params.month = month;
     if (selectedVibes.length > 0) params.vibes = selectedVibes.join(",");
     if (showAll) params.all = "1";
+    if (view === "shelves") params.view = "shelves";
     setSearchParams(params, { replace: true });
   }, [
     debouncedQuery,
@@ -167,6 +170,7 @@ export function BookList() {
     month,
     selectedVibes,
     showAll,
+    view,
     setSearchParams,
   ]);
 
@@ -297,10 +301,45 @@ export function BookList() {
   const active = hasActiveFilters(filterState);
   const summary = buildFilterSummary(filterState);
 
+  function setView(v: "list" | "shelves") {
+    const params: Record<string, string> = {};
+    if (v === "shelves") params.view = "shelves";
+    setSearchParams(params, { replace: true });
+  }
+
   return (
     <div className="space-y-6">
       <SeasonalRecommendations />
 
+      {/* View toggle */}
+      <div className="flex items-center justify-end">
+        <div className="flex rounded-md border">
+          <button
+            onClick={() => setView("list")}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              view === "list"
+                ? "bg-primary text-primary-foreground"
+                : "hover:bg-muted"
+            }`}
+          >
+            List
+          </button>
+          <button
+            onClick={() => setView("shelves")}
+            className={`px-3 py-1.5 text-sm transition-colors ${
+              view === "shelves"
+                ? "bg-primary text-primary-foreground"
+                : "hover:bg-muted"
+            }`}
+          >
+            Shelves
+          </button>
+        </div>
+      </div>
+
+      {view === "shelves" ? (
+        <ShelvesView />
+      ) : (
       <div className="space-y-4">
         <Input
           type="search"
@@ -512,6 +551,7 @@ export function BookList() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

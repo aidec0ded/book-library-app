@@ -110,6 +110,10 @@ SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Edi
 - `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference, dismiss/undismiss)
 - `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
 - `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 4.5, --dry-run/--limit/--month/--force flags)
+- `src/components/ShelvesView.tsx` — Shelf index with cards + create form (manual and auto shelves)
+- `src/components/ShelfCarousel.tsx` — Full-screen immersive coverflow carousel for browsing books within a shelf
+- `src/components/ShelfFilterBuilder.tsx` — Filter controls for auto shelf rules (status, genre, rating, month, vibes, favorites, up next)
+- `src/lib/shelves.ts` — Shelf CRUD + auto filter query builder + shelf item management
 
 **MVP phases (complete):**
 1. ~~Book list UI with search~~ (done)
@@ -270,16 +274,14 @@ Extends the personalization loop beyond books already in the library.
 
 Making the library joyful to visit — a space that reflects the reader's personality.
 
-**Phase 19: Visual Bookshelf View**
-- Alternative to list view: cover images or book spine graphics
-- Toggle between list view and visual bookshelf view
-- Design exploration: what makes a digital bookshelf feel warm and personal (not just a grid of thumbnails)
-
-**Phase 20: Customizable Shelving**
-- User-defined shelf groupings — by genre, literary movement, award winners, mood, or any criteria
-- Drag-and-drop or assign-to-shelf organization
-- Shelves are visual collections within the bookshelf view
-- Reflects how readers physically reshelf books based on current thinking
+~~**Phase 19+20: Visual Bookshelf with Customizable Shelves**~~ (done)
+- `/library?view=shelves` toggle between list view and shelf view
+- `shelves` + `shelf_items` tables (migration 014) — manual and auto shelf types
+- Shelf index: vertical stack of shelf cards with representative cover, name, description, book count
+- Immersive full-screen coverflow carousel: CSS scroll-snap with scale transforms, keyboard navigation (arrow keys, escape, enter), click-to-navigate to book detail
+- Manual shelves: user adds/removes books via BookSearchModal
+- Auto shelves: filter-based (status, genre, rating, month, vibes, favorites, up next) — books update dynamically when filter changes
+- Shelf management: inline editing of name/description, filter editing for auto shelves, delete with confirmation
 
 **Phase 21: UI Polish & Refinements**
 - Default view improvements (hide books without timing data, better defaults)
@@ -295,7 +297,7 @@ Making the library joyful to visit — a space that reflects the reader's person
 
 ## Data Model
 
-Nine tables in Supabase:
+Eleven tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -354,6 +356,19 @@ Nine tables in Supabase:
 - `scored_at` — timestamp of last scoring (null = never scored)
 - `dismissed` — boolean, user can dismiss uninteresting releases (default false)
 - No FK to `books` — cross-referenced by ISBN at query time for "In Library" badges
+
+**shelves** — User-created shelf groupings for visual bookshelf view. Key fields:
+- `name` — required, non-empty
+- `description` — optional
+- `shelf_type` — `'manual'` or `'auto'` (check-constrained)
+- `filter` (jsonb) — filter rules for auto shelves (status, genre, rating_min, timing_month, vibes, is_favorite, is_up_next); null for manual shelves
+- `updated_at` — auto-updated via trigger
+
+**shelf_items** — Ordered book references within manual shelves (structurally identical to `list_items`). Key fields:
+- `shelf_id` — FK to shelves, CASCADE delete
+- `book_id` — FK to books, CASCADE delete
+- `position` — dense 1-based integer, renormalized on every mutation
+- `UNIQUE (shelf_id, book_id)` — prevents duplicate books in a shelf
 
 ## Data Import Quirks
 
