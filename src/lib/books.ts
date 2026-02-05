@@ -11,6 +11,8 @@ export async function updateBook(
       | "is_favorite"
       | "is_up_next"
       | "notes"
+      | "cover_image_url"
+      | "isbn"
     >
   >,
 ): Promise<void> {

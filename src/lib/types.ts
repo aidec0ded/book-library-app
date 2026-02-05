@@ -36,6 +36,7 @@ export interface Book {
   timing_position: string | null;
   timing_raw: string | null;
   predicted_rating: number | null;
+  predicted_rationale: string | null;
   predicted_at: string | null;
   created_at: string;
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Pencil, X, Check, Star } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -13,9 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { MONTH_NAMES } from "@/lib/timing";
 import { VibeEditor } from "@/components/VibeEditor";
 import { updateBook } from "@/lib/books";
+import { BookCover } from "@/components/BookCover";
 import type { Book } from "@/lib/types";
 
 function formatDate(dateStr: string | null): string {
@@ -27,118 +29,15 @@ function formatDate(dateStr: string | null): string {
   });
 }
 
-function Section({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5">{children}</dd>
-    </div>
-  );
-}
-
 const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
 
 const RATING_OPTIONS: { label: string; value: string }[] = [
   { label: "Unrated", value: "unrated" },
   ...Array.from({ length: 10 }, (_, i) => {
     const v = (10 - i) * 0.5;
-    return { label: `\u2605 ${v.toFixed(1)}`, value: v.toString() };
+    return { label: `★ ${v.toFixed(1)}`, value: v.toString() };
   }),
 ];
-
-type EditableField = "notes";
-
-function EditableTextField({
-  label,
-  value,
-  field,
-  saving,
-  editingField,
-  onStartEdit,
-  onSave,
-  onCancel,
-}: {
-  label: string;
-  value: string | null;
-  field: EditableField;
-  saving: string | null;
-  editingField: string | null;
-  onStartEdit: (field: EditableField, currentValue: string) => void;
-  onSave: (field: EditableField, value: string) => void;
-  onCancel: () => void;
-}) {
-  const isEditing = editingField === field;
-  const [draft, setDraft] = useState(value ?? "");
-
-  useEffect(() => {
-    if (isEditing) {
-      setDraft(value ?? "");
-    }
-  }, [isEditing, value]);
-
-  if (isEditing) {
-    return (
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
-        <Textarea
-          className="mt-1"
-          rows={5}
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              onCancel();
-            }
-          }}
-        />
-        <div className="mt-2 flex gap-2">
-          <button
-            className="rounded-md bg-primary px-3 py-1 text-sm text-primary-foreground hover:bg-primary/90"
-            onClick={() => onSave(field, draft)}
-          >
-            Save
-          </button>
-          <button
-            className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <h3 className="text-sm font-medium text-muted-foreground">
-        {label}
-        {saving === field && (
-          <span className="ml-2 text-xs text-muted-foreground">Saving...</span>
-        )}
-      </h3>
-      <div
-        className="mt-0.5 cursor-pointer rounded-md px-1 py-0.5 -mx-1 hover:bg-muted/50"
-        onClick={() => onStartEdit(field, value ?? "")}
-      >
-        {value ? (
-          <p className={field === "notes" ? "whitespace-pre-line text-sm leading-relaxed" : ""}>
-            {value}
-          </p>
-        ) : (
-          <p className="text-sm italic text-muted-foreground">Click to add...</p>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function BookDetail() {
   const { id } = useParams<{ id: string }>();
@@ -148,8 +47,15 @@ export function BookDetail() {
 
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [editingField, setEditingField] = useState<string | null>(null);
   const [coverBroken, setCoverBroken] = useState(false);
+
+  // Editable fields state
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [editingCover, setEditingCover] = useState(false);
+  const [coverDraft, setCoverDraft] = useState("");
+  const [editingIsbn, setEditingIsbn] = useState(false);
+  const [isbnDraft, setIsbnDraft] = useState("");
 
   useEffect(() => {
     async function fetch() {
@@ -213,8 +119,12 @@ export function BookDetail() {
   const ratingDisplayValue =
     book.rating === null || book.rating === 0 ? "unrated" : book.rating.toString();
 
+  const showPredictedRating =
+    book.status === "unread" || book.status === "wishlist" || book.status === null;
+
   return (
     <div className="space-y-6">
+      {/* Back link */}
       <Link
         to={-1 as unknown as string}
         onClick={(e) => {
@@ -223,7 +133,7 @@ export function BookDetail() {
         }}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
-        &larr; Back
+        ← Back
       </Link>
 
       {/* Save error banner */}
@@ -233,43 +143,105 @@ export function BookDetail() {
         </div>
       )}
 
-      {/* Hero area */}
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-        {book.cover_image_url && !coverBroken && (
-          <div className="shrink-0 self-center sm:self-start">
-            <img
-              src={book.cover_image_url}
-              alt={`Cover of ${book.title}`}
-              className="h-auto w-48 rounded-lg shadow-md sm:w-40"
-              loading="lazy"
-              onError={() => setCoverBroken(true)}
-              onLoad={(e) => {
-                if (e.currentTarget.naturalWidth === 0) setCoverBroken(true);
-              }}
-            />
-          </div>
+      {/* Title & Author */}
+      <div>
+        <h1 className="font-serif text-3xl font-bold tracking-tight">{book.title}</h1>
+        {book.subtitle && (
+          <p className="text-lg text-muted-foreground">{book.subtitle}</p>
         )}
-        <div className="min-w-0 flex-1 space-y-3">
-          <div>
-            <h1 className="font-serif text-3xl font-bold tracking-tight">{book.title}</h1>
-            {book.subtitle && (
-              <p className="text-lg text-muted-foreground">{book.subtitle}</p>
+        <p className="mt-1 text-muted-foreground">{book.author}</p>
+        {book.series && (
+          <p className="text-sm text-muted-foreground">
+            {book.series}
+            {book.volume ? `, Vol. ${book.volume}` : ""}
+          </p>
+        )}
+      </div>
+
+      {/* Two-column layout */}
+      <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+        {/* Left column: Cover + Controls */}
+        <div className="space-y-4">
+          {/* Cover with edit */}
+          <div className="space-y-2">
+            {book.cover_image_url && !coverBroken ? (
+              <img
+                src={book.cover_image_url}
+                alt={`Cover of ${book.title}`}
+                className="h-auto w-full max-w-[240px] rounded-lg shadow-md mx-auto lg:mx-0"
+                loading="lazy"
+                onError={() => setCoverBroken(true)}
+                onLoad={(e) => {
+                  if (e.currentTarget.naturalWidth === 0) setCoverBroken(true);
+                }}
+              />
+            ) : (
+              <div className="mx-auto lg:mx-0">
+                <BookCover book={book} size="lg" />
+              </div>
             )}
-            <p className="mt-1 text-muted-foreground">{book.author}</p>
-            {book.series && (
-              <p className="text-sm text-muted-foreground">
-                {book.series}
-                {book.volume ? `, Vol. ${book.volume}` : ""}
-              </p>
+
+            {editingCover ? (
+              <div className="space-y-2">
+                <Input
+                  placeholder="Cover image URL..."
+                  value={coverDraft}
+                  onChange={(e) => setCoverDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setEditingCover(false);
+                    } else if (e.key === "Enter") {
+                      const trimmed = coverDraft.trim();
+                      handleFieldUpdate("cover_image_url", trimmed || null);
+                      setEditingCover(false);
+                      setCoverBroken(false);
+                    }
+                  }}
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90"
+                    onClick={() => {
+                      const trimmed = coverDraft.trim();
+                      handleFieldUpdate("cover_image_url", trimmed || null);
+                      setEditingCover(false);
+                      setCoverBroken(false);
+                    }}
+                  >
+                    <Check className="h-3 w-3" /> Save
+                  </button>
+                  <button
+                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    onClick={() => setEditingCover(false)}
+                  >
+                    <X className="h-3 w-3" /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setCoverDraft(book.cover_image_url ?? "");
+                  setEditingCover(true);
+                }}
+              >
+                Edit cover
+              </button>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Status dropdown */}
+
+          <Separator />
+
+          {/* Status dropdown */}
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Status</label>
             <Select
               value={book.status ?? "unread"}
               onValueChange={(val) => handleFieldUpdate("status", val)}
             >
-              <SelectTrigger size="sm">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -280,39 +252,19 @@ export function BookDetail() {
                 ))}
               </SelectContent>
             </Select>
-
-            {/* Favorite toggle (hidden for wishlist) */}
-            {book.status !== "wishlist" && (
-              <Badge
-                variant={book.is_favorite ? "default" : "outline"}
-                className={`cursor-pointer select-none ${!book.is_favorite ? "opacity-50 hover:opacity-80" : ""}`}
-                onClick={() => handleFieldUpdate("is_favorite", !book.is_favorite)}
-              >
-                Favorite
-              </Badge>
-            )}
-
-            {/* Up Next toggle (hidden for wishlist) */}
-            {book.status !== "wishlist" && (
-              <Badge
-                variant={book.is_up_next ? "default" : "outline"}
-                className={`cursor-pointer select-none ${!book.is_up_next ? "opacity-50 hover:opacity-80" : ""}`}
-                onClick={() => handleFieldUpdate("is_up_next", !book.is_up_next)}
-              >
-                Up Next
-              </Badge>
-            )}
           </div>
+
           {/* Rating dropdown (hidden for wishlist) */}
           {book.status !== "wishlist" && (
-            <div className="flex items-center gap-2">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">Rating</label>
               <Select
                 value={ratingDisplayValue}
                 onValueChange={(val) =>
                   handleFieldUpdate("rating", val === "unrated" ? null : parseFloat(val))
                 }
               >
-                <SelectTrigger size="sm">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -328,132 +280,297 @@ export function BookDetail() {
               )}
             </div>
           )}
+
+          {/* Favorite + Up Next badges (hidden for wishlist) */}
+          {book.status !== "wishlist" && (
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={book.is_favorite ? "default" : "outline"}
+                className={`cursor-pointer select-none ${!book.is_favorite ? "opacity-50 hover:opacity-80" : ""}`}
+                onClick={() => handleFieldUpdate("is_favorite", !book.is_favorite)}
+              >
+                Favorite
+              </Badge>
+              <Badge
+                variant={book.is_up_next ? "default" : "outline"}
+                className={`cursor-pointer select-none ${!book.is_up_next ? "opacity-50 hover:opacity-80" : ""}`}
+                onClick={() => handleFieldUpdate("is_up_next", !book.is_up_next)}
+              >
+                Up Next
+              </Badge>
+            </div>
+          )}
+
+          <Separator />
+
+          {/* Editable ISBN */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">ISBN</label>
+            {editingIsbn ? (
+              <div className="space-y-2">
+                <Input
+                  placeholder="ISBN..."
+                  value={isbnDraft}
+                  onChange={(e) => setIsbnDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setEditingIsbn(false);
+                    } else if (e.key === "Enter") {
+                      const trimmed = isbnDraft.trim();
+                      handleFieldUpdate("isbn", trimmed || null);
+                      setEditingIsbn(false);
+                    }
+                  }}
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90"
+                    onClick={() => {
+                      const trimmed = isbnDraft.trim();
+                      handleFieldUpdate("isbn", trimmed || null);
+                      setEditingIsbn(false);
+                    }}
+                  >
+                    <Check className="h-3 w-3" /> Save
+                  </button>
+                  <button
+                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+                    onClick={() => setEditingIsbn(false)}
+                  >
+                    <X className="h-3 w-3" /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-sm">{book.isbn ?? "—"}</span>
+                <button
+                  className="rounded p-1 hover:bg-muted"
+                  onClick={() => {
+                    setIsbnDraft(book.isbn ?? "");
+                    setEditingIsbn(true);
+                  }}
+                >
+                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Bookshop.org link */}
+          {book.isbn && (
+            <a
+              href={`https://bookshop.org/books?keywords=${book.isbn}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              Buy on Bookshop.org
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+
+        {/* Right column: AI insights + Metadata */}
+        <div className="space-y-6">
+          {/* Predicted Rating Card (unread only) */}
+          {showPredictedRating && (
+            <Card className="border-amber-200/50 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-950/20">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Star className="h-4 w-4 text-amber-500" />
+                  Predicted Rating
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {book.predicted_rating != null ? (
+                  <div className="space-y-2">
+                    <p className="text-2xl font-semibold">★ {book.predicted_rating.toFixed(1)}</p>
+                    {book.predicted_rationale && (
+                      <p className="text-sm text-muted-foreground italic">
+                        "{book.predicted_rationale}"
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm italic text-muted-foreground">
+                    No predicted rating yet
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Summary */}
+          {book.summary && (
+            <div>
+              <h2 className="mb-2 font-semibold">Summary</h2>
+              <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+                {book.summary}
+              </p>
+            </div>
+          )}
+
+          {/* Vibes */}
+          <VibeEditor bookId={book.id} />
+
+          {/* Metadata */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Metadata</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
+                {book.genre && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Genre</dt>
+                    <dd>{book.genre}</dd>
+                  </div>
+                )}
+
+                {book.category && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Category</dt>
+                    <dd>{book.category}</dd>
+                  </div>
+                )}
+
+                {book.page_count && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Pages</dt>
+                    <dd>{book.page_count.toLocaleString()}</dd>
+                  </div>
+                )}
+
+                {book.publication_year && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Published</dt>
+                    <dd>{book.publication_year}</dd>
+                  </div>
+                )}
+
+                {book.publisher && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Publisher</dt>
+                    <dd>{book.publisher}</dd>
+                  </div>
+                )}
+
+                {book.format && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Format</dt>
+                    <dd>{book.format}</dd>
+                  </div>
+                )}
+
+                {book.timing_raw && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">When to Read</dt>
+                    <dd>
+                      {book.timing_raw}
+                      {book.timing_month && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          ({MONTH_NAMES[book.timing_month - 1]}
+                          {book.timing_position ? `, ${book.timing_position}` : ""})
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                )}
+
+                {book.date_started && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Date Started</dt>
+                    <dd>{formatDate(book.date_started)}</dd>
+                  </div>
+                )}
+
+                {book.date_finished && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Date Finished</dt>
+                    <dd>{formatDate(book.date_finished)}</dd>
+                  </div>
+                )}
+              </dl>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
+      {/* Full-width Notes Section */}
       <Separator />
 
-      {/* Personalized card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Personalized</CardTitle>
-          <CardDescription>AI insights and personal notes</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {(book.status === "unread" || book.status === "wishlist" || book.status === null) && (
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground">Predicted Rating</h3>
-              {book.predicted_rating != null ? (
-                <p className="mt-0.5 text-lg">{"\u2605"} {book.predicted_rating.toFixed(1)}</p>
+      <div className="space-y-6">
+        {/* Personal Notes */}
+        <div>
+          <h2 className="mb-2 font-semibold">Notes</h2>
+          {editingNotes ? (
+            <div className="space-y-2">
+              <Textarea
+                rows={6}
+                autoFocus
+                value={notesDraft}
+                onChange={(e) => setNotesDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setEditingNotes(false);
+                  }
+                }}
+                placeholder="Personal notes about this book..."
+              />
+              <div className="flex gap-2">
+                <button
+                  className="rounded-md bg-primary px-3 py-1 text-sm text-primary-foreground hover:bg-primary/90"
+                  onClick={() => {
+                    const trimmed = notesDraft.trim();
+                    handleFieldUpdate("notes", trimmed || null);
+                    setEditingNotes(false);
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
+                  onClick={() => setEditingNotes(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="cursor-pointer rounded-md px-1 py-2 -mx-1 hover:bg-muted/50 min-h-[60px]"
+              onClick={() => {
+                setNotesDraft(book.notes ?? "");
+                setEditingNotes(true);
+              }}
+            >
+              {book.notes ? (
+                <p className="whitespace-pre-line text-sm leading-relaxed">
+                  {book.notes}
+                </p>
               ) : (
-                <p className="mt-0.5 text-sm italic text-muted-foreground">No predicted rating yet</p>
+                <p className="text-sm italic text-muted-foreground">
+                  Click to add personal notes...
+                </p>
               )}
             </div>
           )}
-          <EditableTextField
-            label="Notes"
-            value={book.notes}
-            field="notes"
-            saving={saving}
-            editingField={editingField}
-            onStartEdit={(field) => setEditingField(field)}
-            onSave={(field, draft) => {
-              const trimmed = draft.trim();
-              setEditingField(null);
-              handleFieldUpdate(field, trimmed || null);
-            }}
-            onCancel={() => setEditingField(null)}
-          />
-        </CardContent>
-      </Card>
+        </div>
 
-      <VibeEditor bookId={book.id} />
-
-      {/* Metadata card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Metadata</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {book.genre && <Section label="Genre">{book.genre}</Section>}
-
-            {book.category && (
-              <Section label="Category">{book.category}</Section>
-            )}
-
-            {book.timing_raw && (
-              <Section label="When to Read">
-                {book.timing_raw}
-                {book.timing_month && (
-                  <span className="text-sm text-muted-foreground">
-                    {" "}
-                    ({MONTH_NAMES[book.timing_month - 1]}
-                    {book.timing_position ? `, ${book.timing_position}` : ""})
-                  </span>
-                )}
-              </Section>
-            )}
-
-            {book.isbn && <Section label="ISBN">{book.isbn}</Section>}
-
-            {book.isbn && (
-              <Section label="Buy">
-                <a
-                  href={`https://bookshop.org/books?keywords=${book.isbn}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                >
-                  Bookshop.org
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </Section>
-            )}
-
-            {book.page_count && (
-              <Section label="Pages">
-                {book.page_count.toLocaleString()}
-              </Section>
-            )}
-
-            {book.publisher && (
-              <Section label="Publisher">{book.publisher}</Section>
-            )}
-
-            {book.publication_year && (
-              <Section label="Published">{book.publication_year}</Section>
-            )}
-
-            {book.format && (
-              <Section label="Format">{book.format}</Section>
-            )}
-
-            {book.date_started && (
-              <Section label="Date Started">
-                {formatDate(book.date_started)}
-              </Section>
-            )}
-            {book.date_finished && (
-              <Section label="Date Finished">
-                {formatDate(book.date_finished)}
-              </Section>
-            )}
-          </dl>
-        </CardContent>
-      </Card>
-
-      {book.summary && (
-        <>
-          <Separator />
-          <div>
-            <h2 className="mb-2 font-semibold">Summary</h2>
-            <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-              {book.summary}
+        {/* From Conversations placeholder */}
+        <div>
+          <h2 className="mb-2 font-semibold text-muted-foreground">From Conversations</h2>
+          <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Insights from your AI reading companion conversations will appear here.
             </p>
+            <p className="mt-1 text-xs text-muted-foreground/70">Coming soon</p>
           </div>
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

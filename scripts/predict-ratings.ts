@@ -58,6 +58,7 @@ interface CalibratedBook {
 interface PredictionResult {
   id: string;
   predicted_rating: number;
+  predicted_rationale: string;
 }
 
 // --- Profile formatting (mirrors server/profile-loader.ts) ---
@@ -318,8 +319,9 @@ Rules:
 - A critically acclaimed book gets a low prediction if it doesn't match this reader's patterns
 - Personal canon themes should pull related predictions UP
 - Be honest: use the full range. Most predictions should have genuine spread.
+- Include a brief rationale (1-2 sentences) explaining why this reader would rate the book this way
 
-Return ONLY a JSON array. No other text.`;
+Return ONLY a JSON array with id, predicted_rating, and rationale fields. No other text.`;
 }
 
 function truncate(text: string, maxLen: number): string {
@@ -346,7 +348,7 @@ function buildUserPrompt(
   return (
     "Predict ratings for these unread books:\n\n" +
     blocks.join("\n\n") +
-    '\n\nJSON: [{"id":"uuid","predicted_rating":N},...]'
+    '\n\nJSON: [{"id":"uuid","predicted_rating":N,"rationale":"..."},...]'
   );
 }
 
@@ -384,7 +386,10 @@ function parseResponse(
     // Clamp to valid range
     rating = Math.max(0.5, Math.min(5.0, rating));
 
-    results.push({ id: entry.id, predicted_rating: rating });
+    // Extract rationale (default to empty string if missing)
+    const rationale = typeof entry.rationale === "string" ? entry.rationale : "";
+
+    results.push({ id: entry.id, predicted_rating: rating, predicted_rationale: rationale });
   }
 
   return results;
@@ -538,6 +543,7 @@ async function main() {
           .from("books")
           .update({
             predicted_rating: result.predicted_rating,
+            predicted_rationale: result.predicted_rationale || null,
             predicted_at: new Date().toISOString(),
           })
           .eq("id", result.id);
