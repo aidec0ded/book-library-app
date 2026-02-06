@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BookRow } from "@/components/BookRow";
-import { SeasonalRecommendations } from "@/components/SeasonalRecommendations";
+import { ReadingQuote } from "@/components/ReadingQuote";
 import { ShelvesView } from "@/components/ShelvesView";
 import {
   fetchBookIdsByCanonicalVibes,
@@ -319,7 +319,7 @@ export function BookList() {
 
   return (
     <div className="space-y-6">
-      <SeasonalRecommendations />
+      <ReadingQuote />
 
       {/* View toggle */}
       <div className="flex items-center justify-end">

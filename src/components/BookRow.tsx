@@ -73,11 +73,6 @@ export function BookRow({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {book.timing_raw && (
-          <span className="hidden text-xs text-muted-foreground sm:inline">
-            {book.timing_raw}
-          </span>
-        )}
         {book.rating !== null && book.rating > 0 && (
           <span className="text-sm">{formatRating(book.rating)}</span>
         )}

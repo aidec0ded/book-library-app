@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { MONTH_NAMES } from "@/lib/timing";
 import { VibeEditor } from "@/components/VibeEditor";
 import { updateBook } from "@/lib/books";
 import { BookCover } from "@/components/BookCover";
@@ -461,22 +460,6 @@ export function BookDetail() {
                   <div>
                     <dt className="font-medium text-muted-foreground">Format</dt>
                     <dd>{book.format}</dd>
-                  </div>
-                )}
-
-                {book.timing_raw && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">When to Read</dt>
-                    <dd>
-                      {book.timing_raw}
-                      {book.timing_month && (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          ({MONTH_NAMES[book.timing_month - 1]}
-                          {book.timing_position ? `, ${book.timing_position}` : ""})
-                        </span>
-                      )}
-                    </dd>
                   </div>
                 )}
 
