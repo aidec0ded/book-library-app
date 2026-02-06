@@ -179,8 +179,18 @@ async function main() {
     .not("timing_raw", "is", null)
     .order("title");
 
+  const { data: books, error: fetchError } = await query;
+
+  if (fetchError) {
+    console.error("Failed to fetch books:", fetchError.message);
+    process.exit(1);
+  }
+
+  let booksToTag: BookForTagging[] = books ?? [];
+
   if (!force) {
     // Exclude books that already have vibes of the relevant type
+    // Done in-memory to avoid URL length limits with large NOT IN clauses
     let vibeQuery = supabase
       .from("book_vibes")
       .select("book_id")
@@ -197,20 +207,9 @@ async function main() {
       process.exit(1);
     }
 
-    const taggedIds = [...new Set(alreadyTagged.map((r) => r.book_id))];
-    if (taggedIds.length > 0) {
-      query = query.not("id", "in", `(${taggedIds.join(",")})`);
-    }
+    const taggedIds = new Set(alreadyTagged.map((r) => r.book_id));
+    booksToTag = booksToTag.filter((b) => !taggedIds.has(b.id));
   }
-
-  const { data: books, error: fetchError } = await query;
-
-  if (fetchError) {
-    console.error("Failed to fetch books:", fetchError.message);
-    process.exit(1);
-  }
-
-  let booksToTag: BookForTagging[] = books ?? [];
 
   if (limit && limit > 0) {
     booksToTag = booksToTag.slice(0, limit);
