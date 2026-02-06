@@ -20,6 +20,7 @@ import {
   mapToBookInsert,
 } from "@/lib/isbndb";
 import type { ISBNdbBook } from "@/lib/isbndb";
+import { Pagination } from "@/components/Pagination";
 
 const PAGE_SIZE = 20;
 
@@ -385,25 +386,11 @@ export function AddBook() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => void handleSearch(resultPage - 1)}
-                  disabled={resultPage <= 1}
-                  className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-muted-foreground">
-                  Page {resultPage} of {totalPages}
-                </span>
-                <button
-                  onClick={() => void handleSearch(resultPage + 1)}
-                  disabled={resultPage >= totalPages}
-                  className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
+              <Pagination
+                page={resultPage}
+                totalPages={totalPages}
+                onPageChange={(p) => void handleSearch(p)}
+              />
             )}
           </>
         )}

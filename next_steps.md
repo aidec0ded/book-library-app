@@ -2,7 +2,7 @@
 
 - Need to be able to remove a book from library **[DONE]**
 - Add any missing metadata into empty fields; ensure data is as clean as possible
-- On all pages with multiple pages of books, you can't go directly to a specific page — have to cycle through them
+- On all pages with multiple pages of books, you can't go directly to a specific page — have to cycle through them **[DONE]**
 - New releases are once again showing all new releases in descending order for recommended, rather than only showing those that score at least 7 **[DONE]**
 
 ---

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { Pagination } from "@/components/Pagination";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -543,25 +544,7 @@ export function BookList() {
         )}
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-            >
-              Previous
-            </button>
-            <span className="text-sm text-muted-foreground">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         )}
       </div>
       )}

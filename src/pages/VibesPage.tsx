@@ -9,6 +9,7 @@ import {
   formatCanonicalVibe,
 } from "@/lib/canonical-vibes";
 import { BookRow } from "@/components/BookRow";
+import { Pagination } from "@/components/Pagination";
 import type { BookSummary } from "@/lib/types";
 
 const PAGE_SIZE = 20;
@@ -115,27 +116,7 @@ export function VibesPage() {
         </div>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => handlePageChange(Math.max(1, page - 1))}
-              disabled={page <= 1}
-              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-            >
-              Previous
-            </button>
-            <span className="text-sm text-muted-foreground">
-              Page {page} of {totalPages}
-            </span>
-            <button
-              onClick={() =>
-                handlePageChange(Math.min(totalPages, page + 1))
-              }
-              disabled={page >= totalPages}
-              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
+          <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
         )}
       </div>
     );

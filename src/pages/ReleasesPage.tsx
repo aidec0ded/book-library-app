@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Pagination } from "@/components/Pagination";
 import type { NewRelease } from "@/lib/types";
 
 const MONTH_NAMES = [
@@ -603,31 +604,14 @@ export function ReleasesPage() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => {
-              setPage((p) => Math.max(1, p - 1));
-              setExpandedId(null);
-            }}
-            disabled={page <= 1}
-            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
-          <button
-            onClick={() => {
-              setPage((p) => Math.min(totalPages, p + 1));
-              setExpandedId(null);
-            }}
-            disabled={page >= totalPages}
-            className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={(p) => {
+            setPage(p);
+            setExpandedId(null);
+          }}
+        />
       )}
     </div>
   );
