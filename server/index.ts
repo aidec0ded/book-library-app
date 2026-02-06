@@ -16,6 +16,7 @@ import {
 } from "./excerpt-handler.js";
 import { buildListIndex } from "./list-index.js";
 import { getGreeting } from "./greeting-handler.js";
+import { startProfileScheduler } from "./profile-scheduler.js";
 
 config();
 
@@ -460,4 +461,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`MoodLib chat server listening on http://localhost:${PORT}`);
+  startProfileScheduler(supabase);
 });

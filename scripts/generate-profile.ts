@@ -226,6 +226,44 @@ function computeReadingLifeSnapshot(books: BookRow[]): {
   };
 }
 
+// --- Activity Snapshot ---
+
+interface ActivitySnapshot {
+  total_books: number;
+  books_read: number;
+  books_reading_started: number;
+  books_rated: number;
+  books_with_notes: number;
+  total_messages: number;
+}
+
+async function gatherActivitySnapshot(): Promise<ActivitySnapshot> {
+  const [
+    { count: totalBooks },
+    { count: booksRead },
+    { count: booksReadingStarted },
+    { count: booksRated },
+    { count: booksWithNotes },
+    { count: totalMessages },
+  ] = await Promise.all([
+    supabase.from("books").select("id", { count: "exact", head: true }),
+    supabase.from("books").select("id", { count: "exact", head: true }).eq("status", "read"),
+    supabase.from("books").select("id", { count: "exact", head: true }).not("date_started", "is", null),
+    supabase.from("books").select("id", { count: "exact", head: true }).gt("rating", 0),
+    supabase.from("books").select("id", { count: "exact", head: true }).not("notes", "is", null),
+    supabase.from("messages").select("id", { count: "exact", head: true }),
+  ]);
+
+  return {
+    total_books: totalBooks ?? 0,
+    books_read: booksRead ?? 0,
+    books_reading_started: booksReadingStarted ?? 0,
+    books_rated: booksRated ?? 0,
+    books_with_notes: booksWithNotes ?? 0,
+    total_messages: totalMessages ?? 0,
+  };
+}
+
 // --- Main ---
 
 async function main() {
@@ -362,6 +400,9 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   // Carry forward personal canon from previous profile
   profileData.personal_canon = previousCanon;
 
+  // Gather activity snapshot for scheduler
+  const activitySnapshot = await gatherActivitySnapshot();
+
   // Insert new profile row
   const generationContext = {
     model: MODEL,
@@ -371,6 +412,7 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
     bootstrap,
     input_tokens: response.usage.input_tokens,
     output_tokens: response.usage.output_tokens,
+    activity_snapshot: activitySnapshot,
   };
 
   const { error: insertError } = await supabase
