@@ -56,6 +56,11 @@ npx tsx scripts/reclassify-genres.ts --limit 20   # process first 20 books only
 npx tsx scripts/reclassify-genres.ts --force      # re-classify ALL books (even clean ones)
 npx tsx scripts/reclassify-genres.ts --output my.json  # custom output filename
 npx tsx scripts/reclassify-genres.ts --apply genre-review.json  # apply review file to DB
+npx tsx scripts/ingest-awards.ts               # ingest literary awards from Wikidata + match to library
+npx tsx scripts/ingest-awards.ts --dry-run     # preview queries and counts, no DB writes
+npx tsx scripts/ingest-awards.ts --match-only  # skip Wikidata, only re-run library matching
+npx tsx scripts/ingest-awards.ts --force       # re-fetch all from Wikidata (default skips existing)
+npx tsx scripts/ingest-awards.ts --limit 5     # process only first N awards
 ```
 
 Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
@@ -136,6 +141,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
 - `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 4.5, --dry-run/--limit/--month/--force flags)
 - `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 4.5, --dry-run/--limit/--force/--output/--apply flags)
+- `scripts/ingest-awards.ts` — Wikidata SPARQL ingestion of literary awards (17 awards, 4 query patterns) + library matching (--dry-run/--match-only/--force/--limit flags)
+- `src/lib/awards.ts` — Award queries for book detail (join award_entries + literary_awards)
 - `src/components/ShelvesView.tsx` — Shelf index with cards + create form (manual and auto shelves)
 - `src/components/ShelfCarousel.tsx` — Full-screen immersive coverflow carousel for browsing books within a shelf
 - `src/components/ShelfFilterBuilder.tsx` — Filter controls for auto shelf rules (status, genre, rating, month, vibes, favorites)
@@ -149,7 +156,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **AI Output** — Predicted ratings for unread books, AI-managed lists + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page
 
-**Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases
+**Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases, literary awards via Wikidata (17 awards, winner/shortlist/longlist/nominee)
 
 **Library as Space** — Visual bookshelf with manual + auto shelves, coverflow carousel, Bookshop.org purchase links
 
@@ -163,7 +170,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Twelve tables in Supabase:
+Fourteen tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -241,6 +248,20 @@ Twelve tables in Supabase:
 - `book_id` — FK to books, CASCADE delete
 - `position` — dense 1-based integer, renormalized on every mutation
 - `UNIQUE (shelf_id, book_id)` — prevents duplicate books in a shelf
+
+**literary_awards** — Static reference table, 17 rows. Key fields:
+- `name` — full award name
+- `short_name` — display label for badges (e.g. "Pulitzer", "Booker")
+- `category` — `fiction`, `nonfiction`, or `poetry`
+- `wikidata_id` (UNIQUE) — Wikidata entity ID for SPARQL queries
+
+**award_entries** — Historical winners/nominees, matched to library books. Key fields:
+- `award_id` — FK to literary_awards, CASCADE delete
+- `book_id` — FK to books, SET NULL on delete (nullable; set by matching step)
+- `title`, `author` — from Wikidata (independent of library book data)
+- `year` — award year (nullable for entries without date)
+- `status` — `winner`, `shortlist`, `longlist`, or `nominee`
+- `wikidata_work_id` — Wikidata entity ID for deduplication
 
 ## Data Import Quirks
 

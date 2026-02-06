@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { VibeEditor } from "@/components/VibeEditor";
 import { updateBook, formatRating } from "@/lib/books";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
+import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
 import { useChatContext } from "@/contexts/ChatContext";
 import type { Book, BookExcerpt } from "@/lib/types";
@@ -60,6 +61,7 @@ export function BookDetail() {
   const [isbnDraft, setIsbnDraft] = useState("");
   const [excerpts, setExcerpts] = useState<BookExcerpt[]>([]);
   const [excerptsLoading, setExcerptsLoading] = useState(true);
+  const [awards, setAwards] = useState<BookAward[]>([]);
 
   useEffect(() => {
     async function fetch() {
@@ -87,6 +89,13 @@ export function BookDetail() {
       .then(setExcerpts)
       .catch(() => setExcerpts([]))
       .finally(() => setExcerptsLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    fetchAwardsForBook(id)
+      .then(setAwards)
+      .catch(() => setAwards([]));
   }, [id]);
 
   // Auto-clear save errors after 4 seconds
@@ -443,6 +452,33 @@ export function BookDetail() {
 
           {/* Vibes */}
           <VibeEditor bookId={book.id} />
+
+          {/* Awards */}
+          {awards.length > 0 && (
+            <div>
+              <h2 className="mb-2 font-semibold">Awards</h2>
+              <div className="flex flex-wrap gap-2">
+                {awards.map((award) => {
+                  const label = `${award.award_short_name} ${award.status.charAt(0).toUpperCase() + award.status.slice(1)}${award.year ? ` ${award.year}` : ""}`;
+                  const isWinner = award.status === "winner";
+                  return (
+                    <Badge
+                      key={award.id}
+                      variant={isWinner ? "default" : "outline"}
+                      className={
+                        isWinner
+                          ? "bg-amber-600 hover:bg-amber-600 text-white"
+                          : "border-amber-400 text-amber-700 dark:border-amber-600 dark:text-amber-400"
+                      }
+                      title={award.award_name}
+                    >
+                      {label}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Metadata */}
           <Card>

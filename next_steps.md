@@ -16,13 +16,12 @@
 - Ability to edit cover images (manual URL entry or upload) — ISBNdb sometimes returns low-quality photos of physical books instead of proper cover art **[DONE]**
 - ISBN discovery + bulk enrichment for books without ISBNs — many fiction-spreadsheet-only books have no cover, genre, pages, publisher, etc. because `enrich-isbndb.ts` requires an ISBN. Need a script to search ISBNdb by title+author, find the ISBN, then enrich. Plus manual ISBN entry on BookDetail for corrections. **[DONE]**
 - Adjust rating from half stars to quarter stars **[DONE]**
-- Add awards/nominations as metadata field (may require separate lookup or manual database)
+- Add awards/nominations as metadata field (may require separate lookup or manual database) **[DONE]**
 - Add filters for publishing year and page count **[DONE]**
 - Investigate ISBNdb "Reviews" endpoint — what does it return? **[DONE]**
 
 **AI & personalization**
 
-- AI-suggested shelf/list curation based on reading patterns
 - Replace "Notes" section on book detail with explanation of predicted rating **[DONE]**
 - Add new Notes section with user-written notes + conversation excerpts from chatbot **[DONE]**
 
