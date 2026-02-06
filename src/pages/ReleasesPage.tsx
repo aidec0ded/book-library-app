@@ -265,7 +265,9 @@ export function ReleasesPage() {
         <p className="text-sm text-muted-foreground">
           {loading
             ? "Loading..."
-            : `${total.toLocaleString()} release${total !== 1 ? "s" : ""} in ${formatMonthLabel(year, month)}`}
+            : sort === "score"
+              ? `${total.toLocaleString()} recommended release${total !== 1 ? "s" : ""} in ${formatMonthLabel(year, month)}`
+              : `${total.toLocaleString()} release${total !== 1 ? "s" : ""} in ${formatMonthLabel(year, month)}`}
         </p>
         <div className="flex items-center gap-3">
           {!loading && !anyScored && (
@@ -403,8 +405,8 @@ export function ReleasesPage() {
                   </p>
                 )}
 
-                {/* AI rationale */}
-                {expandedRelease.ai_rationale && (
+                {/* AI rationale (only for recommended books scoring 7+) */}
+                {expandedRelease.ai_rationale && expandedRelease.ai_score != null && expandedRelease.ai_score >= 7 && (
                   <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
                     <p className="text-sm text-amber-900">
                       <span className="font-medium">Why this book: </span>
@@ -495,7 +497,9 @@ export function ReleasesPage() {
       {/* Empty state for selected month */}
       {!loading && releases.length === 0 && (
         <p className="py-8 text-center text-muted-foreground">
-          No releases found for {formatMonthLabel(year, month)}.
+          {sort === "score"
+            ? `No recommended releases for ${formatMonthLabel(year, month)}. Switch to "All" to browse everything.`
+            : `No releases found for ${formatMonthLabel(year, month)}.`}
         </p>
       )}
 
