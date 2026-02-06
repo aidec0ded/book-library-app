@@ -9,7 +9,6 @@ export async function updateBook(
       | "status"
       | "rating"
       | "is_favorite"
-      | "is_up_next"
       | "notes"
       | "cover_image_url"
       | "isbn"

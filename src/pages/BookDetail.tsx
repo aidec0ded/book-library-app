@@ -308,7 +308,7 @@ export function BookDetail() {
             </div>
           )}
 
-          {/* Favorite + Up Next badges (hidden for wishlist) */}
+          {/* Favorite badge (hidden for wishlist) */}
           {book.status !== "wishlist" && (
             <div className="flex flex-wrap gap-2">
               <Badge
@@ -317,13 +317,6 @@ export function BookDetail() {
                 onClick={() => handleFieldUpdate("is_favorite", !book.is_favorite)}
               >
                 Favorite
-              </Badge>
-              <Badge
-                variant={book.is_up_next ? "default" : "outline"}
-                className={`cursor-pointer select-none ${!book.is_up_next ? "opacity-50 hover:opacity-80" : ""}`}
-                onClick={() => handleFieldUpdate("is_up_next", !book.is_up_next)}
-              >
-                Up Next
               </Badge>
             </div>
           )}

@@ -75,7 +75,6 @@ interface BookRow {
   timing_raw: string | null;
   notes: string | null;
   is_favorite: boolean;
-  is_up_next: boolean;
   date_finished: string | null;
 }
 
@@ -88,7 +87,7 @@ async function fetchAllBooks(): Promise<BookRow[]> {
     const { data, error } = await supabase
       .from("books")
       .select(
-        "id, title, author, status, rating, genre, category, timing_raw, notes, is_favorite, is_up_next, date_finished",
+        "id, title, author, status, rating, genre, category, timing_raw, notes, is_favorite, date_finished",
       )
       .order("title")
       .range(from, from + PAGE_SIZE - 1);
@@ -184,7 +183,6 @@ function formatLibrary(books: BookRow[], vibeMap: Map<string, string[]>): string
     if (b.genre) parts.push(b.genre);
     else if (b.category) parts.push(b.category);
     if (b.is_favorite) parts.push("♥ favorite");
-    if (b.is_up_next) parts.push("⟶ up next");
     const vibes = vibeMap.get(b.id);
     if (vibes) parts.push(`vibes: ${vibes.join(", ")}`);
     if (b.timing_raw) parts.push(`when: ${b.timing_raw}`);

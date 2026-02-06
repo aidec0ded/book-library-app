@@ -143,7 +143,6 @@ export interface ShelfFilter {
   timing_month?: number;
   vibes?: string[];
   is_favorite?: boolean;
-  is_up_next?: boolean;
 }
 
 export type ShelfType = "manual" | "auto";

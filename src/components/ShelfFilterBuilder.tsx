@@ -168,17 +168,6 @@ export function ShelfFilterBuilder({
           />
           <span className="text-muted-foreground">Favorites only</span>
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={filter.is_up_next ?? false}
-            onChange={(e) =>
-              update({ is_up_next: e.target.checked || undefined })
-            }
-            className="rounded"
-          />
-          <span className="text-muted-foreground">Up Next only</span>
-        </label>
       </div>
 
       {/* Vibes */}

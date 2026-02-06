@@ -33,10 +33,6 @@ async function buildAutoShelfQuery(filter: ShelfFilter) {
   if (filter.is_favorite) {
     q = q.eq("is_favorite", true);
   }
-  if (filter.is_up_next) {
-    q = q.eq("is_up_next", true);
-  }
-
   // Vibe filtering requires a pre-query
   if (filter.vibes && filter.vibes.length > 0) {
     const ids = await fetchBookIdsByCanonicalVibes(filter.vibes);
