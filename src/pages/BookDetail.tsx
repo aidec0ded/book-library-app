@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ExternalLink, Pencil, X, Check, Star } from "lucide-react";
+import { ExternalLink, Pencil, X, Check, Star, MessageSquareQuote, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,8 +16,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { VibeEditor } from "@/components/VibeEditor";
 import { updateBook } from "@/lib/books";
+import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { BookCover } from "@/components/BookCover";
-import type { Book } from "@/lib/types";
+import type { Book, BookExcerpt } from "@/lib/types";
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -55,6 +56,8 @@ export function BookDetail() {
   const [coverDraft, setCoverDraft] = useState("");
   const [editingIsbn, setEditingIsbn] = useState(false);
   const [isbnDraft, setIsbnDraft] = useState("");
+  const [excerpts, setExcerpts] = useState<BookExcerpt[]>([]);
+  const [excerptsLoading, setExcerptsLoading] = useState(true);
 
   useEffect(() => {
     async function fetch() {
@@ -73,6 +76,15 @@ export function BookDetail() {
       setLoading(false);
     }
     void fetch();
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    setExcerptsLoading(true);
+    fetchExcerptsForBook(id)
+      .then(setExcerpts)
+      .catch(() => setExcerpts([]))
+      .finally(() => setExcerptsLoading(false));
   }, [id]);
 
   // Auto-clear save errors after 4 seconds
@@ -98,6 +110,20 @@ export function BookDetail() {
       }
     },
     [book],
+  );
+
+  const handleDeleteExcerpt = useCallback(
+    async (excerptId: string) => {
+      const prev = excerpts;
+      setExcerpts(excerpts.filter((e) => e.id !== excerptId));
+      try {
+        await deleteExcerpt(excerptId);
+      } catch {
+        setExcerpts(prev);
+        setSaveError("Failed to delete excerpt");
+      }
+    },
+    [excerpts],
   );
 
   if (loading) {
@@ -543,15 +569,59 @@ export function BookDetail() {
           )}
         </div>
 
-        {/* From Conversations placeholder */}
+        {/* From Conversations */}
         <div>
-          <h2 className="mb-2 font-semibold text-muted-foreground">From Conversations</h2>
-          <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Insights from your AI reading companion conversations will appear here.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground/70">Coming soon</p>
-          </div>
+          <h2 className="mb-2 font-semibold">From Conversations</h2>
+          {excerptsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : excerpts.length === 0 ? (
+            <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                Insights from your AI reading companion conversations will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {excerpts.map((excerpt) => (
+                <div
+                  key={excerpt.id}
+                  className="group flex items-start gap-3 rounded-md border bg-muted/20 px-4 py-3"
+                >
+                  <MessageSquareQuote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-relaxed">{excerpt.content}</p>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {new Date(excerpt.created_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </span>
+                      {excerpt.conversation_id && (
+                        <>
+                          <span>·</span>
+                          <Link
+                            to="/chat"
+                            className="hover:text-foreground hover:underline"
+                          >
+                            View conversation
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+                    onClick={() => handleDeleteExcerpt(excerpt.id)}
+                    title="Delete excerpt"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

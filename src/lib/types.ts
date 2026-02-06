@@ -66,6 +66,14 @@ export interface Message {
   created_at: string;
 }
 
+export interface BookExcerpt {
+  id: string;
+  book_id: string;
+  conversation_id: string | null;
+  content: string;
+  created_at: string;
+}
+
 export interface ThematicPillar {
   name: string;
   description: string;

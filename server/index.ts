@@ -10,6 +10,10 @@ import {
   executeWishlistCommand,
   type WishlistCommand,
 } from "./wishlist-handler.js";
+import {
+  executeExcerptCommand,
+  type ExcerptCommand,
+} from "./excerpt-handler.js";
 import { buildListIndex } from "./list-index.js";
 import { getGreeting } from "./greeting-handler.js";
 
@@ -59,7 +63,14 @@ Reference books by their exact title as shown in the library.
 You can manage the reader's wishlist using your manage_wishlist tool.
 When the reader mentions a book they want to read that isn't in their
 library, offer to add it to their wishlist. You can also view and
-remove books from the wishlist.`;
+remove books from the wishlist.
+
+You can save curated insights and observations to specific books using your
+save_excerpt tool. When a conversation surfaces a compelling interpretation,
+emotional reaction, or thematic connection about a book, offer to save it.
+The content should be a polished, self-contained 1-3 sentence insight —
+not raw conversation text. These excerpts appear on the book's detail page
+under "From Conversations." Always confirm with the reader before saving.`;
 
   if (readerProfile) {
     prompt += `\n\n## Reader Profile\n\n${readerProfile}`;
@@ -245,6 +256,33 @@ async function handleChat(
               required: ["action"],
             },
           },
+          {
+            name: "save_excerpt",
+            description:
+              "Save a curated insight or observation from the current conversation to a specific book. Use when conversation surfaces a compelling interpretation, emotional reaction, or thematic connection worth preserving.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                action: {
+                  type: "string",
+                  enum: ["save", "view"],
+                  description:
+                    "save to attach an excerpt, view to see existing excerpts",
+                },
+                book_title: {
+                  type: "string",
+                  description:
+                    "Exact book title as shown in the library",
+                },
+                content: {
+                  type: "string",
+                  description:
+                    "Polished 1-3 sentence insight to save (required for save)",
+                },
+              },
+              required: ["action", "book_title"],
+            },
+          },
         ],
         betas: ["context-management-2025-06-27"],
         max_tokens: 4096,
@@ -290,6 +328,12 @@ async function handleChat(
             result = await executeWishlistCommand(
               supabase,
               block.input as WishlistCommand,
+            );
+          } else if (block.name === "save_excerpt") {
+            result = await executeExcerptCommand(
+              supabase,
+              block.input as ExcerptCommand,
+              conversationId,
             );
           } else {
             result = await executeMemoryCommand(
