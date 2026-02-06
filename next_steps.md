@@ -11,7 +11,7 @@
 - Document the app / create a GitHub readme
 - User signup and profile creation
 - Deploy to cloud (Vercel/Cloudflare Pages + serverless)
-- Bulk canonical tagging script + two-tier tagging flow in `tag-vibes.ts`
+- Bulk canonical tagging script + two-tier tagging flow in `tag-vibes.ts` **[DONE]**
 - Auto-triggering profile regeneration
 - Ability to edit cover images (manual URL entry or upload) — ISBNdb sometimes returns low-quality photos of physical books instead of proper cover art **[DONE]**
 - ISBN discovery + bulk enrichment for books without ISBNs — many fiction-spreadsheet-only books have no cover, genre, pages, publisher, etc. because `enrich-isbndb.ts` requires an ISBN. Need a script to search ISBNdb by title+author, find the ISBN, then enrich. Plus manual ISBN entry on BookDetail for corrections. **[DONE]**
