@@ -41,7 +41,7 @@
 
 **Chat experience**
 
-- Persistent, minimizable chat window that can be triggered from any page and uses that page's context
+- Persistent, minimizable chat window that can be triggered from any page and uses that page's context **[DONE]**
 
 ---
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ExternalLink, Pencil, X, Check, Star, MessageSquareQuote, Trash2 } from "lucide-react";
+import { ExternalLink, Pencil, X, Check, Star, MessageSquareQuote, Trash2, MessageCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import { VibeEditor } from "@/components/VibeEditor";
 import { updateBook } from "@/lib/books";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { BookCover } from "@/components/BookCover";
+import { useChatContext } from "@/contexts/ChatContext";
 import type { Book, BookExcerpt } from "@/lib/types";
 
 function formatDate(dateStr: string | null): string {
@@ -41,6 +42,7 @@ const RATING_OPTIONS: { label: string; value: string }[] = [
 
 export function BookDetail() {
   const { id } = useParams<{ id: string }>();
+  const { openPanel } = useChatContext();
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -395,6 +397,15 @@ export function BookDetail() {
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
+
+          {/* Discuss this book */}
+          <button
+            onClick={() => openPanel({ bookTitle: book.title })}
+            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+            Discuss this book
+          </button>
         </div>
 
         {/* Right column: AI insights + Metadata */}

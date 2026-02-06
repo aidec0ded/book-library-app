@@ -1,147 +1,48 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { Send, Loader2, AlertCircle } from "lucide-react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ConversationList } from "@/components/ConversationList";
-import {
-  fetchConversations,
-  fetchMessages,
-  sendMessage,
-} from "@/lib/chat";
-import type { Conversation, Message } from "@/lib/types";
-
-const SESSION_KEY = "moodlib_conversation_id";
+import { useChatContext } from "@/contexts/ChatContext";
 
 export function Chat() {
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [conversationsLoading, setConversationsLoading] = useState(true);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const {
+    conversationId,
+    messages,
+    conversations,
+    conversationsLoading,
+    input,
+    streaming,
+    streamingContent,
+    error,
+    setInput,
+    send,
+    selectConversation,
+    newChat,
+    closePanel,
+  } = useChatContext();
 
-  const streamingContentRef = useRef("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  // Load conversations on mount
+  // Auto-close panel when navigating to full page
   useEffect(() => {
-    void (async () => {
-      try {
-        const convs = await fetchConversations();
-        setConversations(convs);
-      } catch {
-        // Non-critical
-      } finally {
-        setConversationsLoading(false);
-      }
-    })();
-  }, []);
-
-  // Restore session on mount
-  useEffect(() => {
-    const savedId = sessionStorage.getItem(SESSION_KEY);
-    if (savedId) {
-      void loadConversation(savedId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    closePanel();
+  }, [closePanel]);
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
-  const loadConversation = useCallback(async (id: string) => {
-    try {
-      const msgs = await fetchMessages(id);
-      setMessages(msgs);
-      setConversationId(id);
-      sessionStorage.setItem(SESSION_KEY, id);
-    } catch {
-      setError("Failed to load conversation.");
-    }
-  }, []);
-
   function handleNewChat() {
-    sessionStorage.removeItem(SESSION_KEY);
-    setConversationId(null);
-    setMessages([]);
-    setStreamingContent("");
-    setError(null);
+    newChat();
     textareaRef.current?.focus();
-  }
-
-  function handleSelectConversation(id: string) {
-    if (id === conversationId) return;
-    if (streaming) return; // Don't switch while streaming
-    void loadConversation(id);
-  }
-
-  function handleSend() {
-    const text = input.trim();
-    if (!text || streaming) return;
-
-    setError(null);
-
-    // Optimistic user message
-    const tempMessage: Message = {
-      id: `temp-${Date.now()}`,
-      conversation_id: conversationId ?? "",
-      role: "user",
-      content: text,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, tempMessage]);
-    setInput("");
-    setStreaming(true);
-    setStreamingContent("");
-    streamingContentRef.current = "";
-
-    const controller = sendMessage(conversationId, text, {
-      onMeta: ({ conversation_id }) => {
-        setConversationId(conversation_id);
-        sessionStorage.setItem(SESSION_KEY, conversation_id);
-      },
-      onText: ({ content }) => {
-        streamingContentRef.current += content;
-        setStreamingContent(streamingContentRef.current);
-      },
-      onDone: ({ message_id }) => {
-        // Move streamed content into messages array
-        const finalContent = streamingContentRef.current;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: message_id,
-            conversation_id: conversationId ?? "",
-            role: "assistant" as const,
-            content: finalContent,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-        setStreamingContent("");
-        streamingContentRef.current = "";
-        setStreaming(false);
-
-        // Refresh conversation list (picks up new titles)
-        void fetchConversations().then(setConversations).catch(() => {});
-      },
-      onError: ({ message }) => {
-        setError(message);
-        setStreaming(false);
-      },
-    });
-
-    abortRef.current = controller;
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      send();
     }
   }
 
@@ -152,7 +53,7 @@ export function Chat() {
       <ConversationList
         conversations={conversations}
         activeId={conversationId}
-        onSelect={handleSelectConversation}
+        onSelect={selectConversation}
         onNewChat={handleNewChat}
         loading={conversationsLoading}
       />
@@ -218,7 +119,7 @@ export function Chat() {
             className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none ring-ring focus-visible:ring-2"
           />
           <button
-            onClick={handleSend}
+            onClick={() => send()}
             disabled={!canSend}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
