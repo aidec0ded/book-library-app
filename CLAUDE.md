@@ -48,6 +48,12 @@ npx tsx scripts/score-releases.ts --dry-run    # preview prompt, no API calls or
 npx tsx scripts/score-releases.ts --limit 10   # process only first 10 releases
 npx tsx scripts/score-releases.ts --month 2026-02  # score a specific month
 npx tsx scripts/score-releases.ts --force      # re-score already-scored releases
+npx tsx scripts/reclassify-genres.ts              # generate genre-review.json via Claude API
+npx tsx scripts/reclassify-genres.ts --dry-run    # list books to process, no API calls
+npx tsx scripts/reclassify-genres.ts --limit 20   # process first 20 books only
+npx tsx scripts/reclassify-genres.ts --force      # re-classify ALL books (even clean ones)
+npx tsx scripts/reclassify-genres.ts --output my.json  # custom output filename
+npx tsx scripts/reclassify-genres.ts --apply genre-review.json  # apply review file to DB
 ```
 
 Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
@@ -122,6 +128,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference, dismiss/undismiss)
 - `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
 - `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 4.5, --dry-run/--limit/--month/--force flags)
+- `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 4.5, --dry-run/--limit/--force/--output/--apply flags)
 - `src/components/ShelvesView.tsx` — Shelf index with cards + create form (manual and auto shelves)
 - `src/components/ShelfCarousel.tsx` — Full-screen immersive coverflow carousel for browsing books within a shelf
 - `src/components/ShelfFilterBuilder.tsx` — Filter controls for auto shelf rules (status, genre, rating, month, vibes, favorites, up next)
