@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchCanonicalVibesWithCounts } from "@/lib/vibes";
 import type { Book } from "@/lib/types";
 
-type HomeBook = Pick<
+export type HomeBook = Pick<
   Book,
   | "id"
   | "title"
@@ -24,67 +24,6 @@ export async function fetchCurrentlyReading(): Promise<HomeBook[]> {
 
   if (error) throw error;
   return data;
-}
-
-export async function fetchAiSuggestions(month: number): Promise<HomeBook[]> {
-  const TARGET = 5;
-  const seen = new Set<string>();
-  const results: HomeBook[] = [];
-
-  function addBooks(books: HomeBook[]) {
-    for (const book of books) {
-      if (results.length >= TARGET) break;
-      if (seen.has(book.id)) continue;
-      seen.add(book.id);
-      results.push(book);
-    }
-  }
-
-  // Tier 1: seasonal + high predicted rating
-  const { data: tier1 } = await supabase
-    .from("books")
-    .select(
-      "id, title, author, cover_image_url, status, predicted_rating, created_at",
-    )
-    .eq("status", "unread")
-    .eq("timing_month", month)
-    .gte("predicted_rating", 3.5)
-    .order("predicted_rating", { ascending: false })
-    .limit(TARGET);
-
-  if (tier1) addBooks(tier1);
-
-  // Tier 2: seasonal, any rating
-  if (results.length < TARGET) {
-    const { data: tier2 } = await supabase
-      .from("books")
-      .select(
-        "id, title, author, cover_image_url, status, predicted_rating, created_at",
-      )
-      .eq("status", "unread")
-      .eq("timing_month", month)
-      .order("predicted_rating", { ascending: false, nullsFirst: false })
-      .limit(TARGET);
-
-    if (tier2) addBooks(tier2);
-  }
-
-  // Tier 3: highest predicted rating regardless of timing
-  if (results.length < TARGET) {
-    const { data: tier3 } = await supabase
-      .from("books")
-      .select(
-        "id, title, author, cover_image_url, status, predicted_rating, created_at",
-      )
-      .eq("status", "unread")
-      .not("predicted_rating", "is", null)
-      .order("predicted_rating", { ascending: false })
-      .limit(TARGET);
-
-    if (tier3) addBooks(tier3);
-  }
-
-  return results;
 }
 
 export async function fetchRecentAdditions(): Promise<HomeBook[]> {

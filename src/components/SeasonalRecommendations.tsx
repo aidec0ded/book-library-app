@@ -126,10 +126,10 @@ export function SeasonalRecommendations() {
       </div>
 
       <Link
-        to={`/seasonal?month=${month}`}
+        to="/recommendations"
         className="inline-block text-sm text-muted-foreground hover:text-foreground"
       >
-        See all {getSeasonalName(month)} books &rarr;
+        See all recommendations &rarr;
       </Link>
     </section>
   );

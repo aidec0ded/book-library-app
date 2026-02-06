@@ -4,7 +4,7 @@ import {
   Home,
   Library,
   List,
-  Sun,
+  Compass,
   Sparkles,
   Newspaper,
   MessageCircle,
@@ -39,7 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Discover",
     items: [
-      { label: "Seasonal", path: "/seasonal", icon: Sun },
+      { label: "Recommendations", path: "/recommendations", icon: Compass },
       { label: "Vibes", path: "/vibes", icon: Sparkles },
       { label: "New Releases", path: "/releases", icon: Newspaper },
     ],

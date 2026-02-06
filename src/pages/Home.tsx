@@ -3,15 +3,14 @@ import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { BookCover } from "@/components/BookCover";
 import { DonutChart } from "@/components/DonutChart";
-import { getCurrentTiming, MONTH_NAMES } from "@/lib/timing";
 import {
   fetchCurrentlyReading,
-  fetchAiSuggestions,
   fetchRecentAdditions,
   fetchLibraryStats,
   fetchGreeting,
   type LibraryStats,
 } from "@/lib/home";
+import { fetchRecommendations } from "@/lib/recommendations";
 import type { Book } from "@/lib/types";
 
 type HomeBook = Pick<
@@ -25,25 +24,6 @@ type HomeBook = Pick<
   | "created_at"
 >;
 
-function getSeasonalLabel(month: number): string {
-  const monthName = MONTH_NAMES[month - 1] ?? "This Month";
-  const seasons: Record<number, string> = {
-    1: "Midwinter",
-    2: "Late Winter",
-    3: "Early Spring",
-    4: "Spring",
-    5: "Late Spring",
-    6: "Early Summer",
-    7: "Midsummer",
-    8: "Late Summer",
-    9: "Early Autumn",
-    10: "Autumn",
-    11: "Late Autumn",
-    12: "Early Winter",
-  };
-  return seasons[month] ?? monthName;
-}
-
 export function Home() {
   const [greeting, setGreeting] = useState("");
   const [currentlyReading, setCurrentlyReading] = useState<HomeBook[]>([]);
@@ -53,14 +33,12 @@ export function Home() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  const timing = getCurrentTiming();
-
   useEffect(() => {
     async function load() {
       const [readingResult, suggestionsResult, recentResult, statsResult] =
         await Promise.all([
           fetchCurrentlyReading().catch(() => []),
-          fetchAiSuggestions(timing.month).catch(() => []),
+          fetchRecommendations(5).catch(() => []),
           fetchRecentAdditions().catch(() => []),
           fetchLibraryStats().catch(() => null),
         ]);
@@ -76,7 +54,7 @@ export function Home() {
 
     // Greeting fetched separately (may be slower due to AI generation)
     void fetchGreeting().then(setGreeting);
-  }, [timing.month]);
+  }, []);
 
   if (loading) {
     return (
@@ -188,9 +166,6 @@ export function Home() {
       {suggestions.length > 0 && (
         <section>
           <h2 className="font-serif text-xl font-semibold">Picked for You</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {getSeasonalLabel(timing.month)} reads from your library
-          </p>
           <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
             {suggestions.map((book) => (
               <Link
@@ -219,6 +194,14 @@ export function Home() {
                 </div>
               </Link>
             ))}
+          </div>
+          <div className="mt-3">
+            <Link
+              to="/recommendations"
+              className="text-sm text-accent hover:underline"
+            >
+              See all recommendations &rarr;
+            </Link>
           </div>
         </section>
       )}

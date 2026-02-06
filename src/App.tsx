@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout";
 import { Home } from "@/pages/Home";
 import { BookList } from "@/pages/BookList";
 import { BookDetail } from "@/pages/BookDetail";
-import { SeasonalBooks } from "@/pages/SeasonalBooks";
+import { RecommendationsPage } from "@/pages/RecommendationsPage";
 import { VibesPage } from "@/pages/VibesPage";
 import { AddBook } from "@/pages/AddBook";
 import { Chat } from "@/pages/Chat";
@@ -18,7 +18,7 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="library" element={<BookList />} />
-        <Route path="seasonal" element={<SeasonalBooks />} />
+        <Route path="recommendations" element={<RecommendationsPage />} />
         <Route path="vibes" element={<VibesPage />} />
         <Route path="lists" element={<ListsPage />} />
         <Route path="lists/:id" element={<ListDetail />} />
