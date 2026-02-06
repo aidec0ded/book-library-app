@@ -69,81 +69,54 @@ function extractQId(uri: string): string {
 }
 
 /**
- * Build the SPARQL query for a given award Wikidata ID.
- * Covers four patterns via UNION:
- * 1. Winners on work items (P166 on work)
- * 2. Winners on author items (P166 on author, P1686 qualifies work)
- * 3. Nominees on work items (P1411 on work, optional P1552 for granularity)
- * 4. Nominees on author items (P1411 on author, P1686 qualifies work)
+ * Build SPARQL queries for a given award. Returns two simpler queries
+ * instead of one big UNION to avoid Wikidata timeouts:
+ * 1. Winners query (P166 on work + P166 on author with P1686 qualifier)
+ * 2. Nominees query (P1411 on work + P1411 on author with P1686 qualifier)
  */
-function buildSparqlQuery(awardQId: string): string {
+function buildWinnersQuery(awardQId: string): string {
   return `
-SELECT DISTINCT ?work ?workLabel ?authorLabel ?year ?statusLabel WHERE {
+SELECT DISTINCT ?work ?workLabel ?authorLabel ?year WHERE {
   {
-    # Pattern 1: Winners — award on work
     ?work p:P166 ?stmt .
     ?stmt ps:P166 wd:${awardQId} .
     OPTIONAL { ?stmt pq:P585 ?time . }
-    OPTIONAL { ?work wdt:P50 ?author . }
-    BIND("winner" AS ?statusLabel)
-    BIND(YEAR(?time) AS ?year)
   }
   UNION
   {
-    # Pattern 2: Winners — award on author, work as qualifier
     ?person p:P166 ?stmt .
     ?stmt ps:P166 wd:${awardQId} .
     ?stmt pq:P1686 ?work .
     OPTIONAL { ?stmt pq:P585 ?time . }
-    OPTIONAL { ?work wdt:P50 ?author . }
-    BIND("winner" AS ?statusLabel)
-    BIND(YEAR(?time) AS ?year)
   }
-  UNION
+  OPTIONAL { ?work wdt:P50 ?author . }
+  BIND(YEAR(?time) AS ?year)
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
+}
+  `.trim();
+}
+
+function buildNomineesQuery(awardQId: string): string {
+  return `
+SELECT DISTINCT ?work ?workLabel ?authorLabel ?year ?detail WHERE {
   {
-    # Pattern 3: Nominees — nomination on work
     ?work p:P1411 ?stmt .
     ?stmt ps:P1411 wd:${awardQId} .
     OPTIONAL { ?stmt pq:P585 ?time . }
     OPTIONAL { ?stmt pq:P1552 ?detail . }
-    OPTIONAL { ?work wdt:P50 ?author . }
-    BIND(
-      IF(BOUND(?detail),
-        IF(?detail = wd:Q72996,  "shortlist",
-        IF(?detail = wd:Q2892948, "longlist",
-        "nominee")),
-      "nominee")
-    AS ?statusLabel)
-    BIND(YEAR(?time) AS ?year)
   }
   UNION
   {
-    # Pattern 4: Nominees — nomination on author, work as qualifier
     ?person p:P1411 ?stmt .
     ?stmt ps:P1411 wd:${awardQId} .
     ?stmt pq:P1686 ?work .
     OPTIONAL { ?stmt pq:P585 ?time . }
     OPTIONAL { ?stmt pq:P1552 ?detail . }
-    OPTIONAL { ?work wdt:P50 ?author . }
-    BIND(
-      IF(BOUND(?detail),
-        IF(?detail = wd:Q72996,  "shortlist",
-        IF(?detail = wd:Q2892948, "longlist",
-        "nominee")),
-      "nominee")
-    AS ?statusLabel)
-    BIND(YEAR(?time) AS ?year)
   }
-
-  ?work rdfs:label ?workLabel .
-  FILTER(LANG(?workLabel) = "en")
-  OPTIONAL {
-    ?work wdt:P50 ?authorFallback .
-    ?authorFallback rdfs:label ?authorLabel .
-    FILTER(LANG(?authorLabel) = "en")
-  }
+  OPTIONAL { ?work wdt:P50 ?author . }
+  BIND(YEAR(?time) AS ?year)
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en" . }
 }
-ORDER BY DESC(?year)
   `.trim();
 }
 
@@ -167,33 +140,61 @@ async function querySparql(query: string): Promise<Record<string, unknown>[]> {
   return json.results.bindings;
 }
 
-function parseResults(bindings: Record<string, unknown>[]): RawEntry[] {
-  const entries: RawEntry[] = [];
+// Q-IDs for shortlist/longlist qualifiers
+const SHORTLIST_QID = "http://www.wikidata.org/entity/Q72996";
+const LONGLIST_QID = "http://www.wikidata.org/entity/Q2892948";
 
+function parseWinners(bindings: Record<string, unknown>[]): RawEntry[] {
+  const entries: RawEntry[] = [];
   for (const row of bindings) {
     const r = row as Record<string, { value: string } | undefined>;
     const workUri = r.work?.value;
     const title = r.workLabel?.value;
+    if (!workUri || !title) continue;
+    // Skip entries where label is just the Q-ID (no English label)
+    if (/^Q\d+$/.test(title)) continue;
+
     const author = r.authorLabel?.value ?? "Unknown";
     const yearStr = r.year?.value;
-    const statusStr = r.statusLabel?.value ?? "nominee";
-
-    if (!workUri || !title) continue;
-
     const year = yearStr ? parseInt(yearStr, 10) : null;
-    const status = (["winner", "shortlist", "longlist", "nominee"].includes(statusStr)
-      ? statusStr
-      : "nominee") as RawEntry["status"];
 
     entries.push({
       title,
-      author,
+      author: /^Q\d+$/.test(author) ? "Unknown" : author,
+      year: year && !isNaN(year) ? year : null,
+      status: "winner",
+      wikidata_work_id: extractQId(workUri),
+    });
+  }
+  return entries;
+}
+
+function parseNominees(bindings: Record<string, unknown>[]): RawEntry[] {
+  const entries: RawEntry[] = [];
+  for (const row of bindings) {
+    const r = row as Record<string, { value: string } | undefined>;
+    const workUri = r.work?.value;
+    const title = r.workLabel?.value;
+    if (!workUri || !title) continue;
+    if (/^Q\d+$/.test(title)) continue;
+
+    const author = r.authorLabel?.value ?? "Unknown";
+    const yearStr = r.year?.value;
+    const year = yearStr ? parseInt(yearStr, 10) : null;
+    const detailUri = r.detail?.value;
+
+    let status: RawEntry["status"] = "nominee";
+    if (detailUri === SHORTLIST_QID) status = "shortlist";
+    else if (detailUri === LONGLIST_QID) status = "longlist";
+
+    entries.push({
+      title,
+      author: /^Q\d+$/.test(author) ? "Unknown" : author,
       year: year && !isNaN(year) ? year : null,
       status,
       wikidata_work_id: extractQId(workUri),
     });
   }
-
   return entries;
 }
 
@@ -291,8 +292,6 @@ async function main() {
 
       process.stdout.write(`  ${label} — `);
 
-      const query = buildSparqlQuery(award.wikidata_id);
-
       if (dryRun) {
         console.log("(dry-run, skipping SPARQL query)");
         await sleep(100);
@@ -300,8 +299,15 @@ async function main() {
       }
 
       try {
-        const bindings = await querySparql(query);
-        const raw = parseResults(bindings);
+        // Query winners and nominees separately to avoid Wikidata timeouts
+        const winnersBindings = await querySparql(buildWinnersQuery(award.wikidata_id));
+        await sleep(RATE_LIMIT_MS);
+        const nomineesBindings = await querySparql(buildNomineesQuery(award.wikidata_id));
+
+        const raw = [
+          ...parseWinners(winnersBindings),
+          ...parseNominees(nomineesBindings),
+        ];
         const deduped = deduplicateEntries(raw);
 
         // Upsert entries
@@ -379,25 +385,47 @@ async function main() {
 
   console.log("Matching against library...\n");
 
-  // Fetch all unmatched entries
-  const { data: unmatched, error: unmatchedErr } = await supabase
-    .from("award_entries")
-    .select("id, award_id, title, author")
-    .is("book_id", null);
-
-  if (unmatchedErr || !unmatched) {
-    console.error("Failed to fetch unmatched entries:", unmatchedErr?.message);
-    process.exit(1);
+  // Fetch all unmatched entries (paginate past Supabase 1000-row limit)
+  const unmatched: { id: string; award_id: string; title: string; author: string }[] = [];
+  {
+    const PAGE = 1000;
+    let offset = 0;
+    while (true) {
+      const { data, error: err } = await supabase
+        .from("award_entries")
+        .select("id, award_id, title, author")
+        .is("book_id", null)
+        .range(offset, offset + PAGE - 1);
+      if (err) {
+        console.error("Failed to fetch unmatched entries:", err.message);
+        process.exit(1);
+      }
+      if (!data || data.length === 0) break;
+      unmatched.push(...data);
+      if (data.length < PAGE) break;
+      offset += PAGE;
+    }
   }
 
-  // Fetch all books
-  const { data: books, error: booksErr } = await supabase
-    .from("books")
-    .select("id, title, author");
-
-  if (booksErr || !books) {
-    console.error("Failed to fetch books:", booksErr?.message);
-    process.exit(1);
+  // Fetch all books (paginate)
+  const books: { id: string; title: string; author: string }[] = [];
+  {
+    const PAGE = 1000;
+    let offset = 0;
+    while (true) {
+      const { data, error: err } = await supabase
+        .from("books")
+        .select("id, title, author")
+        .range(offset, offset + PAGE - 1);
+      if (err) {
+        console.error("Failed to fetch books:", err.message);
+        process.exit(1);
+      }
+      if (!data || data.length === 0) break;
+      books.push(...data);
+      if (data.length < PAGE) break;
+      offset += PAGE;
+    }
   }
 
   console.log(`  ${unmatched.length} unmatched entries, ${books.length} books in library\n`);
