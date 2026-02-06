@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { formatCanonicalVibe } from "@/lib/canonical-vibes";
+import { formatRating } from "@/lib/books";
 import type { BookSummary } from "@/lib/types";
 
 const statusVariant = (status: string | null) => {
@@ -16,11 +17,6 @@ const statusVariant = (status: string | null) => {
       return "outline" as const;
   }
 };
-
-function formatRating(rating: number | null): string {
-  if (rating === null) return "";
-  return "\u2605 " + rating.toFixed(1);
-}
 
 export function BookRow({
   book,
@@ -74,7 +70,7 @@ export function BookRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {book.rating !== null && book.rating > 0 && (
-          <span className="text-sm">{formatRating(book.rating)}</span>
+          <span className="text-sm">{"\u2605"} {formatRating(book.rating)}</span>
         )}
         {book.status && (
           <Badge variant={statusVariant(book.status)}>{book.status}</Badge>

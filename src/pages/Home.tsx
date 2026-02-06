@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { BookCover } from "@/components/BookCover";
 import { DonutChart } from "@/components/DonutChart";
+import { formatRating } from "@/lib/books";
 import {
   fetchCurrentlyReading,
   fetchRecentAdditions,
@@ -188,7 +189,7 @@ export function Home() {
                   </p>
                   {book.predicted_rating != null && (
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {"\u2605"} {book.predicted_rating.toFixed(1)} predicted
+                      {"\u2605"} {formatRating(book.predicted_rating)} predicted
                     </p>
                   )}
                 </div>

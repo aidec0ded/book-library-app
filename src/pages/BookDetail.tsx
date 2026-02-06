@@ -15,7 +15,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { VibeEditor } from "@/components/VibeEditor";
-import { updateBook } from "@/lib/books";
+import { updateBook, formatRating } from "@/lib/books";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { BookCover } from "@/components/BookCover";
 import { useChatContext } from "@/contexts/ChatContext";
@@ -34,9 +34,9 @@ const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] a
 
 const RATING_OPTIONS: { label: string; value: string }[] = [
   { label: "Unrated", value: "unrated" },
-  ...Array.from({ length: 10 }, (_, i) => {
-    const v = (10 - i) * 0.5;
-    return { label: `★ ${v.toFixed(1)}`, value: v.toString() };
+  ...Array.from({ length: 20 }, (_, i) => {
+    const v = (20 - i) * 0.25;
+    return { label: `★ ${formatRating(v)}`, value: v.toString() };
   }),
 ];
 
@@ -415,7 +415,7 @@ export function BookDetail() {
               <CardContent>
                 {book.predicted_rating != null ? (
                   <div className="space-y-2">
-                    <p className="text-2xl font-semibold">★ {book.predicted_rating.toFixed(1)}</p>
+                    <p className="text-2xl font-semibold">★ {formatRating(book.predicted_rating)}</p>
                     {book.predicted_rationale && (
                       <p className="text-sm text-muted-foreground italic">
                         "{book.predicted_rationale}"

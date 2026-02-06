@@ -297,12 +297,12 @@ function buildSystemPrompt(
 based on their reading profile, taste patterns, and rating history.
 
 ## Rating Scale
-0.5 to 5.0 in 0.5 increments:
+0.25 to 5.0 in 0.25 increments:
 - 5.0: All-time favorite, deeply impactful
-- 4.0-4.5: Excellent, strongly resonated
-- 3.0-3.5: Good, solid but not exceptional
-- 2.0-2.5: Below average for this reader
-- 0.5-1.5: Poor match, likely wouldn't finish
+- 4.0-4.75: Excellent, strongly resonated
+- 3.0-3.75: Good, solid but not exceptional
+- 2.0-2.75: Below average for this reader
+- 0.25-1.75: Poor match, likely wouldn't finish
 
 ## Reader Profile
 ${profileText}
@@ -314,7 +314,7 @@ ${canonSection}
 ${calibrationSection}
 
 Rules:
-- Return 0.5-increment ratings only (0.5, 1.0, 1.5, ..., 5.0)
+- Return 0.25-increment ratings only (0.25, 0.5, 0.75, 1.0, ..., 5.0)
 - Base predictions on THIS READER's demonstrated taste, not general critical consensus
 - A critically acclaimed book gets a low prediction if it doesn't match this reader's patterns
 - Personal canon themes should pull related predictions UP
@@ -381,10 +381,10 @@ function parseResponse(
       continue;
     }
 
-    // Round to nearest 0.5
-    let rating = Math.round(entry.predicted_rating * 2) / 2;
+    // Round to nearest 0.25
+    let rating = Math.round(entry.predicted_rating * 4) / 4;
     // Clamp to valid range
-    rating = Math.max(0.5, Math.min(5.0, rating));
+    rating = Math.max(0.25, Math.min(5.0, rating));
 
     // Extract rationale (default to empty string if missing)
     const rationale = typeof entry.rationale === "string" ? entry.rationale : "";

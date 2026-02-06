@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BookCover } from "@/components/BookCover";
+import { formatRating } from "@/lib/books";
 import {
   fetchRecommendations,
   type RecommendedBook,
@@ -59,7 +60,7 @@ export function RecommendationsPage() {
                 </p>
                 {book.predicted_rating != null && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {"\u2605"} {book.predicted_rating.toFixed(1)} predicted
+                    {"\u2605"} {formatRating(book.predicted_rating)} predicted
                   </p>
                 )}
               </div>
