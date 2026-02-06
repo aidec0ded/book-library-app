@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { ExternalLink, Pencil, X, Check, Star, MessageSquareQuote, Trash2, MessageCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { VibeEditor } from "@/components/VibeEditor";
-import { updateBook, formatRating } from "@/lib/books";
+import { updateBook, deleteBook, formatRating } from "@/lib/books";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
@@ -43,6 +43,7 @@ const RATING_OPTIONS: { label: string; value: string }[] = [
 
 export function BookDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { openPanel } = useChatContext();
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +63,7 @@ export function BookDetail() {
   const [excerpts, setExcerpts] = useState<BookExcerpt[]>([]);
   const [excerptsLoading, setExcerptsLoading] = useState(true);
   const [awards, setAwards] = useState<BookAward[]>([]);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     async function fetch() {
@@ -136,6 +138,17 @@ export function BookDetail() {
     },
     [excerpts],
   );
+
+  const handleDeleteBook = useCallback(async () => {
+    if (!book) return;
+    try {
+      await deleteBook(book.id);
+      navigate("/library");
+    } catch {
+      setSaveError("Failed to delete book");
+      setConfirmingDelete(false);
+    }
+  }, [book, navigate]);
 
   if (loading) {
     return <div className="text-muted-foreground">Loading...</div>;
@@ -408,6 +421,37 @@ export function BookDetail() {
             <MessageCircle className="h-3.5 w-3.5" />
             Discuss this book
           </button>
+
+          <Separator />
+
+          {/* Delete book */}
+          {confirmingDelete ? (
+            <div className="space-y-2 rounded-md border border-destructive/50 bg-destructive/5 p-3">
+              <p className="text-sm text-destructive">Remove this book from your library?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDeleteBook}
+                  className="rounded-md bg-destructive px-3 py-1 text-xs text-white hover:bg-destructive/90"
+                >
+                  Remove
+                </button>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="rounded-md border px-3 py-1 text-xs hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmingDelete(true)}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove from library
+            </button>
+          )}
         </div>
 
         {/* Right column: AI insights + Metadata */}

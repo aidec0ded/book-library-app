@@ -27,6 +27,7 @@ export async function fetchReleasesByMonth(
 
   if (sort === "score") {
     query = query
+      .gte("ai_score", 7)
       .order("ai_score", { ascending: false, nullsFirst: false })
       .order("title");
   } else {

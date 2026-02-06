@@ -1,6 +1,9 @@
 ### 🐛 Bugs
 
-**All Bugs Fixed**
+- Need to be able to remove a book from library **[DONE]**
+- Add any missing metadata into empty fields; ensure data is as clean as possible
+- On all pages with multiple pages of books, you can't go directly to a specific page — have to cycle through them
+- New releases are once again showing all new releases in descending order for recommended, rather than only showing those that score at least 7 **[DONE]**
 
 ---
 
@@ -24,11 +27,14 @@
 
 - Replace "Notes" section on book detail with explanation of predicted rating **[DONE]**
 - Add new Notes section with user-written notes + conversation excerpts from chatbot **[DONE]**
+- Freeform vibes include too much seasonal language — consider eliminating AI-generated freeform vibes entirely and letting users create their own
 
 **Discovery & recommendations**
 
 - Redesign "What to Read Now" — hide seasonal tagging, surface context-aware picks (season + vibes + current reading patterns). Replace Seasonal Page with a "Recommendations" page linked from "More Recommendations." **[DONE]**
 - Recommended New Releases should filter to scores ≥7, not just sort by score **[DONE]**
+- Filter New Releases by genre
+- When user selects "Not Interested" on a new release, add a form to capture why (e.g. "not interested in comics/graphic novels right now") — useful for future recommendation tuning
 
 **Social & engagement**
 
@@ -40,6 +46,7 @@
 **Chat experience**
 
 - Persistent, minimizable chat window that can be triggered from any page and uses that page's context **[DONE]**
+- Expand chat tool use — can it access the web (check new releases), remove a book from the library, change book status (e.g. remove from "Reading"), and take other site actions beyond list management?
 
 ---
 

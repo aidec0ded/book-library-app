@@ -26,3 +26,11 @@ export async function updateBook(
     .eq("id", bookId);
   if (error) throw error;
 }
+
+export async function deleteBook(bookId: string): Promise<void> {
+  const { error } = await supabase
+    .from("books")
+    .delete()
+    .eq("id", bookId);
+  if (error) throw error;
+}
