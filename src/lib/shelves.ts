@@ -37,6 +37,19 @@ async function buildAutoShelfQuery(filter: ShelfFilter) {
     q = q.eq("is_up_next", true);
   }
 
+  if (filter.page_count_min != null) {
+    q = q.not("page_count", "is", null).gte("page_count", filter.page_count_min);
+  }
+  if (filter.page_count_max != null) {
+    q = q.not("page_count", "is", null).lte("page_count", filter.page_count_max);
+  }
+  if (filter.pub_year_min != null) {
+    q = q.not("publication_year", "is", null).gte("publication_year", filter.pub_year_min);
+  }
+  if (filter.pub_year_max != null) {
+    q = q.not("publication_year", "is", null).lte("publication_year", filter.pub_year_max);
+  }
+
   // Vibe filtering requires a pre-query
   if (filter.vibes && filter.vibes.length > 0) {
     const ids = await fetchBookIdsByCanonicalVibes(filter.vibes);

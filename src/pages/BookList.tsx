@@ -52,6 +52,10 @@ function hasActiveFilters(params: {
   month: string;
   vibes: string[];
   showAll: boolean;
+  pageCountMin: string;
+  pageCountMax: string;
+  pubYearMin: string;
+  pubYearMax: string;
 }): boolean {
   return (
     params.status !== "any" ||
@@ -59,7 +63,11 @@ function hasActiveFilters(params: {
     params.genre !== "any" ||
     params.month !== "any" ||
     params.vibes.length > 0 ||
-    params.showAll
+    params.showAll ||
+    params.pageCountMin !== "" ||
+    params.pageCountMax !== "" ||
+    params.pubYearMin !== "" ||
+    params.pubYearMax !== ""
   );
 }
 
@@ -70,6 +78,10 @@ function buildFilterSummary(params: {
   month: string;
   vibes: string[];
   showAll: boolean;
+  pageCountMin: string;
+  pageCountMax: string;
+  pubYearMin: string;
+  pubYearMax: string;
 }): string {
   const parts: string[] = [];
   if (params.status !== "any") parts.push(params.status);
@@ -80,6 +92,14 @@ function buildFilterSummary(params: {
     const idx = Number(params.month) - 1;
     parts.push(MONTH_NAMES[idx]);
   }
+  if (params.pageCountMin && params.pageCountMax)
+    parts.push(`${params.pageCountMin}–${params.pageCountMax} pages`);
+  else if (params.pageCountMin) parts.push(`>${params.pageCountMin} pages`);
+  else if (params.pageCountMax) parts.push(`<${params.pageCountMax} pages`);
+  if (params.pubYearMin && params.pubYearMax)
+    parts.push(`${params.pubYearMin}–${params.pubYearMax}`);
+  else if (params.pubYearMin) parts.push(`>${params.pubYearMin}`);
+  else if (params.pubYearMax) parts.push(`<${params.pubYearMax}`);
   if (params.vibes.length > 0)
     parts.push(params.vibes.map(formatCanonicalVibe).join(", "));
   if (params.showAll) parts.push("all books");
@@ -98,6 +118,10 @@ export function BookList() {
   const initialMonth = searchParams.get("month") ?? "any";
   const initialVibes = parseVibesParam(searchParams.get("vibes"));
   const initialShowAll = searchParams.get("all") === "1";
+  const initialPcMin = searchParams.get("pcMin") ?? "";
+  const initialPcMax = searchParams.get("pcMax") ?? "";
+  const initialPyMin = searchParams.get("pyMin") ?? "";
+  const initialPyMax = searchParams.get("pyMax") ?? "";
   const view = searchParams.get("view") === "shelves" ? "shelves" : "list";
 
   const [query, setQuery] = useState(initialQuery);
@@ -114,6 +138,15 @@ export function BookList() {
   const [month, setMonth] = useState(initialMonth);
   const [selectedVibes, setSelectedVibes] = useState<string[]>(initialVibes);
   const [showAll, setShowAll] = useState(initialShowAll);
+  const [pageCountMin, setPageCountMin] = useState(initialPcMin);
+  const [pageCountMax, setPageCountMax] = useState(initialPcMax);
+  const [pubYearMin, setPubYearMin] = useState(initialPyMin);
+  const [pubYearMax, setPubYearMax] = useState(initialPyMax);
+  // Local input state for range filters (committed on blur/Enter)
+  const [pcMinInput, setPcMinInput] = useState(initialPcMin);
+  const [pcMaxInput, setPcMaxInput] = useState(initialPcMax);
+  const [pyMinInput, setPyMinInput] = useState(initialPyMin);
+  const [pyMaxInput, setPyMaxInput] = useState(initialPyMax);
   const [filtersOpen, setFiltersOpen] = useState(
     hasActiveFilters({
       status: initialStatus,
@@ -122,6 +155,10 @@ export function BookList() {
       month: initialMonth,
       vibes: initialVibes,
       showAll: initialShowAll,
+      pageCountMin: initialPcMin,
+      pageCountMax: initialPcMax,
+      pubYearMin: initialPyMin,
+      pubYearMax: initialPyMax,
     }),
   );
 
@@ -167,6 +204,10 @@ export function BookList() {
     if (month !== "any") params.month = month;
     if (selectedVibes.length > 0) params.vibes = selectedVibes.join(",");
     if (showAll) params.all = "1";
+    if (pageCountMin) params.pcMin = pageCountMin;
+    if (pageCountMax) params.pcMax = pageCountMax;
+    if (pubYearMin) params.pyMin = pubYearMin;
+    if (pubYearMax) params.pyMax = pubYearMax;
     if (view === "shelves") params.view = "shelves";
     setSearchParams(params, { replace: true });
   }, [
@@ -178,6 +219,10 @@ export function BookList() {
     month,
     selectedVibes,
     showAll,
+    pageCountMin,
+    pageCountMax,
+    pubYearMin,
+    pubYearMax,
     view,
     setSearchParams,
   ]);
@@ -231,6 +276,19 @@ export function BookList() {
       q = q.eq("timing_month", Number(month));
     }
 
+    if (pageCountMin) {
+      q = q.not("page_count", "is", null).gte("page_count", Number(pageCountMin));
+    }
+    if (pageCountMax) {
+      q = q.not("page_count", "is", null).lte("page_count", Number(pageCountMax));
+    }
+    if (pubYearMin) {
+      q = q.not("publication_year", "is", null).gte("publication_year", Number(pubYearMin));
+    }
+    if (pubYearMax) {
+      q = q.not("publication_year", "is", null).lte("publication_year", Number(pubYearMax));
+    }
+
     if (!showAll) {
       q = q.or("timing_raw.not.is.null,status.eq.wishlist,status.eq.reading");
     }
@@ -275,6 +333,10 @@ export function BookList() {
     month,
     selectedVibes,
     showAll,
+    pageCountMin,
+    pageCountMax,
+    pubYearMin,
+    pubYearMax,
   ]);
 
   useEffect(() => {
@@ -297,6 +359,14 @@ export function BookList() {
     setMonth("any");
     setSelectedVibes([]);
     setShowAll(false);
+    setPageCountMin("");
+    setPageCountMax("");
+    setPubYearMin("");
+    setPubYearMax("");
+    setPcMinInput("");
+    setPcMaxInput("");
+    setPyMinInput("");
+    setPyMaxInput("");
     setPage(1);
   }
 
@@ -307,6 +377,10 @@ export function BookList() {
     month,
     vibes: selectedVibes,
     showAll,
+    pageCountMin,
+    pageCountMax,
+    pubYearMin,
+    pubYearMax,
   };
   const active = hasActiveFilters(filterState);
   const summary = buildFilterSummary(filterState);
@@ -378,6 +452,8 @@ export function BookList() {
                 month !== "any",
                 selectedVibes.length > 0,
                 showAll,
+                pageCountMin !== "" || pageCountMax !== "",
+                pubYearMin !== "" || pubYearMax !== "",
               ].filter(Boolean).length}
             </span>
           )}
@@ -463,6 +539,63 @@ export function BookList() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+
+            {/* Range filters */}
+            <div className="flex flex-wrap gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Pages
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    placeholder="Min"
+                    className="h-8 w-20"
+                    value={pcMinInput}
+                    onChange={(e) => setPcMinInput(e.target.value)}
+                    onBlur={() => { setPageCountMin(pcMinInput); setPage(1); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { setPageCountMin(pcMinInput); setPage(1); } }}
+                  />
+                  <span className="text-xs text-muted-foreground">&ndash;</span>
+                  <Input
+                    type="number"
+                    placeholder="Max"
+                    className="h-8 w-20"
+                    value={pcMaxInput}
+                    onChange={(e) => setPcMaxInput(e.target.value)}
+                    onBlur={() => { setPageCountMax(pcMaxInput); setPage(1); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { setPageCountMax(pcMaxInput); setPage(1); } }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Year
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    placeholder="Min"
+                    className="h-8 w-20"
+                    value={pyMinInput}
+                    onChange={(e) => setPyMinInput(e.target.value)}
+                    onBlur={() => { setPubYearMin(pyMinInput); setPage(1); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { setPubYearMin(pyMinInput); setPage(1); } }}
+                  />
+                  <span className="text-xs text-muted-foreground">&ndash;</span>
+                  <Input
+                    type="number"
+                    placeholder="Max"
+                    className="h-8 w-20"
+                    value={pyMaxInput}
+                    onChange={(e) => setPyMaxInput(e.target.value)}
+                    onBlur={() => { setPubYearMax(pyMaxInput); setPage(1); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { setPubYearMax(pyMaxInput); setPage(1); } }}
+                  />
+                </div>
               </div>
             </div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -152,6 +153,79 @@ export function ShelfFilterBuilder({
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      {/* Range filters */}
+      <div className="flex flex-wrap gap-4">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">
+            Pages
+          </label>
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="number"
+              placeholder="Min"
+              className="h-8 w-20"
+              value={filter.page_count_min ?? ""}
+              onChange={(e) =>
+                update({
+                  page_count_min: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
+                })
+              }
+            />
+            <span className="text-xs text-muted-foreground">&ndash;</span>
+            <Input
+              type="number"
+              placeholder="Max"
+              className="h-8 w-20"
+              value={filter.page_count_max ?? ""}
+              onChange={(e) =>
+                update({
+                  page_count_max: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
+                })
+              }
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">
+            Year
+          </label>
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="number"
+              placeholder="Min"
+              className="h-8 w-20"
+              value={filter.pub_year_min ?? ""}
+              onChange={(e) =>
+                update({
+                  pub_year_min: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
+                })
+              }
+            />
+            <span className="text-xs text-muted-foreground">&ndash;</span>
+            <Input
+              type="number"
+              placeholder="Max"
+              className="h-8 w-20"
+              value={filter.pub_year_max ?? ""}
+              onChange={(e) =>
+                update({
+                  pub_year_max: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
+                })
+              }
+            />
+          </div>
         </div>
       </div>
 

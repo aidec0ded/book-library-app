@@ -136,6 +136,10 @@ export interface ShelfFilter {
   vibes?: string[];
   is_favorite?: boolean;
   is_up_next?: boolean;
+  page_count_min?: number;
+  page_count_max?: number;
+  pub_year_min?: number;
+  pub_year_max?: number;
 }
 
 export type ShelfType = "manual" | "auto";
