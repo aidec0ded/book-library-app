@@ -1,14 +1,16 @@
 # MoodLib
 
-Personal book library app that recommends books based on mood, season, and vibe. 1,711 books imported from BookBuddy+ catalog and a curated fiction spreadsheet. AI-powered vibe tagging via Claude API.
+A book library app that recommends books based on mood, season, and vibe. AI-powered reading companion that learns your taste and deepens your reading life.
 
 ## Vision
 
-MoodLib is built around a core belief: the value of a personal library isn't just what's on the shelves — it's in understanding how books affect you as a person, and using that understanding to guide what you read next.
+MoodLib exists because most book apps and communities have drifted toward social performance and goal-chasing — read counts, public ratings, challenges completed — at the expense of actually reading meaningfully. MoodLib is the antidote: an app that helps readers understand how books affect them, and uses that understanding to guide what they read next.
 
-The app's central loop is: **read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally**. Ratings and notes alone don't capture why a book resonated. The AI reading companion (Phase 11) is the mechanism for deeper reflection — a place to discuss what you're reading, how it's making you feel, and how it connects to other books and ideas. Over time, the AI builds a reader profile that enables genuinely personal recommendations, predicted ratings, and proactive suggestions grounded in the reader's evolving tastes.
+The app's central loop is: **read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally**. Ratings and notes alone don't capture why a book resonated. The AI reading companion is the mechanism for deeper reflection — a place to discuss what you're reading, how it's making you feel, and how it connects to other books and ideas. Over time, the AI builds a reader profile that enables genuinely personal recommendations, predicted ratings, and proactive suggestions grounded in the reader's evolving tastes.
 
 Everything should feel personal. The app should celebrate the reader's own library and make them excited to "step into" it — not replicate a public review site or bookstore.
+
+**Product direction:** MoodLib is being built as a public web application (and eventually mobile). The current development phase uses a single library to get the experience right before adding authentication, multi-user data isolation, and hosting. Features should be evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
 
 ## Commands
 
@@ -87,9 +89,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 **Frontend structure:**
 - `src/main.tsx` — React entry point
 - `src/App.tsx` — React Router: `/` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/lists` (ListsPage), `/lists/:id` (ListDetail), `/releases` (ReleasesPage), `/profile` (Profile)
-- `src/components/Layout.tsx` — App shell with header + `<Outlet />`
+- `src/components/Layout.tsx` — App shell with header + `<Outlet />`, wraps all routes in ChatProvider
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
-- `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, up next, notes) + predicted rating display
+- `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
 - `src/lib/books.ts` — Book update helper (type-constrained to editable fields)
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
@@ -97,7 +99,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/AddBook.tsx` — ISBNdb search, preview, and add-to-library flow
 - `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping)
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Select, Separator, Textarea)
-- `src/pages/Chat.tsx` — AI reading companion chat page with streaming responses
+- `src/hooks/useChatSession.ts` — Chat state machine (shared between full page and floating panel)
+- `src/contexts/ChatContext.tsx` — React context: chat session + panel open/close state
+- `src/pages/Chat.tsx` — Full-page AI reading companion chat (consumes shared ChatContext)
+- `src/components/ChatPanel.tsx` — Floating chat panel + FAB button (accessible from every page, auto-hides on /chat)
 - `src/lib/chat.ts` — Conversation CRUD + SSE streaming client
 - `src/components/ChatMessage.tsx` — Chat message bubble component (user/assistant)
 - `src/components/ConversationList.tsx` — Past conversations panel (collapsible)
@@ -107,6 +112,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/list-handler.ts` — List tool command executor (create, view, add_books, remove_books, delete)
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/list-index.ts` — Builds existing-lists context for system prompt (cached 10min)
+- `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
+- `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
 - `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
 - `src/lib/profile.ts` — Profile CRUD + personal canon updates
@@ -131,206 +138,47 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 4.5, --dry-run/--limit/--force/--output/--apply flags)
 - `src/components/ShelvesView.tsx` — Shelf index with cards + create form (manual and auto shelves)
 - `src/components/ShelfCarousel.tsx` — Full-screen immersive coverflow carousel for browsing books within a shelf
-- `src/components/ShelfFilterBuilder.tsx` — Filter controls for auto shelf rules (status, genre, rating, month, vibes, favorites, up next)
+- `src/components/ShelfFilterBuilder.tsx` — Filter controls for auto shelf rules (status, genre, rating, month, vibes, favorites)
 - `src/lib/shelves.ts` — Shelf CRUD + auto filter query builder + shelf item management
 
-**MVP phases (complete):**
-1. ~~Book list UI with search~~ (done)
-2. ~~Month-based filtering + "What Should I Read Now?"~~ (done)
-3. ~~Manual vibe tagging UI~~ (done — book_vibes table + VibeEditor component)
-4. ~~AI-assisted vibe tagging via Claude API~~ (done — tag-vibes.ts script + AI badge UI)
+### What's Built
 
-**Post-MVP roadmap:**
+**Foundation** — Searchable/paginated book library, seasonal filtering, two-tier vibe system (17 canonical + freeform), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
-### Phase 5: Canonical Vibes & Vibes Discovery
+**Reflection Loop** — AI reading companion chat (streaming, memory, tool use), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
-Two-tier vibe system: 17 canonical vibes for browsing/filtering + freeform descriptive vibes for richness. Canonical vibes are the primary discovery axis; freeform vibes remain visible on book detail and available for future AI-driven search/lists.
+**AI Output** — Predicted ratings for unread books, AI-managed lists + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page
 
-**5a. Canonical vibe schema & tagging**
-- Add `is_canonical` boolean to `book_vibes` (new migration, defaults to `false`)
-- Define the 17 canonical vibes as an app constant:
+**Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases
 
-| Tag | Description |
-|-----|-------------|
-| Cozy | Comfort reads, warm feelings, low stakes |
-| Dark | Grim, unsettling, morally complex |
-| Hopeful | Optimistic arc, things get better |
-| Melancholy | Beautiful sadness, bittersweet |
-| Intense | Can't put it down, high tension |
-| Slow Burn | Meditative pace, rewards patience |
-| Atmospheric | Setting is a character, immersive world |
-| Found Family | Chosen bonds, group dynamics |
-| Female Rage | Women's anger as power, cathartic |
-| Escapist | Pure fun, don't have to think |
-| Emotional Gut-Punch | Will make you cry |
-| Epic | Big scope, sweeping narrative |
-| Sincere | Earnest emotional investment, anti-ironic, wrestling with meaning |
-| Austere | Restrained, precise, intellectual cool, observational distance |
-| Demanding | Dense prose, requires surrender, rewards patience |
-| Weird | Reality feels wrong, cosmic unease, philosophical dread |
-| Transgressive | Pushes boundaries, goes to uncomfortable places |
+**Library as Space** — Visual bookshelf with manual + auto shelves, coverflow carousel, Bookshop.org purchase links
 
-- New script (or `tag-vibes.ts --canonical` mode) to bulk-assign 1–3 canonical vibes per fiction-list book via Claude API. Prompt includes the 17 tags with descriptions; model must choose only from the list.
-- Update `tag-vibes.ts` for future runs to assign both canonical (1–3) + freeform (2–4) vibes per book, with existing freeform vocabulary supplied in the prompt to reduce near-duplicates.
+### Active & Upcoming
 
-**5b. Vibes discovery page & UI updates**
-- `/vibes` route — grid/list of 17 canonical vibes with book counts, click through to filtered book list
-- Update manual tagging UI — VibeEditor offers dropdown/autocomplete from the 17 canonical tags (separate from freeform input)
-- Add "Vibes" link to header nav alongside "Seasonal"
-- Book detail page: canonical vibes displayed prominently; freeform vibes shown separately below
+**UI Polish** — Reader profile page redesign, vibes page visual refresh, list view styling, general polish across existing features
 
-### Phase 6: List View & Filtering
+**Infrastructure** — User authentication + multi-user data isolation, deployment (Vercel/Cloudflare Pages + serverless), public signup
 
-- Metadata filter controls — status, rating, genre, timing month, canonical vibes
-- Default view — filter out books without timing data (`timing_raw IS NULL`), with toggle to show all
-- More evocative seasonal naming on the home page (replace "Early February" with atmospheric labels)
-- List view styling — cover thumbnails (if available), canonical vibe badges on rows
-
-### ~~Phase 7: Book Detail Redesign~~ (done)
-
-- Responsive hero area with optional cover image (left on desktop, stacked on mobile)
-- "Personalized" card — Predicted Rating (unread books), Notes
-- "Metadata" card — Genre, Category, When to Read, ISBN, dates
-- Rating promoted to hero area below status badges
-- VibeEditor repositioned between Personalized and Metadata cards
-
-### ~~Phase 8: Data Enrichment via ISBNdb~~ (done)
-
-- `scripts/enrich-isbndb.ts` — bulk enrichment via ISBNdb API (cover images, page count, publisher, publication year, format, synopsis)
-- New DB columns: `page_count`, `publisher`, `publication_year`, `format`, `isbndb_enriched_at` (migration 006)
-- BookDetail Metadata card displays new fields; cover image + summary auto-render when populated
-- --dry-run/--limit/--force flags; 1 req/sec rate limiting; exponential backoff on 429/5xx
-
-### ~~Phase 9: Add Books~~ (done)
-
-- `/add` route — search ISBNdb by title/author or enter ISBN directly, preview metadata, pick status, save to library
-- `src/lib/isbndb.ts` — frontend ISBNdb client via Vite dev proxy (`/api/isbndb` → `api2.isbndb.com`)
-- ISBN auto-detection skips straight to preview; duplicate warning if ISBN already in library
-- RLS INSERT + UPDATE policies on books (migration 007)
-
-### Round 1: Enable Reflection
-
-The core loop: read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally. Round 1 builds the input side of that loop — giving the user ways to tell the app how books make them feel, and giving the AI a place to listen and learn.
-
-~~**Phase 10: Inline Editing on Book Detail**~~ (done)
-- Edit rating, notes, status, favorite, up next directly from the book detail page
-- Optimistic updates with rollback on error; auto-save for dropdowns/toggles, click-to-edit with save/cancel for text fields
-- `src/lib/books.ts` — `updateBook` helper type-constrained to 5 editable fields
-- Personalized card always renders (not conditional on existing values)
-
-~~**Phase 11: AI Reading Companion**~~ (done)
-- Single chat interface at `/chat` for discussing your whole reading life — not per-book threads
-- Persisted conversation history (`conversations` + `messages` tables in Supabase)
-- AI has full library context (books, ratings, vibes) via system prompt with prompt caching
-- Claude memory tool (`memory_20250818`) for cross-conversation continuity — stores reader insights in `memory_files` table
-- Real-time streaming via SSE; standalone Node.js server on port 3001, proxied through Vite dev server
-- Session persistence via sessionStorage; conversation list with auto-generated titles
-- Note: memory tool integration bridges Phase 11 and Phase 12 — the AI can already begin building reader understanding
-
-~~**Phase 12: Reader Profile**~~ (done)
-- `reader_profile` table stores periodic AI-generated profiles (each generation inserts a new row, history preserved)
-- `scripts/generate-profile.ts` synthesizes library data, memory files, and conversation history into structured profile via Claude Opus
-- Profile sections: reader identity, thematic pillars, taste evolution (with shift log), emotional patterns, reading life snapshot, personal canon
-- Profile included in chat system prompt via `server/profile-loader.ts` (cached 10min)
-- `/profile` page displays all sections; Personal Canon is the only user-editable section (add/remove books via library search modal)
-- Shift log and personal canon carry forward across regenerations
-- --dry-run, --force, --bootstrap flags; monthly cadence (manual script runs)
-
-### Round 2: AI-Driven Output
-
-With the reflection loop feeding signal, the AI can start producing personalized value.
-
-~~**Phase 13: Predicted Ratings**~~ (done)
-- Replaced editorial `transformative_potential` and `canon_potential` text fields with AI-generated `predicted_rating` (numeric 0.5–5.0)
-- `scripts/predict-ratings.ts` generates predictions via Claude Sonnet 4.5 using reader profile, personal canon, and stratified calibration set
-- Predictions shown on BookDetail for unread books only; hidden for read/reading/unfinished
-- Batches of 20, --dry-run/--limit/--force flags; requires reader profile + ≥10 rated books
-- Migration 010 drops old columns and adds `predicted_rating` + `predicted_at`
-
-~~**Phase 14a: Lists & Curation (Manual)**~~ (done)
-- `lists` + `list_items` tables with ordered positions, cascade deletes, RLS (migration 011)
-- `/lists` index page with create form, `/lists/:id` detail with ordered books
-- Add/remove books via library search, reorder up/down, inline-edit name/description, delete list
-- `src/lib/lists.ts` CRUD module (9 functions)
-
-~~**Phase 14b: Lists & Curation (AI Generation)**~~ (done)
-- `manage_lists` custom tool added to chat companion (create, view, add_books, remove_books, delete)
-- AI can create/manage lists proactively based on reading patterns, or on request via chat
-- Books resolved by exact title match against library; list context included in system prompt
-
-~~**Phase 15: Home Page Redesign**~~ (done)
-- `/` is now a personalized dashboard with AI greeting, currently reading, seasonal suggestions, recent additions, library stats
-- Book list moved to `/library`; warm typography (Libre Baskerville) and gold/brown color palette applied globally
-- AI greeting via `GET /api/greeting` (1hr cache, Claude-generated from reader profile + recent conversation)
-- BookCover and DonutChart reusable components
-
-### Round 3: Discovery & New Releases
-
-Extends the personalization loop beyond books already in the library.
-
-~~**Phase 16: New Releases Ingestion**~~ (done)
-- `new_releases` table stores books ingested from ISBNdb, separate from the user's library (migration 012)
-- `scripts/ingest-releases.ts` queries ISBNdb by publication month, pages through results, batch upserts into Supabase
-- `/releases` browse page with month selector, cover grid, expanded detail panel, "In Library" badges, pagination
-- --dry-run/--limit/--month/--months flags; 1.1s rate limiting; exponential backoff on 429/5xx
-
-~~**Phase 17: Personalized New Release Filtering**~~ (done)
-- `scripts/score-releases.ts` scores releases on general signal (1-10) and personal match (1-10), computes weighted `ai_score` (60% personal, 40% general)
-- Works with or without reader profile (general signal only if no profile)
-- Scoring columns on `new_releases`: `general_signal_score`, `personal_score`, `ai_score`, `ai_rationale`, `scored_at`, `dismissed` (migration 013)
-- `/releases` browse page: score badges on grid cards (color-tiered), "Recommended"/"All" sort toggle, AI rationale in expanded detail, "Not interested" dismiss
-- `ingest-releases.ts` now validates parsed `pub_month`/`pub_year` against target month to filter stray-month books
-
-~~**Phase 18: Wishlist & Want-to-Read**~~ (done)
-- "wishlist" as a fifth status value — no migration needed (`status` is unconstrained text)
-- Entry points: Add Book page, Book Detail status dropdown, Releases page "Want to Read" button, AI chat `manage_wishlist` tool
-- Wishlisted books hide rating/favorite/up-next on detail page; notes remain editable
-- Bookshop.org purchase links on Book Detail and Releases expanded detail for any book/release with an ISBN (search URL: `https://bookshop.org/books?keywords={ISBN}`)
-- `server/wishlist-handler.ts` — add/view/remove actions for AI chat companion
-- Books added from Releases page inherit full ISBNdb metadata; books added via chat have title + author only
-
-### Round 4: Library as a Space
-
-Making the library joyful to visit — a space that reflects the reader's personality.
-
-~~**Phase 19+20: Visual Bookshelf with Customizable Shelves**~~ (done)
-- `/library?view=shelves` toggle between list view and shelf view
-- `shelves` + `shelf_items` tables (migration 014) — manual and auto shelf types
-- Shelf index: vertical stack of shelf cards with representative cover, name, description, book count
-- Immersive full-screen coverflow carousel: CSS scroll-snap with scale transforms, keyboard navigation (arrow keys, escape, enter), click-to-navigate to book detail
-- Manual shelves: user adds/removes books via BookSearchModal
-- Auto shelves: filter-based (status, genre, rating, month, vibes, favorites, up next) — books update dynamically when filter changes
-- Shelf management: inline editing of name/description, filter editing for auto shelves, delete with confirmation
-
-**Phase 21: UI Polish & Refinements**
-- Default view improvements (hide books without timing data, better defaults)
-- List view styling refinements
-- Book detail page iterations based on usage
-- General polish across all existing features
-
-### Deferred
-
-- **Reviews integration** — "What Others Are Saying" section on book detail. Critical sources (NYT, New Yorker, Kirkus, etc.) and reader reviews (Goodreads, StoryGraph, etc.) lack reliable public APIs. Revisit when a viable data source emerges.
-- **Social & sharing** — shared lists, customizable library profiles, shared shelf templates. Requires authentication, multi-user data isolation, and hosting. Keep in mind architecturally but don't build toward yet.
-- **Hosting** — Vercel/Netlify/Cloudflare Pages for static frontend + serverless proxy for ISBNdb. Decide when there's a reason to access the app outside localhost.
+**Future** — Reviews integration (blocked on viable API sources), social features (shared lists/shelves/profiles), mobile application
 
 ## Data Model
 
-Eleven tables in Supabase:
+Twelve tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
 - `predicted_rating` — AI-predicted rating (0.5–5.0), generated by `predict-ratings.ts` based on reader profile
 - `predicted_at` — timestamp of last prediction (null = never predicted)
 - `rating` — numeric 0-5 in 0.5 increments; null means unrated (catalog stored 0.0 for unrated)
-- `status` — read, unread, reading, unfinished, wishlist (lowercased from catalog; wishlist added in Phase 18)
-- `is_favorite`, `is_up_next` — booleans from catalog flags
+- `status` — read, unread, reading, unfinished, wishlist (unconstrained text)
+- `is_favorite` — boolean from catalog flag
+- `is_up_next` — boolean from catalog flag (column retained but no longer surfaced in UI)
 - `page_count`, `publisher`, `publication_year`, `format` — enriched from ISBNdb
 - `isbndb_enriched_at` — timestamp of last ISBNdb lookup (null = not yet looked up; set even for 404s to prevent retries)
 
 **book_vibes** — Vibe tags for books. Each row links a vibe string to a book. Key fields:
 - `ai_assigned` / `user_confirmed` — tracks provenance; AI vibes start unconfirmed, users can confirm in the UI
-- `is_canonical` (planned) — distinguishes the 17 canonical vibes used for browsing/filtering from freeform descriptive vibes. Canonical vibes are the primary discovery axis; freeform vibes provide richness for detail pages and future AI search.
+- `is_canonical` — distinguishes the 17 canonical vibes used for browsing/filtering from freeform descriptive vibes. Canonical vibes are the primary discovery axis; freeform vibes provide richness for detail pages and future AI search.
 
 **conversations** — Chat conversations. Key fields:
 - `title` — AI-generated after first exchange (3-6 words)
@@ -349,7 +197,12 @@ Eleven tables in Supabase:
 **reader_profile** — Periodic AI-generated reader profiles. Each generation inserts a new row; latest fetched with `ORDER BY generated_at DESC LIMIT 1`. Key fields:
 - `generated_at` — when this profile was generated
 - `profile_data` (jsonb) — structured profile: reader_identity, thematic_pillars, taste_evolution, emotional_patterns, reading_life_snapshot, personal_canon
-- `generation_context` (jsonb) — metadata: model, book count, message count, token usage
+- `generation_context` (jsonb) — metadata: model, book count, message count, token usage, `activity_snapshot` (6 counters used by the profile scheduler for delta checking)
+
+**book_excerpts** — AI-curated insights saved from chat conversations to specific books. Key fields:
+- `book_id` — FK to books, CASCADE delete
+- `conversation_id` — FK to conversations (nullable)
+- `content` — polished 1-3 sentence insight
 
 **lists** — User-created curated book lists. Key fields:
 - `name` — required, non-empty
@@ -380,7 +233,7 @@ Eleven tables in Supabase:
 - `name` — required, non-empty
 - `description` — optional
 - `shelf_type` — `'manual'` or `'auto'` (check-constrained)
-- `filter` (jsonb) — filter rules for auto shelves (status, genre, rating_min, timing_month, vibes, is_favorite, is_up_next); null for manual shelves
+- `filter` (jsonb) — filter rules for auto shelves (status, genre, rating_min, timing_month, vibes, is_favorite); null for manual shelves
 - `updated_at` — auto-updated via trigger
 
 **shelf_items** — Ordered book references within manual shelves (structurally identical to `list_items`). Key fields:
@@ -404,7 +257,7 @@ Requires `.env` (not committed) with:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (service role, not anon — bypasses RLS for bulk import)
 - `ANTHROPIC_API_KEY` — for AI vibe tagging script
-- `ISBNDB_API_KEY` — for ISBNdb book data enrichment (Phase 8+)
+- `ISBNDB_API_KEY` — for ISBNdb enrichment, new releases ingestion, and Add Book search
 - `VITE_SUPABASE_URL` — same Supabase URL (exposed to browser via Vite)
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
 - `VITE_ISBNDB_API_KEY` — ISBNdb key for frontend Add Book search (proxied via Vite dev server)
