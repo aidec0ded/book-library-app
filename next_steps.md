@@ -22,7 +22,6 @@
 
 **AI & personalization**
 
-- Surfacing conversational insights proactively on home page
 - AI-suggested shelf/list curation based on reading patterns
 - Replace "Notes" section on book detail with explanation of predicted rating **[DONE]**
 - Add new Notes section with user-written notes + conversation excerpts from chatbot **[DONE]**
