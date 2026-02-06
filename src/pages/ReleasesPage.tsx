@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   fetchReleasesByMonth,
@@ -36,6 +36,298 @@ function scoreBadgeColor(score: number): string {
   if (score >= 6) return "bg-emerald-100 text-emerald-800 border-emerald-300";
   if (score >= 4) return "bg-neutral-100 text-neutral-600 border-neutral-300";
   return "bg-neutral-50 text-neutral-400 border-neutral-200";
+}
+
+function useGridColumns(gridRef: React.RefObject<HTMLDivElement | null>): number {
+  const [cols, setCols] = useState(6);
+
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+
+    function measure() {
+      if (!gridRef.current) return;
+      const style = getComputedStyle(gridRef.current);
+      const templateCols = style.gridTemplateColumns.split(" ").length;
+      setCols(templateCols);
+    }
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [gridRef]);
+
+  return cols;
+}
+
+interface ReleaseGridProps {
+  releases: NewRelease[];
+  expandedId: string | null;
+  libraryIsbns: Set<string>;
+  addedIsbns: Set<string>;
+  onToggleExpanded: (id: string) => void;
+  onDismiss: (isbn13: string) => void;
+  onUndismiss: (isbn13: string) => void;
+  onWishlist: (release: NewRelease) => void;
+  onClickOutside: () => void;
+  scoreBadgeColor: (score: number) => string;
+}
+
+function ReleaseGrid({
+  releases,
+  expandedId,
+  libraryIsbns,
+  addedIsbns,
+  onToggleExpanded,
+  onDismiss,
+  onUndismiss,
+  onWishlist,
+  onClickOutside,
+  scoreBadgeColor,
+}: ReleaseGridProps) {
+  const gridRef = useRef<HTMLDivElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const cols = useGridColumns(gridRef);
+
+  const expandedRelease = expandedId
+    ? releases.find((r) => r.id === expandedId) ?? null
+    : null;
+
+  // Find which row the expanded item is in
+  const expandedIndex = expandedId
+    ? releases.findIndex((r) => r.id === expandedId)
+    : -1;
+  const insertAfterIndex =
+    expandedIndex >= 0 ? Math.min((Math.floor(expandedIndex / cols) + 1) * cols, releases.length) - 1 : -1;
+
+  // Click outside to close
+  useEffect(() => {
+    if (!expandedId) return;
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (detailRef.current?.contains(target)) return;
+      // Check if click was on a grid card button — those handle their own toggle
+      if (gridRef.current?.contains(target)) return;
+      onClickOutside();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [expandedId, onClickOutside]);
+
+  // Scroll detail into view when it appears
+  useEffect(() => {
+    if (expandedId && detailRef.current) {
+      detailRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [expandedId]);
+
+  function renderCard(release: NewRelease) {
+    const inLibrary =
+      libraryIsbns.has(release.isbn13) ||
+      (release.isbn10 != null && libraryIsbns.has(release.isbn10));
+
+    return (
+      <button
+        key={release.id}
+        onClick={() => onToggleExpanded(release.id)}
+        className={`group relative text-left transition-opacity ${
+          expandedId && expandedId !== release.id ? "opacity-60" : ""
+        } ${release.dismissed ? "opacity-40" : ""}`}
+      >
+        {release.ai_score != null && (
+          <div
+            className={`absolute top-1 left-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold shadow-sm ${scoreBadgeColor(release.ai_score)}`}
+          >
+            {Math.round(release.ai_score)}
+          </div>
+        )}
+        {inLibrary && (
+          <Badge
+            variant="secondary"
+            className="absolute top-1 right-1 z-10 text-[10px] shadow-sm"
+          >
+            In Library
+          </Badge>
+        )}
+        <BookCover
+          title={release.title}
+          author={release.authors.join(", ") || "Unknown"}
+          coverUrl={release.cover_image_url}
+          size="sm"
+        />
+        <div className="mt-1.5 space-y-0.5">
+          <p className="font-serif text-sm font-medium leading-tight line-clamp-2">
+            {release.title}
+          </p>
+          <p className="text-xs text-muted-foreground line-clamp-1">
+            {release.authors.join(", ") || "Unknown author"}
+          </p>
+          {(release.publisher || release.binding) && (
+            <p className="text-xs text-muted-foreground/70 line-clamp-1">
+              {[release.publisher, release.binding]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
+        </div>
+      </button>
+    );
+  }
+
+  function renderDetail(release: NewRelease) {
+    const inLibrary =
+      libraryIsbns.has(release.isbn13) ||
+      (release.isbn10 != null && libraryIsbns.has(release.isbn10));
+
+    return (
+      <div ref={detailRef} className="col-span-full">
+        <Card>
+          <CardContent>
+            <div className="flex flex-col gap-4 sm:flex-row">
+              <div className="shrink-0">
+                <BookCover
+                  title={release.title}
+                  author={release.authors.join(", ") || "Unknown"}
+                  coverUrl={release.cover_image_url}
+                  size="lg"
+                />
+              </div>
+              <div className="min-w-0 flex-1 space-y-3">
+                <div>
+                  <h2 className="font-serif text-xl font-bold">
+                    {release.title}
+                  </h2>
+                  <p className="text-muted-foreground">
+                    {release.authors.join(", ") || "Unknown author"}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  {release.publisher && <span>{release.publisher}</span>}
+                  {release.date_published && <span>{release.date_published}</span>}
+                  {release.page_count && <span>{release.page_count} pages</span>}
+                  {release.binding && <span>{release.binding}</span>}
+                  {release.language && <span>{release.language}</span>}
+                  {release.isbn13 && (
+                    <span className="font-mono text-xs">ISBN {release.isbn13}</span>
+                  )}
+                </div>
+
+                {release.synopsis && (
+                  <p className="text-sm leading-relaxed">{release.synopsis}</p>
+                )}
+
+                {release.ai_rationale && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-sm text-amber-900">
+                      <span className="font-medium">Why this book: </span>
+                      {release.ai_rationale}
+                    </p>
+                    {(release.general_signal_score != null ||
+                      release.personal_score != null) && (
+                      <p className="mt-1.5 text-xs text-amber-700">
+                        {[
+                          release.general_signal_score != null
+                            ? `Signal: ${release.general_signal_score}/10`
+                            : null,
+                          release.personal_score != null
+                            ? `Personal: ${release.personal_score}/10`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" \u00b7 ")}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {release.subjects.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {release.subjects.map((subject) => (
+                      <Badge key={subject} variant="outline" className="text-xs">
+                        {subject}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  {inLibrary ? (
+                    <Badge variant="secondary">In Library</Badge>
+                  ) : addedIsbns.has(release.isbn13) ? (
+                    <button
+                      disabled
+                      className="rounded-md border bg-muted px-3 py-1.5 text-xs text-muted-foreground"
+                    >
+                      Added
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onWishlist(release)}
+                      className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      Want to Read
+                    </button>
+                  )}
+
+                  {release.dismissed ? (
+                    <button
+                      onClick={() => onUndismiss(release.isbn13)}
+                      className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Undo dismiss
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onDismiss(release.isbn13)}
+                      className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Not interested
+                    </button>
+                  )}
+
+                  {release.isbn13 && (
+                    <a
+                      href={`https://bookshop.org/books?keywords=${release.isbn13}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      Bookshop.org
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Build items with detail card inserted after the correct row
+  const items: React.ReactNode[] = [];
+  for (let i = 0; i < releases.length; i++) {
+    items.push(renderCard(releases[i]));
+    if (i === insertAfterIndex && expandedRelease) {
+      items.push(
+        <React.Fragment key={`detail-${expandedRelease.id}`}>
+          {renderDetail(expandedRelease)}
+        </React.Fragment>,
+      );
+    }
+  }
+
+  return (
+    <div
+      ref={gridRef}
+      className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+    >
+      {items}
+    </div>
+  );
 }
 
 export function ReleasesPage() {
@@ -192,9 +484,6 @@ export function ReleasesPage() {
 
   const totalPages = Math.ceil(total / 24);
   const selectedMonthKey = `${year}-${month}`;
-  const expandedRelease = expandedId
-    ? releases.find((r) => r.id === expandedId) ?? null
-    : null;
   const scoredCount = releases.filter((r) => r.ai_score != null).length;
   const anyScored = scoredCount > 0 || releases.length === 0;
 
@@ -289,207 +578,20 @@ export function ReleasesPage() {
         </div>
       </div>
 
-      {/* Grid */}
+      {/* Grid with inline detail */}
       {!loading && releases.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          {releases.map((release) => {
-            const inLibrary =
-              libraryIsbns.has(release.isbn13) ||
-              (release.isbn10 != null && libraryIsbns.has(release.isbn10));
-
-            return (
-              <button
-                key={release.id}
-                onClick={() => toggleExpanded(release.id)}
-                className={`group relative text-left transition-opacity ${
-                  expandedId && expandedId !== release.id ? "opacity-60" : ""
-                } ${release.dismissed ? "opacity-40" : ""}`}
-              >
-                {/* Score badge */}
-                {release.ai_score != null && (
-                  <div
-                    className={`absolute top-1 left-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold shadow-sm ${scoreBadgeColor(release.ai_score)}`}
-                  >
-                    {Math.round(release.ai_score)}
-                  </div>
-                )}
-
-                {/* In Library badge */}
-                {inLibrary && (
-                  <Badge
-                    variant="secondary"
-                    className="absolute top-1 right-1 z-10 text-[10px] shadow-sm"
-                  >
-                    In Library
-                  </Badge>
-                )}
-
-                <BookCover
-                  title={release.title}
-                  author={release.authors.join(", ") || "Unknown"}
-                  coverUrl={release.cover_image_url}
-                  size="sm"
-                />
-                <div className="mt-1.5 space-y-0.5">
-                  <p className="font-serif text-sm font-medium leading-tight line-clamp-2">
-                    {release.title}
-                  </p>
-                  <p className="text-xs text-muted-foreground line-clamp-1">
-                    {release.authors.join(", ") || "Unknown author"}
-                  </p>
-                  {(release.publisher || release.binding) && (
-                    <p className="text-xs text-muted-foreground/70 line-clamp-1">
-                      {[release.publisher, release.binding]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Expanded detail */}
-      {expandedRelease && (
-        <Card>
-          <CardContent>
-            <div className="flex flex-col gap-4 sm:flex-row">
-              <div className="shrink-0">
-                <BookCover
-                  title={expandedRelease.title}
-                  author={expandedRelease.authors.join(", ") || "Unknown"}
-                  coverUrl={expandedRelease.cover_image_url}
-                  size="lg"
-                />
-              </div>
-              <div className="min-w-0 flex-1 space-y-3">
-                <div>
-                  <h2 className="font-serif text-xl font-bold">
-                    {expandedRelease.title}
-                  </h2>
-                  <p className="text-muted-foreground">
-                    {expandedRelease.authors.join(", ") || "Unknown author"}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                  {expandedRelease.publisher && (
-                    <span>{expandedRelease.publisher}</span>
-                  )}
-                  {expandedRelease.date_published && (
-                    <span>{expandedRelease.date_published}</span>
-                  )}
-                  {expandedRelease.page_count && (
-                    <span>{expandedRelease.page_count} pages</span>
-                  )}
-                  {expandedRelease.binding && (
-                    <span>{expandedRelease.binding}</span>
-                  )}
-                  {expandedRelease.language && (
-                    <span>{expandedRelease.language}</span>
-                  )}
-                  {expandedRelease.isbn13 && (
-                    <span className="font-mono text-xs">
-                      ISBN {expandedRelease.isbn13}
-                    </span>
-                  )}
-                </div>
-
-                {expandedRelease.synopsis && (
-                  <p className="text-sm leading-relaxed">
-                    {expandedRelease.synopsis}
-                  </p>
-                )}
-
-                {/* AI rationale */}
-                {expandedRelease.ai_rationale && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
-                    <p className="text-sm text-amber-900">
-                      <span className="font-medium">Why this book: </span>
-                      {expandedRelease.ai_rationale}
-                    </p>
-                    {(expandedRelease.general_signal_score != null || expandedRelease.personal_score != null) && (
-                      <p className="mt-1.5 text-xs text-amber-700">
-                        {[
-                          expandedRelease.general_signal_score != null
-                            ? `Signal: ${expandedRelease.general_signal_score}/10`
-                            : null,
-                          expandedRelease.personal_score != null
-                            ? `Personal: ${expandedRelease.personal_score}/10`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" \u00b7 ")}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {expandedRelease.subjects.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {expandedRelease.subjects.map((subject) => (
-                      <Badge key={subject} variant="outline" className="text-xs">
-                        {subject}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex items-center gap-3">
-                  {(libraryIsbns.has(expandedRelease.isbn13) ||
-                    (expandedRelease.isbn10 != null &&
-                      libraryIsbns.has(expandedRelease.isbn10))) ? (
-                    <Badge variant="secondary">In Library</Badge>
-                  ) : addedIsbns.has(expandedRelease.isbn13) ? (
-                    <button
-                      disabled
-                      className="rounded-md border bg-muted px-3 py-1.5 text-xs text-muted-foreground"
-                    >
-                      Added
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleWishlist(expandedRelease)}
-                      className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                    >
-                      Want to Read
-                    </button>
-                  )}
-
-                  {expandedRelease.dismissed ? (
-                    <button
-                      onClick={() => handleUndismiss(expandedRelease.isbn13)}
-                      className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
-                    >
-                      Undo dismiss
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleDismiss(expandedRelease.isbn13)}
-                      className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
-                    >
-                      Not interested
-                    </button>
-                  )}
-
-                  {expandedRelease.isbn13 && (
-                    <a
-                      href={`https://bookshop.org/books?keywords=${expandedRelease.isbn13}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
-                    >
-                      Bookshop.org
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <ReleaseGrid
+          releases={releases}
+          expandedId={expandedId}
+          libraryIsbns={libraryIsbns}
+          addedIsbns={addedIsbns}
+          onToggleExpanded={toggleExpanded}
+          onDismiss={handleDismiss}
+          onUndismiss={handleUndismiss}
+          onWishlist={handleWishlist}
+          onClickOutside={() => setExpandedId(null)}
+          scoreBadgeColor={scoreBadgeColor}
+        />
       )}
 
       {/* Empty state for selected month */}
