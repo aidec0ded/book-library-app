@@ -192,10 +192,10 @@ export function VibeEditor({ bookId }: { bookId: string }) {
         </div>
       </div>
 
-      {/* Freeform vibes */}
+      {/* Custom tags */}
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-muted-foreground">
-          Freeform Vibes
+          Tags
         </h3>
 
         {freeformVibes.length > 0 ? (
@@ -234,13 +234,13 @@ export function VibeEditor({ bookId }: { bookId: string }) {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No freeform vibes yet
+            No tags yet
           </p>
         )}
 
         <div className="relative max-w-xs">
           <Input
-            placeholder="Add a freeform vibe..."
+            placeholder="Add a tag..."
             value={input}
             onChange={(e) => {
               setInput(e.target.value);

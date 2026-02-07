@@ -67,7 +67,7 @@
 - Create a public-facing home page for all users
 - Move navigation to collapsible sidebar **[DONE]**
 - Make home page closer to screenshot reference
-- No direct pagination — need a way to jump to a specific page in Library (currently 46 pages)
+- No direct pagination — need a way to jump to a specific page in Library (currently 46 pages) **[DONE]**
 - New Release detail box should appear directly under selected book, not at bottom of page **[DONE]**
 - ~~"Up Next" toggle~~ — Removed from UI; low utility vs. lists for reading queues **[DONE]**
 
@@ -84,4 +84,4 @@
 - Clean up genres — map to broader Amazon-style categories **[DONE]**
 - Redesign star rating input — replace dropdown with interactive star widget (Letterboxd-style hover/tap with quarter-star precision). Current dropdown is bulky and unattractive
 - Add accent color — find strategic places for splashes of a warm color (e.g. LitHub-style red hue) to break up the neutral palette
-- Rename "Freeform Vibes" to "Tags" on BookDetail — the old label is confusing now that AI freeform vibes are gone, and users will tag with more than just vibes
+- Rename "Freeform Vibes" to "Tags" on BookDetail — the old label is confusing now that AI freeform vibes are gone, and users will tag with more than just vibes **[DONE]**
