@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Loader2, Plus, AlertTriangle, ArrowLeft } from "lucide-react";
+import { Loader2, Plus, AlertTriangle, ArrowLeft, Bookmark } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,7 @@ import {
   looksLikeISBN,
   normalizeISBN,
   mapToBookInsert,
+  groupEditions,
 } from "@/lib/isbndb";
 import type { ISBNdbBook } from "@/lib/isbndb";
 import { Pagination } from "@/components/Pagination";
@@ -123,12 +124,12 @@ export function AddBook() {
     setAddError(null);
   }
 
-  async function handleAdd() {
+  async function handleAdd(statusOverride?: string) {
     if (!selected) return;
     setAdding(true);
     setAddError(null);
 
-    const payload = mapToBookInsert(selected, status);
+    const payload = mapToBookInsert(selected, statusOverride ?? status);
     const { data, error } = await supabase
       .from("books")
       .insert(payload)
@@ -143,6 +144,11 @@ export function AddBook() {
 
     navigate(`/books/${data.id}`);
   }
+
+  const groupedResults = useMemo(
+    () => groupEditions(results, query),
+    [results, query],
+  );
 
   const totalPages = Math.ceil(resultTotal / PAGE_SIZE);
 
@@ -284,7 +290,7 @@ export function AddBook() {
           </div>
 
           <button
-            onClick={handleAdd}
+            onClick={() => void handleAdd()}
             disabled={adding}
             className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
@@ -294,6 +300,15 @@ export function AddBook() {
               <Plus className="h-4 w-4" />
             )}
             Add to Library
+          </button>
+
+          <button
+            onClick={() => void handleAdd("wishlist")}
+            disabled={adding}
+            className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+          >
+            <Bookmark className="h-4 w-4" />
+            Wishlist
           </button>
         </div>
 
@@ -335,16 +350,18 @@ export function AddBook() {
         )}
 
         {/* Results list */}
-        {results.length > 0 && (
+        {groupedResults.length > 0 && (
           <>
             <p className="text-sm text-muted-foreground">
-              {resultTotal.toLocaleString()} result
-              {resultTotal !== 1 ? "s" : ""}
+              {groupedResults.length} work{groupedResults.length !== 1 ? "s" : ""}
+              {resultTotal > results.length && (
+                <span> · {resultTotal.toLocaleString()} editions total</span>
+              )}
             </p>
             <div className="divide-y rounded-lg border">
-              {results.map((book, i) => {
+              {groupedResults.map((group) => {
+                const book = group.best;
                 const author = book.authors?.join(", ") ?? "Unknown";
-                const isbn = book.isbn13 || book.isbn;
                 let year: string | null = null;
                 if (book.date_published) {
                   const match = book.date_published.match(
@@ -354,7 +371,7 @@ export function AddBook() {
                 }
                 return (
                   <button
-                    key={isbn ?? `${book.title}-${i}`}
+                    key={group.key}
                     onClick={() => void selectBook(book)}
                     className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50"
                   >
@@ -371,7 +388,14 @@ export function AddBook() {
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{book.title}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-medium">{book.title}</p>
+                        {group.editions.length > 1 && (
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                            {group.editions.length} editions
+                          </span>
+                        )}
+                      </div>
                       <p className="truncate text-sm text-muted-foreground">
                         {author}
                       </p>

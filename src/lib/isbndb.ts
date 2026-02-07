@@ -99,6 +99,93 @@ export async function lookupBook(isbn: string): Promise<ISBNdbBook | null> {
   }
 }
 
+// --- Edition grouping ---
+
+export interface EditionGroup {
+  key: string;
+  best: ISBNdbBook;
+  editions: ISBNdbBook[];
+}
+
+function normalizeWorkKey(title: string, author?: string): string {
+  let t = title.toLowerCase();
+  // Remove subtitles and parentheticals
+  t = t.replace(/\s*[:(\[].*$/, "").trim();
+  // Strip trailing articles ("Great Gatsby, The" → "Great Gatsby")
+  t = t.replace(/,\s*(the|a|an)$/i, "").trim();
+  // Strip leading articles
+  t = t.replace(/^(the|a|an)\s+/i, "").trim();
+  // Remove punctuation, collapse whitespace
+  t = t.replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+
+  const a = (author ?? "unknown")
+    .split(",")[0] // first author only
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return `${t}|${a}`;
+}
+
+function editionScore(book: ISBNdbBook): number {
+  let score = 0;
+  if (book.image) score += 10;
+  if (book.synopsis || book.overview) score += 3;
+  if (book.pages && book.pages > 0) score += 2;
+  if (book.publisher) score += 1;
+  const binding = (book.binding ?? "").toLowerCase();
+  if (binding.includes("hardcover")) score += 5;
+  else if (binding.includes("paperback")) score += 4;
+  else if (binding.includes("ebook") || binding.includes("kindle")) score += 1;
+  return score;
+}
+
+export function groupEditions(
+  books: ISBNdbBook[],
+  query?: string,
+): EditionGroup[] {
+  const groups = new Map<string, ISBNdbBook[]>();
+
+  for (const book of books) {
+    const key = normalizeWorkKey(book.title, book.authors?.[0]);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(book);
+    } else {
+      groups.set(key, [book]);
+    }
+  }
+
+  const result: EditionGroup[] = [];
+  for (const [key, editions] of groups) {
+    editions.sort((a, b) => editionScore(b) - editionScore(a));
+    result.push({ key, best: editions[0], editions });
+  }
+
+  // Sort groups so author-match results come first (helps when searching by author name)
+  if (query) {
+    const q = query.toLowerCase().trim();
+    result.sort((a, b) => {
+      const aMatch = a.best.authors?.some(
+        (auth) =>
+          auth.toLowerCase().includes(q) || q.includes(auth.toLowerCase()),
+      )
+        ? 1
+        : 0;
+      const bMatch = b.best.authors?.some(
+        (auth) =>
+          auth.toLowerCase().includes(q) || q.includes(auth.toLowerCase()),
+      )
+        ? 1
+        : 0;
+      return bMatch - aMatch;
+    });
+  }
+
+  return result;
+}
+
 export function mapToBookInsert(book: ISBNdbBook, status: string): BookInsert {
   const isbn = book.isbn13 || book.isbn || null;
   const author = book.authors?.join(", ") ?? "Unknown";
