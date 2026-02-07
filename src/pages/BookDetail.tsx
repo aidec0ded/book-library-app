@@ -19,6 +19,7 @@ import { updateBook, deleteBook, formatRating } from "@/lib/books";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
+import { StarRating } from "@/components/StarRating";
 import { useChatContext } from "@/contexts/ChatContext";
 import type { Book, BookExcerpt } from "@/lib/types";
 
@@ -33,13 +34,6 @@ function formatDate(dateStr: string | null): string {
 
 const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
 
-const RATING_OPTIONS: { label: string; value: string }[] = [
-  { label: "Unrated", value: "unrated" },
-  ...Array.from({ length: 20 }, (_, i) => {
-    const v = (20 - i) * 0.25;
-    return { label: `★ ${formatRating(v)}`, value: v.toString() };
-  }),
-];
 
 export function BookDetail() {
   const { id } = useParams<{ id: string }>();
@@ -164,9 +158,6 @@ export function BookDetail() {
       </div>
     );
   }
-
-  const ratingDisplayValue =
-    book.rating === null || book.rating === 0 ? "unrated" : book.rating.toString();
 
   const showPredictedRating =
     book.status === "unread" || book.status === "wishlist" || book.status === null;
@@ -303,27 +294,14 @@ export function BookDetail() {
             </Select>
           </div>
 
-          {/* Rating dropdown (hidden for wishlist) */}
+          {/* Star rating (hidden for wishlist) */}
           {book.status !== "wishlist" && (
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground">Rating</label>
-              <Select
-                value={ratingDisplayValue}
-                onValueChange={(val) =>
-                  handleFieldUpdate("rating", val === "unrated" ? null : parseFloat(val))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RATING_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <StarRating
+                value={book.rating}
+                onChange={(val) => handleFieldUpdate("rating", val)}
+              />
               {saving === "rating" && (
                 <span className="text-xs text-muted-foreground">Saving...</span>
               )}
