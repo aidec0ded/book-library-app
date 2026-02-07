@@ -104,7 +104,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                       }`}
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
+                      <Icon className={`h-4 w-4 shrink-0 ${active ? "text-accent" : ""}`} />
                       {item.label}
                     </Link>
                   </li>
@@ -126,7 +126,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           }`}
         >
-          <PlusCircle className="h-4 w-4 shrink-0" />
+          <PlusCircle className={`h-4 w-4 shrink-0 ${isActive(pathname, FOOTER_ITEM.path) ? "text-accent" : ""}`} />
           {FOOTER_ITEM.label}
         </Link>
       </div>
