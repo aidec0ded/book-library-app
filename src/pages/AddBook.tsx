@@ -19,8 +19,10 @@ import {
   normalizeISBN,
   mapToBookInsert,
   groupEditions,
+  detectBookType,
 } from "@/lib/isbndb";
 import type { ISBNdbBook } from "@/lib/isbndb";
+import type { BookType } from "@/lib/types";
 import { Pagination } from "@/components/Pagination";
 
 const PAGE_SIZE = 20;
@@ -61,6 +63,7 @@ export function AddBook() {
     id: string;
     title: string;
   } | null>(null);
+  const [bookType, setBookType] = useState<BookType>("fiction");
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -117,6 +120,7 @@ export function AddBook() {
     setSelected(book);
     setView("preview");
     setStatus("unread");
+    setBookType(detectBookType(book.subjects));
     setAddError(null);
     setDuplicate(null);
     setPreviewImgBroken(false);
@@ -148,6 +152,8 @@ export function AddBook() {
     setAddError(null);
 
     const payload = mapToBookInsert(selected, statusOverride ?? status);
+    // Override book_type with user selection (may differ from auto-detect)
+    payload.book_type = bookType;
     const { data, error } = await supabase
       .from("books")
       .insert(payload)
@@ -289,6 +295,22 @@ export function AddBook() {
 
         {/* Add controls */}
         <div className="flex flex-wrap items-end gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">
+              Type
+            </label>
+            <Select value={bookType} onValueChange={(v) => setBookType(v as BookType)}>
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fiction">Fiction</SelectItem>
+                <SelectItem value="nonfiction">Nonfiction</SelectItem>
+                <SelectItem value="poetry">Poetry</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">
               Status

@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Sparkles, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   fetchVibesForBook,
   fetchAllVibes,
@@ -10,86 +17,100 @@ import {
   confirmVibe,
 } from "@/lib/vibes";
 import {
-  CANONICAL_VIBES,
-  CANONICAL_VIBE_SET,
+  fetchCanonicalTags,
   formatCanonicalVibe,
 } from "@/lib/canonical-vibes";
-import type { BookVibe } from "@/lib/types";
+import type { BookVibe, BookType, TagCategory, CanonicalTag } from "@/lib/types";
 
-export function VibeEditor({ bookId }: { bookId: string }) {
+interface CategoryConfig {
+  category: TagCategory;
+  label: string;
+  mode: "multi" | "single";
+}
+
+const TYPE_CATEGORIES: Record<BookType, CategoryConfig[]> = {
+  fiction: [{ category: "vibe", label: "Vibes", mode: "multi" }],
+  nonfiction: [
+    { category: "topic", label: "Topics", mode: "multi" },
+    { category: "form", label: "Form", mode: "single" },
+    { category: "depth", label: "Depth", mode: "single" },
+  ],
+  poetry: [
+    { category: "movement", label: "Movement", mode: "multi" },
+    { category: "formal_feel", label: "Formal Feel", mode: "multi" },
+    { category: "accessibility", label: "Accessibility", mode: "single" },
+  ],
+};
+
+export function VibeEditor({
+  bookId,
+  bookType,
+}: {
+  bookId: string;
+  bookType: BookType;
+}) {
   const [vibes, setVibes] = useState<BookVibe[]>([]);
-  const [allVibes, setAllVibes] = useState<string[]>([]);
+  const [canonicalTags, setCanonicalTags] = useState<CanonicalTag[]>([]);
+  const [allFreeformVibes, setAllFreeformVibes] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const blurTimeout = useRef<ReturnType<typeof setTimeout>>(null);
 
+  const categories = TYPE_CATEGORIES[bookType];
+
+  // Fetch canonical tags for this book type's categories
+  useEffect(() => {
+    Promise.all(categories.map((c) => fetchCanonicalTags(c.category)))
+      .then((results) => setCanonicalTags(results.flat()))
+      .catch(() => setCanonicalTags([]));
+  }, [bookType]);
+
+  // Fetch existing vibes and freeform autocomplete pool
   useEffect(() => {
     void fetchVibesForBook(bookId).then(setVibes);
-    void fetchAllVibes().then(setAllVibes);
+    void fetchAllVibes().then(setAllFreeformVibes);
   }, [bookId]);
 
-  const canonicalVibes = vibes.filter((v) => v.is_canonical);
+  // Set of all canonical tag names (for filtering freeform suggestions)
+  const canonicalTagSet = useMemo(
+    () => new Set(canonicalTags.map((t) => t.tag)),
+    [canonicalTags],
+  );
+
+  // Group canonical tags by category
+  const tagsByCategory = useMemo(() => {
+    const map = new Map<TagCategory, CanonicalTag[]>();
+    for (const t of canonicalTags) {
+      if (!map.has(t.tag_category)) map.set(t.tag_category, []);
+      map.get(t.tag_category)!.push(t);
+    }
+    return map;
+  }, [canonicalTags]);
+
+  // Freeform vibes (non-canonical tags)
   const freeformVibes = vibes.filter((v) => !v.is_canonical);
   const currentVibeNames = vibes.map((v) => v.vibe);
-  const activeCanonicalTags = new Set(canonicalVibes.map((v) => v.vibe));
 
-  // Freeform suggestions exclude canonical vibe tags
+  // Freeform autocomplete suggestions
   const suggestions =
     input.trim().length > 0
-      ? allVibes
+      ? allFreeformVibes
           .filter(
             (v) =>
               v.includes(input.trim().toLowerCase()) &&
               !currentVibeNames.includes(v) &&
-              !CANONICAL_VIBE_SET.has(v),
+              !canonicalTagSet.has(v),
           )
           .slice(0, 8)
       : [];
 
-  async function handleAddFreeform(raw: string) {
-    const normalized = raw.trim().toLowerCase();
-    if (!normalized || currentVibeNames.includes(normalized)) {
-      setInput("");
-      setShowSuggestions(false);
-      return;
-    }
+  // --- Handlers ---
 
-    // Optimistic: add a temp entry
-    const tempId = "temp-" + Date.now();
-    const tempVibe: BookVibe = {
-      id: tempId,
-      book_id: bookId,
-      vibe: normalized,
-      ai_assigned: false,
-      user_confirmed: true,
-      is_canonical: false,
-      created_at: new Date().toISOString(),
-    };
-    setVibes((prev) => [...prev, tempVibe]);
-    setInput("");
-    setShowSuggestions(false);
-
-    try {
-      const saved = await addVibe(bookId, normalized, false);
-      if (saved) {
-        setVibes((prev) => prev.map((v) => (v.id === tempId ? saved : v)));
-        setAllVibes((prev) =>
-          prev.includes(normalized)
-            ? prev
-            : [...prev, normalized].sort(),
-        );
-      } else {
-        setVibes((prev) => prev.filter((v) => v.id !== tempId));
-      }
-    } catch {
-      setVibes((prev) => prev.filter((v) => v.id !== tempId));
-    }
-  }
-
-  async function handleToggleCanonical(tag: string) {
-    const existing = vibes.find((v) => v.vibe === tag && v.is_canonical);
+  async function handleToggleCanonical(tag: string, tagCategory: TagCategory) {
+    const existing = vibes.find(
+      (v) => v.vibe === tag && v.tag_category === tagCategory && v.is_canonical,
+    );
     if (existing) {
-      // Remove it
       setVibes((prev) => prev.filter((v) => v.id !== existing.id));
       try {
         await removeVibe(existing.id);
@@ -97,12 +118,12 @@ export function VibeEditor({ bookId }: { bookId: string }) {
         setVibes((prev) => [...prev, existing]);
       }
     } else {
-      // Add it
       const tempId = "temp-" + Date.now();
       const tempVibe: BookVibe = {
         id: tempId,
         book_id: bookId,
         vibe: tag,
+        tag_category: tagCategory,
         ai_assigned: false,
         user_confirmed: true,
         is_canonical: true,
@@ -110,7 +131,7 @@ export function VibeEditor({ bookId }: { bookId: string }) {
       };
       setVibes((prev) => [...prev, tempVibe]);
       try {
-        const saved = await addVibe(bookId, tag, true);
+        const saved = await addVibe(bookId, tag, true, tagCategory);
         if (saved) {
           setVibes((prev) => prev.map((v) => (v.id === tempId ? saved : v)));
         } else {
@@ -122,13 +143,61 @@ export function VibeEditor({ bookId }: { bookId: string }) {
     }
   }
 
+  async function handleSingleSelect(
+    tagCategory: TagCategory,
+    newTag: string | null,
+  ) {
+    const existing = vibes.filter(
+      (v) => v.tag_category === tagCategory && v.is_canonical,
+    );
+    const prevVibes = [...vibes];
+
+    // Optimistic: remove old, add new
+    setVibes((prev) =>
+      prev.filter((v) => !(v.tag_category === tagCategory && v.is_canonical)),
+    );
+
+    let tempId: string | null = null;
+    if (newTag) {
+      tempId = "temp-" + Date.now();
+      setVibes((prev) => [
+        ...prev,
+        {
+          id: tempId!,
+          book_id: bookId,
+          vibe: newTag,
+          tag_category: tagCategory,
+          ai_assigned: false,
+          user_confirmed: true,
+          is_canonical: true,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    }
+
+    try {
+      for (const v of existing) {
+        await removeVibe(v.id);
+      }
+      if (newTag) {
+        const saved = await addVibe(bookId, newTag, true, tagCategory);
+        if (saved && tempId) {
+          setVibes((prev) =>
+            prev.map((v) => (v.id === tempId ? saved : v)),
+          );
+        }
+      }
+    } catch {
+      setVibes(prevVibes);
+    }
+  }
+
   async function handleConfirm(vibe: BookVibe) {
     setVibes((prev) =>
       prev.map((v) =>
         v.id === vibe.id ? { ...v, user_confirmed: true } : v,
       ),
     );
-
     try {
       await confirmVibe(vibe.id);
     } catch {
@@ -142,7 +211,6 @@ export function VibeEditor({ bookId }: { bookId: string }) {
 
   async function handleRemove(vibe: BookVibe) {
     setVibes((prev) => prev.filter((v) => v.id !== vibe.id));
-
     try {
       await removeVibe(vibe.id);
     } catch {
@@ -150,53 +218,160 @@ export function VibeEditor({ bookId }: { bookId: string }) {
     }
   }
 
+  async function handleAddFreeform(raw: string) {
+    const normalized = raw.trim().toLowerCase();
+    if (!normalized || currentVibeNames.includes(normalized)) {
+      setInput("");
+      setShowSuggestions(false);
+      return;
+    }
+
+    const tempId = "temp-" + Date.now();
+    const tempVibe: BookVibe = {
+      id: tempId,
+      book_id: bookId,
+      vibe: normalized,
+      tag_category: "vibe",
+      ai_assigned: false,
+      user_confirmed: true,
+      is_canonical: false,
+      created_at: new Date().toISOString(),
+    };
+    setVibes((prev) => [...prev, tempVibe]);
+    setInput("");
+    setShowSuggestions(false);
+
+    try {
+      const saved = await addVibe(bookId, normalized, false);
+      if (saved) {
+        setVibes((prev) => prev.map((v) => (v.id === tempId ? saved : v)));
+        setAllFreeformVibes((prev) =>
+          prev.includes(normalized)
+            ? prev
+            : [...prev, normalized].sort(),
+        );
+      } else {
+        setVibes((prev) => prev.filter((v) => v.id !== tempId));
+      }
+    } catch {
+      setVibes((prev) => prev.filter((v) => v.id !== tempId));
+    }
+  }
+
+  // --- Render ---
+
   return (
     <div className="space-y-4">
-      {/* Canonical vibes */}
-      <div className="space-y-2">
-        <h2 className="font-semibold">Vibes</h2>
-        <div className="flex flex-wrap gap-2">
-          {CANONICAL_VIBES.map((cv) => {
-            const isActive = activeCanonicalTags.has(cv.tag);
-            const existing = canonicalVibes.find((v) => v.vibe === cv.tag);
-            const isUnconfirmedAi =
-              existing?.ai_assigned && !existing?.user_confirmed;
+      {/* Type-specific canonical sections */}
+      {categories.map((config) => {
+        const tags = tagsByCategory.get(config.category) ?? [];
+        const existing = vibes.filter(
+          (v) => v.tag_category === config.category && v.is_canonical,
+        );
+        const activeTags = new Set(existing.map((v) => v.vibe));
 
-            return (
-              <Badge
-                key={cv.tag}
-                variant={isActive ? "default" : "outline"}
-                className={`cursor-pointer gap-1 transition-opacity ${
-                  isActive ? "" : "opacity-50 hover:opacity-80"
-                }`}
-                title={cv.description}
-                onClick={() => void handleToggleCanonical(cv.tag)}
-              >
-                {isUnconfirmedAi && <Sparkles className="h-3 w-3" />}
-                {formatCanonicalVibe(cv.tag)}
-                {isUnconfirmedAi && (
+        if (config.mode === "multi") {
+          return (
+            <div key={config.category} className="space-y-2">
+              <h2 className="font-semibold">{config.label}</h2>
+              <div className="flex flex-wrap gap-2">
+                {tags.map((ct) => {
+                  const isActive = activeTags.has(ct.tag);
+                  const existingVibe = existing.find(
+                    (v) => v.vibe === ct.tag,
+                  );
+                  const isUnconfirmedAi =
+                    existingVibe?.ai_assigned && !existingVibe?.user_confirmed;
+
+                  return (
+                    <Badge
+                      key={ct.tag}
+                      variant={isActive ? "default" : "outline"}
+                      className={`cursor-pointer gap-1 transition-opacity ${
+                        isActive ? "" : "opacity-50 hover:opacity-80"
+                      }`}
+                      title={ct.description}
+                      onClick={() =>
+                        void handleToggleCanonical(ct.tag, config.category)
+                      }
+                    >
+                      {isUnconfirmedAi && <Sparkles className="h-3 w-3" />}
+                      {formatCanonicalVibe(ct.tag)}
+                      {isUnconfirmedAi && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleConfirm(existingVibe!);
+                          }}
+                          className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                        >
+                          <Check className="h-3 w-3" />
+                        </button>
+                      )}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
+        // Single-select dropdown
+        const currentValue =
+          existing.find((v) => v.is_canonical)?.vibe ?? "";
+        const unconfirmedAi = existing.find(
+          (v) => v.ai_assigned && !v.user_confirmed,
+        );
+
+        return (
+          <div key={config.category} className="space-y-2">
+            <div className="flex items-center gap-2">
+              <h2 className="font-semibold">{config.label}</h2>
+              {unconfirmedAi && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Sparkles className="h-3 w-3" />
+                  AI-suggested
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleConfirm(existing!);
-                    }}
+                    onClick={() => void handleConfirm(unconfirmedAi)}
                     className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
                   >
                     <Check className="h-3 w-3" />
                   </button>
-                )}
-              </Badge>
-            );
-          })}
-        </div>
-      </div>
+                </span>
+              )}
+            </div>
+            <Select
+              value={currentValue || undefined}
+              onValueChange={(val) =>
+                void handleSingleSelect(
+                  config.category,
+                  val === "__none__" ? null : val,
+                )
+              }
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue
+                  placeholder={`Select ${config.label.toLowerCase()}...`}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">None</SelectItem>
+                {tags.map((ct) => (
+                  <SelectItem key={ct.tag} value={ct.tag}>
+                    {formatCanonicalVibe(ct.tag)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        );
+      })}
 
-      {/* Custom tags */}
+      {/* Freeform tags */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium text-muted-foreground">
-          Tags
-        </h3>
+        <h3 className="text-sm font-medium text-muted-foreground">Tags</h3>
 
         {freeformVibes.length > 0 ? (
           <div className="flex flex-wrap gap-2">
@@ -233,9 +408,7 @@ export function VibeEditor({ bookId }: { bookId: string }) {
             })}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No tags yet
-          </p>
+          <p className="text-sm text-muted-foreground">No tags yet</p>
         )}
 
         <div className="relative max-w-xs">

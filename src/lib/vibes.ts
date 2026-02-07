@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { BookVibe, BookSummary } from "@/lib/types";
+import type { BookVibe, BookSummary, TagCategory } from "@/lib/types";
 
 export async function fetchVibesForBook(bookId: string): Promise<BookVibe[]> {
   const { data, error } = await supabase
@@ -28,6 +28,7 @@ export async function addVibe(
   bookId: string,
   vibe: string,
   isCanonical = false,
+  tagCategory: TagCategory = "vibe",
 ): Promise<BookVibe | null> {
   const normalized = vibe.trim().toLowerCase();
   if (!normalized) return null;
@@ -40,6 +41,7 @@ export async function addVibe(
       ai_assigned: false,
       user_confirmed: true,
       is_canonical: isCanonical,
+      tag_category: tagCategory,
     })
     .select()
     .single();

@@ -17,6 +17,7 @@ export async function updateBook(
       | "notes"
       | "cover_image_url"
       | "isbn"
+      | "book_type"
     >
   >,
 ): Promise<void> {

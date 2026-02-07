@@ -21,7 +21,7 @@ import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
 import { StarRating } from "@/components/StarRating";
 import { useChatContext } from "@/contexts/ChatContext";
-import type { Book, BookExcerpt } from "@/lib/types";
+import type { Book, BookExcerpt, BookType } from "@/lib/types";
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -472,8 +472,8 @@ export function BookDetail() {
             </div>
           )}
 
-          {/* Vibes */}
-          <VibeEditor bookId={book.id} />
+          {/* Classification */}
+          <VibeEditor bookId={book.id} bookType={book.book_type ?? "fiction"} />
 
           {/* Awards */}
           {awards.length > 0 && (
@@ -509,6 +509,25 @@ export function BookDetail() {
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
+                <div>
+                  <dt className="font-medium text-muted-foreground">Type</dt>
+                  <dd>
+                    <Select
+                      value={book.book_type ?? "fiction"}
+                      onValueChange={(val) => handleFieldUpdate("book_type", val as BookType)}
+                    >
+                      <SelectTrigger className="h-8 w-32 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fiction">Fiction</SelectItem>
+                        <SelectItem value="nonfiction">Nonfiction</SelectItem>
+                        <SelectItem value="poetry">Poetry</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </dd>
+                </div>
+
                 {book.genre && (
                   <div>
                     <dt className="font-medium text-muted-foreground">Genre</dt>
