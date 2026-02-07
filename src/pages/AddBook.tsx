@@ -49,6 +49,7 @@ export function AddBook() {
   const [resultPage, setResultPage] = useState(1);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   // Preview state
   const [selected, setSelected] = useState<ISBNdbBook | null>(null);
@@ -68,6 +69,7 @@ export function AddBook() {
 
     setSearching(true);
     setSearchError(null);
+    setHasSearched(true);
 
     try {
       if (looksLikeISBN(trimmed)) {
@@ -395,11 +397,17 @@ export function AddBook() {
           </>
         )}
 
-        {/* Empty state */}
+        {/* Hint before first search */}
+        {!searching && !hasSearched && !searchError && (
+          <p className="text-sm text-muted-foreground">
+            Press Enter to search
+          </p>
+        )}
+
+        {/* Empty state — only after an actual search returns nothing */}
         {!searching &&
+          hasSearched &&
           results.length === 0 &&
-          resultTotal === 0 &&
-          query.trim() !== "" &&
           !searchError && (
             <div className="px-4 py-8 text-center text-muted-foreground">
               No books found for that search.
