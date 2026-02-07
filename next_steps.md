@@ -27,7 +27,7 @@
 
 - Replace "Notes" section on book detail with explanation of predicted rating **[DONE]**
 - Add new Notes section with user-written notes + conversation excerpts from chatbot **[DONE]**
-- Freeform vibes include too much seasonal language — consider eliminating AI-generated freeform vibes entirely and letting users create their own
+- Freeform vibes include too much seasonal language — consider eliminating AI-generated freeform vibes entirely and letting users create their own **[DONE]**
 
 **Discovery & recommendations**
 

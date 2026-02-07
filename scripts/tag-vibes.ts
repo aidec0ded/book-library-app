@@ -42,7 +42,6 @@ interface VibeResult {
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
-const canonical = args.includes("--canonical");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
 
@@ -52,26 +51,11 @@ const BATCH_SIZE = 5;
 const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
 
-const FREEFORM_SYSTEM_PROMPT = `You are a book curator tagging books with "vibes" — short evocative labels
-that capture mood, atmosphere, and reading experience. Vibes help readers
-find books that match their current state of mind.
-
-Rules:
-- Assign 3-8 vibes per book (aim for 5)
-- Use lowercase, 1-4 word phrases
-- Focus on feeling, not plot mechanics or genre labels
-- Mix categories: mood (melancholy, hopeful), pace (slow burn, page-turner),
-  aesthetic (dark academia, cottagecore), context (beach read, rainy day read)
-- Reflect seasonal timing when provided
-- Be specific over generic ("locked-room mystery" over "mystery")
-
-Return ONLY a JSON array. No other text.`;
-
 const CANONICAL_VIBE_LIST = CANONICAL_VIBES.map(
   (v) => `- ${v.tag}: ${v.description}`
 ).join("\n");
 
-const CANONICAL_SYSTEM_PROMPT = `You are a book curator assigning canonical vibe tags to books. You must choose
+const SYSTEM_PROMPT = `You are a book curator assigning canonical vibe tags to books. You must choose
 from ONLY the following 17 vibes:
 
 ${CANONICAL_VIBE_LIST}
@@ -108,11 +92,8 @@ function formatBookBlock(book: BookForTagging, index: number): string {
 
 function buildUserPrompt(batch: BookForTagging[]): string {
   const blocks = batch.map((book, i) => formatBookBlock(book, i + 1));
-  const instruction = canonical
-    ? "Assign canonical vibes to these books. Choose 1-3 from the allowed list only."
-    : "Tag these books with vibes.";
   return (
-    instruction +
+    "Assign canonical vibes to these books. Choose 1-3 from the allowed list only." +
     "\n\n" +
     blocks.join("\n\n") +
     '\n\nRespond with JSON only:\n[{"id":"<uuid>","vibes":["vibe1","vibe2",...]},...]'
@@ -143,15 +124,10 @@ function parseResponse(raw: string, batchIds: Set<string>): VibeResult[] {
       continue;
     }
 
-    let vibes = entry.vibes
+    const vibes = entry.vibes
       .filter((v: unknown) => typeof v === "string")
       .map((v: string) => v.trim().toLowerCase())
-      .filter((v: string) => v.length > 0);
-
-    // In canonical mode, only keep vibes that are in the canonical set
-    if (canonical) {
-      vibes = vibes.filter((v: string) => CANONICAL_VIBE_SET.has(v));
-    }
+      .filter((v: string) => v.length > 0 && CANONICAL_VIBE_SET.has(v));
 
     if (vibes.length > 0) {
       results.push({ id: entry.id, vibes });
@@ -168,7 +144,7 @@ async function sleep(ms: number): Promise<void> {
 // --- Main ---
 
 async function main() {
-  console.log(`MoodLib AI Vibe Tagging${canonical ? " (canonical mode)" : ""}`);
+  console.log("MoodLib AI Vibe Tagging (canonical)");
 
   // Step 1: Fetch books to tag
   let query = supabase
@@ -191,16 +167,11 @@ async function main() {
   if (!force) {
     // Exclude books that already have vibes of the relevant type
     // Done in-memory to avoid URL length limits with large NOT IN clauses
-    let vibeQuery = supabase
+    const { data: alreadyTagged, error: tagError } = await supabase
       .from("book_vibes")
       .select("book_id")
-      .eq("ai_assigned", true);
-
-    if (canonical) {
-      vibeQuery = vibeQuery.eq("is_canonical", true);
-    }
-
-    const { data: alreadyTagged, error: tagError } = await vibeQuery;
+      .eq("ai_assigned", true)
+      .eq("is_canonical", true);
 
     if (tagError) {
       console.error("Failed to query existing AI vibes:", tagError.message);
@@ -217,13 +188,10 @@ async function main() {
 
   const totalBatches = Math.ceil(booksToTag.length / BATCH_SIZE);
 
-  const systemPrompt = canonical ? CANONICAL_SYSTEM_PROMPT : FREEFORM_SYSTEM_PROMPT;
-
   console.log(
     `  Mode: ${dryRun ? "dry-run" : "live"} | Books: ${booksToTag.length} | Batches: ${totalBatches} (${BATCH_SIZE} books each)`
   );
   if (force) console.log("  --force: will re-tag books with existing AI vibes");
-  if (canonical) console.log("  --canonical: assigning from 17 canonical vibes only");
   console.log();
 
   if (booksToTag.length === 0) {
@@ -256,7 +224,7 @@ async function main() {
         const response = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1024,
-          system: systemPrompt,
+          system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }],
         });
 
@@ -296,17 +264,12 @@ async function main() {
       // If --force, delete existing AI vibes for these books first
       if (force) {
         const ids = results.map((r) => r.id);
-        let deleteQuery = supabase
+        await supabase
           .from("book_vibes")
           .delete()
           .in("book_id", ids)
-          .eq("ai_assigned", true);
-
-        if (canonical) {
-          deleteQuery = deleteQuery.eq("is_canonical", true);
-        }
-
-        await deleteQuery;
+          .eq("ai_assigned", true)
+          .eq("is_canonical", true);
       }
 
       // Build rows to insert
@@ -316,19 +279,15 @@ async function main() {
           vibe,
           ai_assigned: true,
           user_confirmed: false,
-          is_canonical: canonical,
+          is_canonical: true,
         }))
       );
 
       const batchVibeCount = rows.length;
 
-      // In canonical mode, use upsert so existing freeform vibes with
-      // matching tags get promoted to is_canonical = true
-      const { error: insertError } = canonical
-        ? await supabase
-            .from("book_vibes")
-            .upsert(rows, { onConflict: "book_id,vibe" })
-        : await supabase.from("book_vibes").insert(rows);
+      const { error: insertError } = await supabase
+        .from("book_vibes")
+        .upsert(rows, { onConflict: "book_id,vibe" });
 
       if (insertError) {
         // Unique constraint violations — skip silently

@@ -20,7 +20,7 @@ npm run dev                          # start Vite dev server
 npm run build                        # production build → dist/
 npm run preview                      # preview production build
 npx tsx scripts/import-books.ts      # import CSV data into Supabase (destructive — re-inserts all rows)
-npx tsx scripts/tag-vibes.ts         # AI vibe tagging (see flags below)
+npx tsx scripts/tag-vibes.ts         # AI canonical vibe tagging (17 tags only)
 npx tsx scripts/tag-vibes.ts --dry-run          # preview prompts, no DB writes
 npx tsx scripts/tag-vibes.ts --limit 10         # process only first 10 books
 npx tsx scripts/tag-vibes.ts --force            # re-tag books that already have AI vibes
@@ -119,7 +119,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/list-index.ts` — Builds existing-lists context for system prompt (cached 10min)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
 - `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
-- `scripts/tag-vibes.ts` — Bulk AI vibe tagging script (batches of 5, retries, --dry-run/--limit/--force flags)
+- `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 tags only, batches of 5, retries, --dry-run/--limit/--force flags)
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
 - `src/lib/profile.ts` — Profile CRUD + personal canon updates
 - `src/components/BookSearchModal.tsx` — Library search modal for canon editing
@@ -150,7 +150,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ### What's Built
 
-**Foundation** — Searchable/paginated book library, seasonal filtering, two-tier vibe system (17 canonical + freeform), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
+**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
