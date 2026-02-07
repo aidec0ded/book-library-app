@@ -8,7 +8,7 @@ import {
   undismissRelease,
   addReleaseToWishlist,
 } from "@/lib/releases";
-import type { ReleaseSort } from "@/lib/releases";
+import type { ReleaseSort, ReleaseCategory } from "@/lib/releases";
 import { ExternalLink } from "lucide-react";
 import { BookCover } from "@/components/BookCover";
 import { Badge } from "@/components/ui/badge";
@@ -346,6 +346,7 @@ export function ReleasesPage() {
   const [month, setMonth] = useState(initialMonth);
   const [page, setPage] = useState(initialPage);
   const [sort, setSort] = useState<ReleaseSort>("score");
+  const [category, setCategory] = useState<ReleaseCategory>("all");
   const [showDismissed, setShowDismissed] = useState(false);
 
   const [releases, setReleases] = useState<NewRelease[]>([]);
@@ -411,14 +412,14 @@ export function ReleasesPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await fetchReleasesByMonth(year, month, page, sort, showDismissed);
+      const result = await fetchReleasesByMonth(year, month, page, sort, showDismissed, category);
       setReleases(result.releases);
       setTotal(result.total);
     } catch (err) {
       console.error("Error fetching releases:", err);
     }
     setLoading(false);
-  }, [year, month, page, sort, showDismissed]);
+  }, [year, month, page, sort, showDismissed, category]);
 
   useEffect(() => {
     void fetchData();
@@ -531,6 +532,27 @@ export function ReleasesPage() {
             >
               All
             </button>
+          </div>
+
+          {/* Category filter */}
+          <div className="flex rounded-md border">
+            {(["all", "fiction", "nonfiction"] as ReleaseCategory[]).map((c) => (
+              <button
+                key={c}
+                onClick={() => {
+                  setCategory(c);
+                  setPage(1);
+                  setExpandedId(null);
+                }}
+                className={`px-3 py-1.5 text-sm transition-colors ${
+                  category === c
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted"
+                }`}
+              >
+                {c === "all" ? "All" : c === "fiction" ? "Fiction" : "Nonfiction"}
+              </button>
+            ))}
           </div>
 
           {availableMonths.length > 0 && (

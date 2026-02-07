@@ -53,6 +53,7 @@ interface NewReleaseRow {
   language: string | null;
   edition: string | null;
   source: string;
+  is_fiction: boolean | null;
 }
 
 // --- CLI args ---
@@ -266,6 +267,7 @@ function mapToRow(book: ISBNdbBook): NewReleaseRow | null {
     language: book.language?.trim() || null,
     edition: book.edition?.trim() || null,
     source: "isbndb",
+    is_fiction: (book.subjects ?? []).some((s) => FICTION_SUBJECT_RE.test(s)) ? true : false,
   };
 }
 

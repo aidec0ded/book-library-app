@@ -196,4 +196,5 @@ export interface NewRelease {
   ai_rationale: string | null;
   scored_at: string | null;
   dismissed: boolean;
+  is_fiction: boolean | null;
 }

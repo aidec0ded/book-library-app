@@ -33,7 +33,7 @@
 
 - Redesign "What to Read Now" — hide seasonal tagging, surface context-aware picks (season + vibes + current reading patterns). Replace Seasonal Page with a "Recommendations" page linked from "More Recommendations." **[DONE]**
 - Recommended New Releases should filter to scores ≥7, not just sort by score **[DONE]**
-- Filter New Releases by genre
+- Filter New Releases by genre **[DONE]**
 - When user selects "Not Interested" on a new release, add a form to capture why (e.g. "not interested in comics/graphic novels right now") — useful for future recommendation tuning
 
 **Social & engagement**

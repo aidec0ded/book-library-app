@@ -4,6 +4,7 @@ import type { NewRelease } from "@/lib/types";
 const PAGE_SIZE = 24;
 
 export type ReleaseSort = "score" | "title";
+export type ReleaseCategory = "all" | "fiction" | "nonfiction";
 
 export async function fetchReleasesByMonth(
   year: number,
@@ -11,6 +12,7 @@ export async function fetchReleasesByMonth(
   page: number,
   sort: ReleaseSort = "score",
   showDismissed: boolean = false,
+  category: ReleaseCategory = "all",
 ): Promise<{ releases: NewRelease[]; total: number }> {
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
@@ -23,6 +25,12 @@ export async function fetchReleasesByMonth(
 
   if (!showDismissed) {
     query = query.eq("dismissed", false);
+  }
+
+  if (category === "fiction") {
+    query = query.eq("is_fiction", true);
+  } else if (category === "nonfiction") {
+    query = query.eq("is_fiction", false);
   }
 
   if (sort === "score") {
