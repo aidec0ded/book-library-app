@@ -400,8 +400,8 @@ export function BookDetail() {
             )}
           </div>
 
-          {/* Bookshop.org link */}
-          {book.isbn && (
+          {/* Bookshop.org link (wishlist only — reader doesn't need a buy link for books they own) */}
+          {book.isbn && book.status === "wishlist" && (
             <a
               href={`https://bookshop.org/books?keywords=${book.isbn}`}
               target="_blank"
