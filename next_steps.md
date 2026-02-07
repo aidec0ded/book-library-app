@@ -35,6 +35,16 @@
 - Recommended New Releases should filter to scores ≥7, not just sort by score **[DONE]**
 - Filter New Releases by genre **[DONE]**
 
+**Add Book experience**
+
+- Improve search results: deduplicate by work (group editions of the same title+author, surface best edition, collapse the rest behind "X editions" indicator), prioritize books *by* an author over books *about* them when searching by author name
+- Fix premature "No results found" message that appears while typing before search is submitted; add clear indication that Enter executes search
+- Add "Add to Wishlist" option in the Add Book flow (currently only available on New Releases page)
+
+**Non-fiction & poetry**
+
+- Design first-class experience for non-fiction and poetry — these need their own discovery axes rather than being forced through fiction's canonical vibe system. Non-fiction: subject, approach (narrative/analytical/memoir/essay), intellectual weight. Poetry: movement, form, emotional register. Needs dedicated design thinking before implementation
+
 
 **Social & engagement**
 
@@ -72,3 +82,6 @@
 
 - List view styling refinements
 - Clean up genres — map to broader Amazon-style categories **[DONE]**
+- Redesign star rating input — replace dropdown with interactive star widget (Letterboxd-style hover/tap with quarter-star precision). Current dropdown is bulky and unattractive
+- Add accent color — find strategic places for splashes of a warm color (e.g. LitHub-style red hue) to break up the neutral palette
+- Rename "Freeform Vibes" to "Tags" on BookDetail — the old label is confusing now that AI freeform vibes are gone, and users will tag with more than just vibes
