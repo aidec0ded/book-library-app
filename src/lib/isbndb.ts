@@ -82,11 +82,12 @@ export async function searchBooks(
   query: string,
   page = 1,
   pageSize = 20,
+  column?: "author" | "title",
 ): Promise<{ total: number; books: ISBNdbBook[] }> {
   const encoded = encodeURIComponent(query);
-  const data = await apiFetch<SearchResponse>(
-    `/books/${encoded}?page=${page}&pageSize=${pageSize}`,
-  );
+  let url = `/books/${encoded}?page=${page}&pageSize=${pageSize}`;
+  if (column) url += `&column=${column}`;
+  const data = await apiFetch<SearchResponse>(url);
   return { total: data.total, books: data.books ?? [] };
 }
 
@@ -111,6 +112,13 @@ function normalizeWorkKey(title: string, author?: string): string {
   let t = title.toLowerCase();
   // Remove subtitles and parentheticals
   t = t.replace(/\s*[:(\[].*$/, "").trim();
+  // Strip bare genre/format suffixes ("Good Material A novel" → "Good Material")
+  t = t
+    .replace(
+      /\s+a\s+(?:novel|memoir|novella|story|thriller|romance|mystery)(?:\s.*)?$/i,
+      "",
+    )
+    .trim();
   // Strip trailing articles ("Great Gatsby, The" → "Great Gatsby")
   t = t.replace(/,\s*(the|a|an)$/i, "").trim();
   // Strip leading articles

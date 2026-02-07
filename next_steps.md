@@ -37,7 +37,7 @@
 
 **Add Book experience**
 
-- Improve search results: deduplicate by work (group editions of the same title+author, surface best edition, collapse the rest behind "X editions" indicator), prioritize books *by* an author over books *about* them when searching by author name **[DONE]**
+- Improve search results: deduplicate by work (group editions of the same title+author, surface best edition, collapse the rest behind "X editions" indicator), prioritize books *by* an author over books *about* them when searching by author name — edition grouping, subtitle normalization, and parallel author-column search all shipped; works well for most authors but very famous authors (e.g. Rushdie) still get noisy results from ISBNdb. Revisit if needed
 - Fix premature "No results found" message that appears while typing before search is submitted; add clear indication that Enter executes search **[DONE]**
 - Add "Add to Wishlist" option in the Add Book flow (currently only available on New Releases page) **[DONE]**
 

@@ -83,9 +83,27 @@ export function AddBook() {
         setResultTotal(0);
         setSearchError("No book found for that ISBN.");
       } else {
-        const data = await searchBooks(trimmed, page, PAGE_SIZE);
-        setResults(data.books);
-        setResultTotal(data.total);
+        // Parallel: general search + author-column search
+        const [general, byAuthor] = await Promise.all([
+          searchBooks(trimmed, page, PAGE_SIZE),
+          searchBooks(trimmed, page, PAGE_SIZE, "author").catch(
+            () => ({ total: 0, books: [] as ISBNdbBook[] }),
+          ),
+        ]);
+
+        // Merge: author-search results first, then general results minus dupes
+        const seen = new Set<string>();
+        const merged: ISBNdbBook[] = [];
+        for (const book of [...byAuthor.books, ...general.books]) {
+          const key = book.isbn13 || book.isbn || `${book.title}|${book.authors?.[0] ?? ""}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            merged.push(book);
+          }
+        }
+
+        setResults(merged);
+        setResultTotal(general.total);
         setResultPage(page);
       }
     } catch {
