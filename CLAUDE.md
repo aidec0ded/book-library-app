@@ -118,6 +118,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/list-index.ts` — Builds existing-lists context for system prompt (cached 10min)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
+- `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete)
+- `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
 - `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 tags only, batches of 5, retries, --dry-run/--limit/--force flags)
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
@@ -152,7 +154,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
-**Reflection Loop** — AI reading companion chat (streaming, memory, tool use), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
+**Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
 **AI Output** — Predicted ratings for unread books, AI-managed lists + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page
 

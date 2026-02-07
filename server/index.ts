@@ -14,6 +14,14 @@ import {
   executeExcerptCommand,
   type ExcerptCommand,
 } from "./excerpt-handler.js";
+import {
+  executeBookCommand,
+  type BookCommand,
+} from "./book-handler.js";
+import {
+  executeReleasesCommand,
+  type ReleasesCommand,
+} from "./releases-handler.js";
 import { buildListIndex } from "./list-index.js";
 import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
@@ -71,7 +79,16 @@ save_excerpt tool. When a conversation surfaces a compelling interpretation,
 emotional reaction, or thematic connection about a book, offer to save it.
 The content should be a polished, self-contained 1-3 sentence insight —
 not raw conversation text. These excerpts appear on the book's detail page
-under "From Conversations." Always confirm with the reader before saving.`;
+under "From Conversations." Always confirm with the reader before saving.
+
+You can update books in the library using your manage_book tool. When the
+reader says they started, finished, or gave up on a book, update its status.
+When they rate a book, set the rating. You can also mark/unmark favorites
+and remove books from the library. Always confirm before deleting a book.
+
+You can browse new releases using your search_releases tool. Use it to check
+what books are coming out, find top recommendations, or search for specific
+titles or authors in the releases pipeline.`;
 
   if (readerProfile) {
     prompt += `\n\n## Reader Profile\n\n${readerProfile}`;
@@ -284,6 +301,81 @@ async function handleChat(
               required: ["action", "book_title"],
             },
           },
+          {
+            name: "manage_book",
+            description:
+              "Update a book's status, rating, or favorite flag, or remove it from the library. Use when the reader says they started, finished, or gave up on a book, rates a book, marks a favorite, or wants to delete a book.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                action: {
+                  type: "string",
+                  enum: [
+                    "update_status",
+                    "update_rating",
+                    "toggle_favorite",
+                    "delete",
+                  ],
+                  description: "The action to perform",
+                },
+                book_title: {
+                  type: "string",
+                  description:
+                    "Exact book title as shown in the library",
+                },
+                status: {
+                  type: "string",
+                  enum: [
+                    "unread",
+                    "reading",
+                    "read",
+                    "unfinished",
+                    "wishlist",
+                  ],
+                  description:
+                    "New reading status (required for update_status)",
+                },
+                rating: {
+                  type: "number",
+                  description:
+                    "Rating from 0.25 to 5.0 in 0.25 increments, or 0 to clear (required for update_rating)",
+                },
+              },
+              required: ["action", "book_title"],
+            },
+          },
+          {
+            name: "search_releases",
+            description:
+              "Browse and search new book releases. Use to check what's coming out, find top recommendations, or search for specific titles or authors in the releases pipeline.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                action: {
+                  type: "string",
+                  enum: ["browse", "top", "search"],
+                  description:
+                    "browse: list releases for a month; top: highest-scored releases; search: find by title/author",
+                },
+                month: {
+                  type: "string",
+                  description:
+                    "Month to browse (e.g. '2026-02' or 'February 2026'). Defaults to current month for browse.",
+                },
+                query: {
+                  type: "string",
+                  description:
+                    "Search term for title or author (required for search action)",
+                },
+                limit: {
+                  type: "number",
+                  description:
+                    "Max results to return (default 10, max 20)",
+                },
+              },
+              required: ["action"],
+            },
+          },
         ],
         betas: ["context-management-2025-06-27"],
         max_tokens: 4096,
@@ -335,6 +427,16 @@ async function handleChat(
               supabase,
               block.input as ExcerptCommand,
               conversationId,
+            );
+          } else if (block.name === "manage_book") {
+            result = await executeBookCommand(
+              supabase,
+              block.input as BookCommand,
+            );
+          } else if (block.name === "search_releases") {
+            result = await executeReleasesCommand(
+              supabase,
+              block.input as ReleasesCommand,
             );
           } else {
             result = await executeMemoryCommand(

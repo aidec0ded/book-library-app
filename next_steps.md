@@ -46,7 +46,8 @@
 **Chat experience**
 
 - Persistent, minimizable chat window that can be triggered from any page and uses that page's context **[DONE]**
-- Expand chat tool use — can it access the web (check new releases), remove a book from the library, change book status (e.g. remove from "Reading"), and take other site actions beyond list management?
+- Expand chat tool use — can it access the web (check new releases), remove a book from the library, change book status (e.g. remove from "Reading"), and take other site actions beyond list management? **[DONE]**
+- Add web access tool to chat (e.g. search for books, look up author info, check reviews)
 
 ---
 
