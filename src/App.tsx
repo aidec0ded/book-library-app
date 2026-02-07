@@ -19,7 +19,7 @@ export function App() {
         <Route index element={<Home />} />
         <Route path="library" element={<BookList />} />
         <Route path="recommendations" element={<RecommendationsPage />} />
-        <Route path="vibes" element={<VibesPage />} />
+        <Route path="discover" element={<VibesPage />} />
         <Route path="lists" element={<ListsPage />} />
         <Route path="lists/:id" element={<ListDetail />} />
         <Route path="releases" element={<ReleasesPage />} />

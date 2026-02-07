@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -21,11 +21,11 @@ import {
 } from "@/lib/vibes";
 import { fetchDistinctGenres } from "@/lib/filters";
 import {
-  CANONICAL_VIBES,
+  fetchCanonicalTags,
   formatCanonicalVibe,
 } from "@/lib/canonical-vibes";
 import { MONTH_NAMES } from "@/lib/timing";
-import type { BookSummary } from "@/lib/types";
+import type { BookSummary, BookType, CanonicalTag, TagCategory } from "@/lib/types";
 
 const PAGE_SIZE = 20;
 
@@ -38,7 +38,37 @@ const RATING_OPTIONS = [
   { value: "unrated", label: "Unrated" },
 ];
 
-function parseVibesParam(param: string | null): string[] {
+// Type filter options
+const TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "fiction", label: "Fiction" },
+  { value: "nonfiction", label: "Nonfiction" },
+  { value: "poetry", label: "Poetry" },
+];
+
+// Which canonical tag categories to show as multi-select badges per type
+const MULTI_SELECT_CATEGORIES: Record<string, TagCategory[]> = {
+  all: ["vibe"],
+  fiction: ["vibe"],
+  nonfiction: ["topic"],
+  poetry: ["movement", "formal_feel"],
+};
+
+// Which canonical tag categories to show as single-select dropdowns per type
+const SINGLE_SELECT_CATEGORIES: Record<
+  string,
+  { category: TagCategory; label: string }[]
+> = {
+  all: [],
+  fiction: [],
+  nonfiction: [
+    { category: "form", label: "Form" },
+    { category: "depth", label: "Depth" },
+  ],
+  poetry: [{ category: "accessibility", label: "Accessibility" }],
+};
+
+function parseCommaSeparated(param: string | null): string[] {
   if (!param) return [];
   return param
     .split(",")
@@ -51,7 +81,8 @@ function hasActiveFilters(params: {
   rating: string;
   genre: string;
   month: string;
-  vibes: string[];
+  tags: string[];
+  singleTags: Map<TagCategory, string>;
   showAll: boolean;
 }): boolean {
   return (
@@ -59,7 +90,8 @@ function hasActiveFilters(params: {
     params.rating !== "any" ||
     params.genre !== "any" ||
     params.month !== "any" ||
-    params.vibes.length > 0 ||
+    params.tags.length > 0 ||
+    Array.from(params.singleTags.values()).some((v) => v !== "any") ||
     params.showAll
   );
 }
@@ -69,7 +101,8 @@ function buildFilterSummary(params: {
   rating: string;
   genre: string;
   month: string;
-  vibes: string[];
+  tags: string[];
+  singleTags: Map<TagCategory, string>;
   showAll: boolean;
 }): string {
   const parts: string[] = [];
@@ -81,8 +114,11 @@ function buildFilterSummary(params: {
     const idx = Number(params.month) - 1;
     parts.push(MONTH_NAMES[idx]);
   }
-  if (params.vibes.length > 0)
-    parts.push(params.vibes.map(formatCanonicalVibe).join(", "));
+  if (params.tags.length > 0)
+    parts.push(params.tags.map(formatCanonicalVibe).join(", "));
+  for (const [, val] of params.singleTags) {
+    if (val !== "any") parts.push(formatCanonicalVibe(val));
+  }
   if (params.showAll) parts.push("all books");
   return parts.join(" · ");
 }
@@ -97,9 +133,19 @@ export function BookList() {
   const initialRating = searchParams.get("rating") ?? "any";
   const initialGenre = searchParams.get("genre") ?? "any";
   const initialMonth = searchParams.get("month") ?? "any";
-  const initialVibes = parseVibesParam(searchParams.get("vibes"));
+  const initialType = searchParams.get("type") ?? "all";
+  const initialTags = parseCommaSeparated(searchParams.get("tags"));
   const initialShowAll = searchParams.get("all") === "1";
   const view = searchParams.get("view") === "shelves" ? "shelves" : "list";
+
+  // Parse single-select tag params from URL
+  function parseInitialSingleTags(): Map<TagCategory, string> {
+    const map = new Map<TagCategory, string>();
+    for (const key of ["form", "depth", "accessibility"] as TagCategory[]) {
+      map.set(key, searchParams.get(key) ?? "any");
+    }
+    return map;
+  }
 
   const [query, setQuery] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
@@ -109,11 +155,15 @@ export function BookList() {
   const [loading, setLoading] = useState(true);
 
   // Filter state
+  const [bookType, setBookType] = useState(initialType);
   const [status, setStatus] = useState(initialStatus);
   const [rating, setRating] = useState(initialRating);
   const [genre, setGenre] = useState(initialGenre);
   const [month, setMonth] = useState(initialMonth);
-  const [selectedVibes, setSelectedVibes] = useState<string[]>(initialVibes);
+  const [selectedTags, setSelectedTags] = useState<string[]>(initialTags);
+  const [singleTags, setSingleTags] = useState<Map<TagCategory, string>>(
+    parseInitialSingleTags,
+  );
   const [showAll, setShowAll] = useState(initialShowAll);
   const [filtersOpen, setFiltersOpen] = useState(
     hasActiveFilters({
@@ -121,10 +171,30 @@ export function BookList() {
       rating: initialRating,
       genre: initialGenre,
       month: initialMonth,
-      vibes: initialVibes,
+      tags: initialTags,
+      singleTags: parseInitialSingleTags(),
       showAll: initialShowAll,
     }),
   );
+
+  // Canonical tags for current type's categories (fetched from DB)
+  const [canonicalTags, setCanonicalTags] = useState<CanonicalTag[]>([]);
+
+  // Fetch canonical tags when book type changes
+  useEffect(() => {
+    const multiCats = MULTI_SELECT_CATEGORIES[bookType] ?? [];
+    const singleCats = (SINGLE_SELECT_CATEGORIES[bookType] ?? []).map(
+      (c) => c.category,
+    );
+    const allCats = [...multiCats, ...singleCats];
+    if (allCats.length === 0) {
+      setCanonicalTags([]);
+      return;
+    }
+    Promise.all(allCats.map((cat) => fetchCanonicalTags(cat)))
+      .then((results) => setCanonicalTags(results.flat()))
+      .catch(() => setCanonicalTags([]));
+  }, [bookType]);
 
   // Genre options (fetched once)
   const [genres, setGenres] = useState<string[]>([]);
@@ -162,22 +232,28 @@ export function BookList() {
     const params: Record<string, string> = {};
     if (debouncedQuery) params.q = debouncedQuery;
     if (page > 1) params.page = String(page);
+    if (bookType !== "all") params.type = bookType;
     if (status !== "any") params.status = status;
     if (rating !== "any") params.rating = rating;
     if (genre !== "any") params.genre = genre;
     if (month !== "any") params.month = month;
-    if (selectedVibes.length > 0) params.vibes = selectedVibes.join(",");
+    if (selectedTags.length > 0) params.tags = selectedTags.join(",");
+    for (const [key, val] of singleTags) {
+      if (val !== "any") params[key] = val;
+    }
     if (showAll) params.all = "1";
     if (view === "shelves") params.view = "shelves";
     setSearchParams(params, { replace: true });
   }, [
     debouncedQuery,
     page,
+    bookType,
     status,
     rating,
     genre,
     month,
-    selectedVibes,
+    selectedTags,
+    singleTags,
     showAll,
     view,
     setSearchParams,
@@ -187,11 +263,17 @@ export function BookList() {
   const fetchBooks = useCallback(async () => {
     setLoading(true);
 
-    // If vibes are selected, first get matching book IDs
-    let vibeBookIds: string[] | null = null;
-    if (selectedVibes.length > 0) {
-      vibeBookIds = await fetchBookIdsByCanonicalVibes(selectedVibes);
-      if (vibeBookIds.length === 0) {
+    // Collect all selected canonical tags (multi + single)
+    const allSelectedTags = [...selectedTags];
+    for (const [, val] of singleTags) {
+      if (val !== "any") allSelectedTags.push(val);
+    }
+
+    // If tags are selected, first get matching book IDs
+    let tagBookIds: string[] | null = null;
+    if (allSelectedTags.length > 0) {
+      tagBookIds = await fetchBookIdsByCanonicalVibes(allSelectedTags);
+      if (tagBookIds.length === 0) {
         setBooks([]);
         setCount(0);
         setVibeMap(new Map());
@@ -210,6 +292,11 @@ export function BookList() {
       })
       .order("title", { ascending: true })
       .range(from, to);
+
+    // Book type filter
+    if (bookType !== "all") {
+      q = q.eq("book_type", bookType);
+    }
 
     // Apply filters
     if (status !== "any") {
@@ -232,7 +319,8 @@ export function BookList() {
       q = q.eq("timing_month", Number(month));
     }
 
-    if (!showAll) {
+    // "Show all" toggle only applies to fiction/all (seasonal timing)
+    if (!showAll && (bookType === "all" || bookType === "fiction")) {
       q = q.or("timing_raw.not.is.null,status.eq.wishlist,status.eq.reading");
     }
 
@@ -241,8 +329,8 @@ export function BookList() {
       q = q.or(`title.ilike.${pattern},author.ilike.${pattern}`);
     }
 
-    if (vibeBookIds) {
-      q = q.in("id", vibeBookIds);
+    if (tagBookIds) {
+      q = q.in("id", tagBookIds);
     }
 
     const { data, count: totalCount, error } = await q;
@@ -270,11 +358,13 @@ export function BookList() {
   }, [
     debouncedQuery,
     page,
+    bookType,
     status,
     rating,
     genre,
     month,
-    selectedVibes,
+    selectedTags,
+    singleTags,
     showAll,
   ]);
 
@@ -284,10 +374,33 @@ export function BookList() {
 
   const totalPages = Math.ceil(count / PAGE_SIZE);
 
-  function toggleVibe(tag: string) {
-    setSelectedVibes((prev) =>
+  function handleTypeChange(type: string) {
+    setBookType(type);
+    // Clear type-specific filters when type changes
+    setSelectedTags([]);
+    setSingleTags(new Map([
+      ["form", "any"],
+      ["depth", "any"],
+      ["accessibility", "any"],
+    ] as [TagCategory, string][]));
+    setMonth("any");
+    setShowAll(false);
+    setPage(1);
+  }
+
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((v) => v !== tag) : [...prev, tag],
     );
+    setPage(1);
+  }
+
+  function setSingleTag(category: TagCategory, value: string) {
+    setSingleTags((prev) => {
+      const next = new Map(prev);
+      next.set(category, value);
+      return next;
+    });
     setPage(1);
   }
 
@@ -296,7 +409,12 @@ export function BookList() {
     setRating("any");
     setGenre("any");
     setMonth("any");
-    setSelectedVibes([]);
+    setSelectedTags([]);
+    setSingleTags(new Map([
+      ["form", "any"],
+      ["depth", "any"],
+      ["accessibility", "any"],
+    ] as [TagCategory, string][]));
     setShowAll(false);
     setPage(1);
   }
@@ -306,11 +424,23 @@ export function BookList() {
     rating,
     genre,
     month,
-    vibes: selectedVibes,
+    tags: selectedTags,
+    singleTags,
     showAll,
   };
   const active = hasActiveFilters(filterState);
   const summary = buildFilterSummary(filterState);
+
+  // Group canonical tags by category for rendering
+  const tagsByCategory = useMemo(() => {
+    const map = new Map<TagCategory, CanonicalTag[]>();
+    for (const t of canonicalTags) {
+      const existing = map.get(t.tag_category);
+      if (existing) existing.push(t);
+      else map.set(t.tag_category, [t]);
+    }
+    return map;
+  }, [canonicalTags]);
 
   function setView(v: "list" | "shelves") {
     const params: Record<string, string> = {};
@@ -318,12 +448,55 @@ export function BookList() {
     setSearchParams(params, { replace: true });
   }
 
+  // Determine which filter sections to show based on type
+  const showMonth = bookType === "all" || bookType === "fiction";
+  const showGenre = bookType !== "poetry";
+  const showShowAll = bookType === "all" || bookType === "fiction";
+  const multiCats = MULTI_SELECT_CATEGORIES[bookType] ?? [];
+  const singleCats = SINGLE_SELECT_CATEGORIES[bookType] ?? [];
+
+  // Category labels for display
+  const categoryLabels: Record<string, string> = {
+    vibe: "Vibes",
+    topic: "Topics",
+    movement: "Movement",
+    formal_feel: "Formal Feel",
+  };
+
+  const activeFilterCount = [
+    status !== "any",
+    rating !== "any",
+    genre !== "any",
+    month !== "any",
+    selectedTags.length > 0,
+    ...Array.from(singleTags.values()).map((v) => v !== "any"),
+    showAll,
+  ].filter(Boolean).length;
+
   return (
     <div className="space-y-6">
       <ReadingQuote />
 
-      {/* View toggle */}
-      <div className="flex items-center justify-end">
+      {/* View toggle + Type filter row */}
+      <div className="flex items-center justify-between gap-4">
+        {/* Type segmented control */}
+        <div className="flex rounded-md border">
+          {TYPE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleTypeChange(opt.value)}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                bookType === opt.value
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* View toggle */}
         <div className="flex rounded-md border">
           <button
             onClick={() => setView("list")}
@@ -370,16 +543,9 @@ export function BookList() {
             <ChevronDown className="h-4 w-4" />
           )}
           Filters
-          {active && (
+          {activeFilterCount > 0 && (
             <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] leading-none text-primary-foreground">
-              {[
-                status !== "any",
-                rating !== "any",
-                genre !== "any",
-                month !== "any",
-                selectedVibes.length > 0,
-                showAll,
-              ].filter(Boolean).length}
+              {activeFilterCount}
             </span>
           )}
         </button>
@@ -426,84 +592,124 @@ export function BookList() {
                 </Select>
               </div>
 
-              {/* Genre */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Genre
-                </label>
-                <Select value={genre} onValueChange={(v) => { setGenre(v); setPage(1); }}>
-                  <SelectTrigger size="sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="any">Any</SelectItem>
-                    {genres.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        {g}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Genre — shown for all/fiction/nonfiction */}
+              {showGenre && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Genre
+                  </label>
+                  <Select value={genre} onValueChange={(v) => { setGenre(v); setPage(1); }}>
+                    <SelectTrigger size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any</SelectItem>
+                      {genres.map((g) => (
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-              {/* Month */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Month
-                </label>
-                <Select value={month} onValueChange={(v) => { setMonth(v); setPage(1); }}>
-                  <SelectTrigger size="sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="any">Any</SelectItem>
-                    {MONTH_NAMES.map((name, i) => (
-                      <SelectItem key={i} value={String(i + 1)}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+              {/* Month — fiction/all only */}
+              {showMonth && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Month
+                  </label>
+                  <Select value={month} onValueChange={(v) => { setMonth(v); setPage(1); }}>
+                    <SelectTrigger size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any</SelectItem>
+                      {MONTH_NAMES.map((name, i) => (
+                        <SelectItem key={i} value={String(i + 1)}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-            {/* Has timing toggle */}
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={showAll}
-                onChange={(e) => { setShowAll(e.target.checked); setPage(1); }}
-                className="rounded"
-              />
-              <span className="text-muted-foreground">
-                Show books without seasonal timing
-              </span>
-            </label>
-
-            {/* Canonical vibes multi-select */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                Vibes
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {CANONICAL_VIBES.map((cv) => {
-                  const isActive = selectedVibes.includes(cv.tag);
-                  return (
-                    <Badge
-                      key={cv.tag}
-                      variant={isActive ? "default" : "outline"}
-                      className={`cursor-pointer transition-opacity ${
-                        isActive ? "" : "opacity-60 hover:opacity-90"
-                      }`}
-                      title={cv.description}
-                      onClick={() => toggleVibe(cv.tag)}
+              {/* Single-select tag categories (form, depth, accessibility) */}
+              {singleCats.map(({ category, label }) => {
+                const tags = tagsByCategory.get(category) ?? [];
+                return (
+                  <div key={category} className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      {label}
+                    </label>
+                    <Select
+                      value={singleTags.get(category) ?? "any"}
+                      onValueChange={(v) => setSingleTag(category, v)}
                     >
-                      {formatCanonicalVibe(cv.tag)}
-                    </Badge>
-                  );
-                })}
-              </div>
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any</SelectItem>
+                        {tags.map((t) => (
+                          <SelectItem key={t.tag} value={t.tag}>
+                            {formatCanonicalVibe(t.tag)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                );
+              })}
             </div>
+
+            {/* Show all toggle — fiction/all only */}
+            {showShowAll && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={showAll}
+                  onChange={(e) => { setShowAll(e.target.checked); setPage(1); }}
+                  className="rounded"
+                />
+                <span className="text-muted-foreground">
+                  Show books without seasonal timing
+                </span>
+              </label>
+            )}
+
+            {/* Multi-select tag categories (vibes, topics, movement, formal_feel) */}
+            {multiCats.map((category) => {
+              const tags = tagsByCategory.get(category) ?? [];
+              if (tags.length === 0) return null;
+              return (
+                <div key={category} className="space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {categoryLabels[category] ?? formatCanonicalVibe(category)}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map((ct) => {
+                      const isActive = selectedTags.includes(ct.tag);
+                      return (
+                        <Badge
+                          key={ct.tag}
+                          variant={isActive ? "default" : "outline"}
+                          className={`cursor-pointer transition-opacity ${
+                            isActive ? "" : "opacity-60 hover:opacity-90"
+                          }`}
+                          title={ct.description}
+                          onClick={() => toggleTag(ct.tag)}
+                        >
+                          {formatCanonicalVibe(ct.tag)}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
 
             {/* Clear */}
             {active && (

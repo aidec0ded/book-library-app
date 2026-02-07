@@ -71,20 +71,21 @@ export async function removeVibe(vibeId: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchCanonicalVibesWithCounts(): Promise<
-  { vibe: string; count: number }[]
-> {
+export async function fetchCanonicalVibesWithCounts(
+  category?: TagCategory,
+): Promise<{ vibe: string; count: number }[]> {
   // Supabase defaults to 1000 rows — paginate to get all canonical vibe rows
   const PAGE_SIZE = 1000;
   let allRows: { vibe: string }[] = [];
   let from = 0;
 
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("book_vibes")
       .select("vibe")
-      .eq("is_canonical", true)
-      .range(from, from + PAGE_SIZE - 1);
+      .eq("is_canonical", true);
+    if (category) query = query.eq("tag_category", category);
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;
     allRows = allRows.concat(data);

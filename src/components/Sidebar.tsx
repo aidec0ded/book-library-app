@@ -40,7 +40,7 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Discover",
     items: [
       { label: "Recommendations", path: "/recommendations", icon: Compass },
-      { label: "Vibes", path: "/vibes", icon: Sparkles },
+      { label: "Discover", path: "/discover", icon: Sparkles },
       { label: "New Releases", path: "/releases", icon: Newspaper },
     ],
   },
