@@ -40,7 +40,7 @@
 
 - Reading paths — interest-driven explorations (author catalogs, literary movements, award lists) with progress tracking and AI-assisted creation/check-ins. Stretch: AI-generated "seminar" layer — structured syllabi with deliberate sequencing, historical/cultural context before each work, guided reading focus, post-book discussion, and adaptation based on the reader's reactions throughout the path
 - Reading Life narrative — AI-identified eras/chapters in the reader's journey (not a chronological timeline but a thematic story), with key books, transition points, vibe/genre composition, and conversation insights per era. **First step:** add `date_read` column to books (set automatically when status changes to "read") so temporal data accumulates over time
-- Social sharing of shelves/lists
+- Social features strategy — determine which social interactions serve meaningful reading vs. social performance. Candidates: editorial public lists with write-ups, sharing reader insights/profiles (not metrics), seminar cohorts on reading paths, taste-based discovery. Requires auth/multi-user first
 
 **Chat experience**
 
