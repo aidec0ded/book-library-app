@@ -30,10 +30,15 @@ const SYSTEM_PROMPT = `You are generating a Reader Profile for MoodLib, a person
 
 The profile is anti-performative: it reflects what the reader actually reads and how they actually respond, not what they wish they read. Be honest, specific, and insightful.
 
+The library contains three types of books — fiction, nonfiction, and poetry — each marked with [fiction], [nonfiction], or [poetry]. Each type has its own classification vocabulary:
+- Fiction: vibes (e.g. atmospheric, cerebral, dark)
+- Nonfiction: topics, form (narrative/analytical/polemic/etc.), depth (accessible/moderate/demanding)
+- Poetry: movement (confessional/modernist/etc.), formal feel (lyric/prose-like/etc.), accessibility
+
 Return ONLY valid JSON matching this exact structure (no markdown, no explanation):
 
 {
-  "reader_identity": "Essay (2-4 paragraphs). Who this reader is based on their library. What themes they return to, what they value in literature, their relationship to difficulty vs. comfort. Specific and personal.",
+  "reader_identity": "Essay (2-4 paragraphs). Who this reader is across ALL their reading — fiction, nonfiction, and poetry. What themes they return to, what they value, their relationship to difficulty vs. comfort. Draw connections across types when they exist. Specific and personal.",
 
   "thematic_pillars": [
     {
@@ -44,23 +49,35 @@ Return ONLY valid JSON matching this exact structure (no markdown, no explanatio
   ],
 
   "taste_evolution": {
-    "current_gravitational_pulls": "Essay. What the reader is reaching for right now — authors, styles, literary movements, genres, not just themes. Multi-dimensional.",
+    "current_gravitational_pulls": "Essay. What the reader is reaching for right now — authors, styles, literary movements, genres, ideas, not just themes. Multi-dimensional. Span all book types.",
     "shift_log": [],
-    "consistent_throughlines": "Essay. What hasn't changed. The constants in this reader's taste."
+    "consistent_throughlines": "Essay. What hasn't changed. The constants in this reader's taste across all types."
   },
 
-  "emotional_patterns": "Essay (2-3 paragraphs). What kinds of books hit hardest, what the reader bounces off of, seasonal reading patterns, what they reach for in different moods.",
+  "emotional_patterns": "Essay (2-3 paragraphs). What kinds of books hit hardest, what the reader bounces off of, seasonal reading patterns, what they reach for in different moods. Consider how fiction, nonfiction, and poetry serve different emotional needs.",
 
   "reading_life_snapshot": {
     "reading_pace_description": "Brief description of reading pace/habits"
-  }
+  },
+
+  "nonfiction_identity": "Essay (1-2 paragraphs, or null if library has very few nonfiction books). What draws this reader to nonfiction, what kinds of arguments and approaches they prefer, their intellectual curiosity areas, preferred depth level.",
+
+  "nonfiction_interests": ["interest1", "interest2"],
+
+  "poetry_identity": "Essay (1-2 paragraphs, or null if library has very few poetry books). Their relationship to poetry — what movements, forms, or registers they gravitate toward, how they read poetry (as craft, as emotional experience, as intellectual engagement).",
+
+  "poet_affinities": ["Poet Name", "Poet Name"]
 }
 
 Guidelines:
-- thematic_pillars: 4-7 pillars. Each with 2-5 example_books as "Title by Author" strings.
+- thematic_pillars: 4-7 pillars. Each with 2-5 example_books as "Title by Author" strings. Pillars can span book types — a "Power and Systems" pillar might include both fiction and nonfiction.
 - shift_log: PRESERVE all existing entries provided, then add 0-2 new ones if warranted. Each entry needs "noted_at" (ISO timestamp) and "description".
 - Be specific: name authors, titles, styles. Avoid generic platitudes.
-- The reader_identity should feel like it was written by someone who knows this reader well.`;
+- The reader_identity should feel like it was written by someone who knows this reader well.
+- nonfiction_identity and poetry_identity: set to null if the library has fewer than 5 books of that type. Otherwise, write a substantive essay.
+- nonfiction_interests: 3-8 topic areas (e.g. "cognitive science", "political philosophy", "memoir"). Empty array if no nonfiction.
+- poet_affinities: 3-8 poet names this reader most connects with. Empty array if no poetry.
+- Look for cross-type connections: does their fiction taste mirror their nonfiction interests? Do the poets they read share sensibilities with their favorite novelists?`;
 
 // --- Data Gathering ---
 
@@ -68,6 +85,7 @@ interface BookRow {
   id: string;
   title: string;
   author: string;
+  book_type: string | null;
   status: string | null;
   rating: number | null;
   genre: string | null;
@@ -87,7 +105,7 @@ async function fetchAllBooks(): Promise<BookRow[]> {
     const { data, error } = await supabase
       .from("books")
       .select(
-        "id, title, author, status, rating, genre, category, timing_raw, notes, is_favorite, date_finished",
+        "id, title, author, book_type, status, rating, genre, category, timing_raw, notes, is_favorite, date_finished",
       )
       .order("title")
       .range(from, from + PAGE_SIZE - 1);
@@ -101,15 +119,17 @@ async function fetchAllBooks(): Promise<BookRow[]> {
   return books;
 }
 
-async function fetchCanonicalVibes(): Promise<Map<string, string[]>> {
+async function fetchCanonicalTags(): Promise<
+  Map<string, { vibe: string; tag_category: string }[]>
+> {
   const PAGE_SIZE = 1000;
-  const rows: { book_id: string; vibe: string }[] = [];
+  const rows: { book_id: string; vibe: string; tag_category: string }[] = [];
   let from = 0;
 
   while (true) {
     const { data, error } = await supabase
       .from("book_vibes")
-      .select("book_id, vibe")
+      .select("book_id, vibe, tag_category")
       .eq("is_canonical", true)
       .range(from, from + PAGE_SIZE - 1);
 
@@ -119,11 +139,11 @@ async function fetchCanonicalVibes(): Promise<Map<string, string[]>> {
     from += PAGE_SIZE;
   }
 
-  const map = new Map<string, string[]>();
+  const map = new Map<string, { vibe: string; tag_category: string }[]>();
   for (const row of rows) {
     const existing = map.get(row.book_id);
-    if (existing) existing.push(row.vibe);
-    else map.set(row.book_id, [row.vibe]);
+    if (existing) existing.push(row);
+    else map.set(row.book_id, [row]);
   }
   return map;
 }
@@ -175,16 +195,56 @@ async function fetchPreviousProfile(): Promise<PreviousProfile | null> {
 
 // --- Formatting ---
 
-function formatLibrary(books: BookRow[], vibeMap: Map<string, string[]>): string {
+const TAG_LABELS: Record<string, string> = {
+  vibe: "vibes",
+  topic: "topics",
+  form: "form",
+  depth: "depth",
+  movement: "movement",
+  formal_feel: "feel",
+  accessibility: "accessibility",
+};
+
+function formatTagsForBook(
+  tags: { vibe: string; tag_category: string }[],
+  bookType: string,
+): string {
+  if (bookType === "fiction") {
+    const vibes = tags.filter((t) => t.tag_category === "vibe").map((t) => t.vibe);
+    return vibes.length > 0 ? `vibes: ${vibes.join(", ")}` : "";
+  }
+  const grouped = new Map<string, string[]>();
+  for (const t of tags) {
+    const existing = grouped.get(t.tag_category);
+    if (existing) existing.push(t.vibe);
+    else grouped.set(t.tag_category, [t.vibe]);
+  }
+  const parts: string[] = [];
+  for (const [cat, vals] of grouped) {
+    const label = TAG_LABELS[cat] ?? cat;
+    parts.push(`${label}: ${vals.join(", ")}`);
+  }
+  return parts.join("; ");
+}
+
+function formatLibrary(
+  books: BookRow[],
+  tagMap: Map<string, { vibe: string; tag_category: string }[]>,
+): string {
   const lines = books.map((b) => {
+    const bookType = b.book_type ?? "fiction";
     const parts = [`"${b.title}" by ${b.author}`];
-    if (b.status) parts.push(`[${b.status}]`);
+    parts.push(`[${bookType}]`);
+    if (b.status) parts.push(b.status);
     if (b.rating != null && b.rating > 0) parts.push(`★${b.rating}`);
     if (b.genre) parts.push(b.genre);
     else if (b.category) parts.push(b.category);
     if (b.is_favorite) parts.push("♥ favorite");
-    const vibes = vibeMap.get(b.id);
-    if (vibes) parts.push(`vibes: ${vibes.join(", ")}`);
+    const tags = tagMap.get(b.id);
+    if (tags) {
+      const formatted = formatTagsForBook(tags, bookType);
+      if (formatted) parts.push(formatted);
+    }
     if (b.timing_raw) parts.push(`when: ${b.timing_raw}`);
     if (b.notes) parts.push(`notes: ${b.notes.slice(0, 200)}`);
     return parts.join(" | ");
@@ -290,10 +350,10 @@ async function main() {
   }
 
   // Gather data
-  const [books, vibeMap, memoryFiles, recentMessages, previousProfile] =
+  const [books, tagMap, memoryFiles, recentMessages, previousProfile] =
     await Promise.all([
       fetchAllBooks(),
-      fetchCanonicalVibes(),
+      fetchCanonicalTags(),
       bootstrap ? Promise.resolve([]) : fetchMemoryFiles(),
       bootstrap ? Promise.resolve([]) : fetchRecentMessages(100),
       fetchPreviousProfile(),
@@ -303,7 +363,7 @@ async function main() {
     previousProfile?.profile_data?.taste_evolution?.shift_log ?? [];
   const previousCanon = previousProfile?.profile_data?.personal_canon ?? [];
 
-  const libraryText = formatLibrary(books, vibeMap);
+  const libraryText = formatLibrary(books, tagMap);
 
   const memoryText =
     memoryFiles.length > 0
@@ -397,6 +457,12 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
 
   // Carry forward personal canon from previous profile
   profileData.personal_canon = previousCanon;
+
+  // Normalize null nonfiction/poetry fields to omit them
+  if (profileData.nonfiction_identity === null) delete profileData.nonfiction_identity;
+  if (profileData.poetry_identity === null) delete profileData.poetry_identity;
+  if (profileData.nonfiction_interests?.length === 0) delete profileData.nonfiction_interests;
+  if (profileData.poet_affinities?.length === 0) delete profileData.poet_affinities;
 
   // Gather activity snapshot for scheduler
   const activitySnapshot = await gatherActivitySnapshot();

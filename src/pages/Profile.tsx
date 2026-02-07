@@ -208,6 +208,68 @@ export function Profile() {
         </CardContent>
       </Card>
 
+      {/* Nonfiction Identity */}
+      {data.nonfiction_identity && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Nonfiction Identity</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="whitespace-pre-line text-sm leading-relaxed">
+              {data.nonfiction_identity}
+            </div>
+            {data.nonfiction_interests && data.nonfiction_interests.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Key Interests
+                </h3>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {data.nonfiction_interests.map((interest, i) => (
+                    <span
+                      key={i}
+                      className="rounded-full bg-muted px-2.5 py-0.5 text-sm"
+                    >
+                      {interest}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Poetry Identity */}
+      {data.poetry_identity && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Poetry Identity</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="whitespace-pre-line text-sm leading-relaxed">
+              {data.poetry_identity}
+            </div>
+            {data.poet_affinities && data.poet_affinities.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Poet Affinities
+                </h3>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {data.poet_affinities.map((poet, i) => (
+                    <span
+                      key={i}
+                      className="rounded-full bg-muted px-2.5 py-0.5 text-sm"
+                    >
+                      {poet}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Personal Canon */}
       <Card>
         <CardHeader>

@@ -64,6 +64,22 @@ function formatProfileForPrompt(profile: ReaderProfileData): string {
   sections.push("\n### Emotional Patterns\n");
   sections.push(profile.emotional_patterns);
 
+  if (profile.nonfiction_identity) {
+    sections.push("\n### Nonfiction Identity\n");
+    sections.push(profile.nonfiction_identity);
+    if (profile.nonfiction_interests && profile.nonfiction_interests.length > 0) {
+      sections.push(`\nKey interests: ${profile.nonfiction_interests.join(", ")}`);
+    }
+  }
+
+  if (profile.poetry_identity) {
+    sections.push("\n### Poetry Identity\n");
+    sections.push(profile.poetry_identity);
+    if (profile.poet_affinities && profile.poet_affinities.length > 0) {
+      sections.push(`\nPoet affinities: ${profile.poet_affinities.join(", ")}`);
+    }
+  }
+
   const snapshot = profile.reading_life_snapshot;
   sections.push("\n### Reading Life Snapshot\n");
   if (snapshot.currently_reading.length > 0) {

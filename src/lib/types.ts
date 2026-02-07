@@ -127,6 +127,11 @@ export interface ReaderProfileData {
   emotional_patterns: string;
   reading_life_snapshot: ReadingLifeSnapshot;
   personal_canon: string[];
+  // Multi-type extensions (optional — present when library has nonfiction/poetry)
+  nonfiction_identity?: string;
+  nonfiction_interests?: string[];
+  poetry_identity?: string;
+  poet_affinities?: string[];
 }
 
 export interface ReaderProfile {

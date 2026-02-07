@@ -42,6 +42,7 @@ interface BookForPrediction {
   id: string;
   title: string;
   author: string;
+  book_type: string | null;
   genre: string | null;
   summary: string | null;
   notes: string | null;
@@ -50,9 +51,10 @@ interface BookForPrediction {
 interface CalibratedBook {
   title: string;
   author: string;
+  book_type: string;
   rating: number;
   genre: string | null;
-  vibes: string[];
+  tags: { vibe: string; tag_category: string }[];
 }
 
 interface PredictionResult {
@@ -90,6 +92,22 @@ function formatProfileForPrompt(profile: ReaderProfileData): string {
 
   sections.push("\n### Emotional Patterns\n");
   sections.push(profile.emotional_patterns);
+
+  if (profile.nonfiction_identity) {
+    sections.push("\n### Nonfiction Identity\n");
+    sections.push(profile.nonfiction_identity);
+    if (profile.nonfiction_interests && profile.nonfiction_interests.length > 0) {
+      sections.push(`\nKey interests: ${profile.nonfiction_interests.join(", ")}`);
+    }
+  }
+
+  if (profile.poetry_identity) {
+    sections.push("\n### Poetry Identity\n");
+    sections.push(profile.poetry_identity);
+    if (profile.poet_affinities && profile.poet_affinities.length > 0) {
+      sections.push(`\nPoet affinities: ${profile.poet_affinities.join(", ")}`);
+    }
+  }
 
   const snapshot = profile.reading_life_snapshot;
   sections.push("\n### Reading Life Snapshot\n");
@@ -149,12 +167,12 @@ async function countRatedBooks(): Promise<number> {
 }
 
 async function fetchCalibrationSet(
-  vibeMap: Map<string, string[]>,
+  tagMap: Map<string, { vibe: string; tag_category: string }[]>,
 ): Promise<CalibratedBook[]> {
   // Fetch all rated books
   const { data, error } = await supabase
     .from("books")
-    .select("id, title, author, rating, genre")
+    .select("id, title, author, book_type, rating, genre")
     .gt("rating", 0)
     .order("rating");
 
@@ -195,9 +213,10 @@ async function fetchCalibrationSet(
       calibration.push({
         title: b.title,
         author: b.author,
+        book_type: b.book_type ?? "fiction",
         rating: b.rating,
         genre: b.genre,
-        vibes: vibeMap.get(b.id) ?? [],
+        tags: tagMap.get(b.id) ?? [],
       });
     }
   }
@@ -224,7 +243,7 @@ async function fetchCanonBooks(
 async function fetchUnreadBooks(): Promise<BookForPrediction[]> {
   let query = supabase
     .from("books")
-    .select("id, title, author, genre, summary, notes")
+    .select("id, title, author, book_type, genre, summary, notes")
     .or("status.eq.unread,status.is.null")
     .order("title");
 
@@ -241,31 +260,88 @@ async function fetchUnreadBooks(): Promise<BookForPrediction[]> {
   return data ?? [];
 }
 
-async function fetchAllCanonicalVibes(): Promise<Map<string, string[]>> {
+async function fetchAllCanonicalTags(): Promise<
+  Map<string, { vibe: string; tag_category: string }[]>
+> {
   const PAGE_SIZE = 1000;
-  const rows: { book_id: string; vibe: string }[] = [];
+  const rows: { book_id: string; vibe: string; tag_category: string }[] = [];
   let from = 0;
 
   while (true) {
     const { data, error } = await supabase
       .from("book_vibes")
-      .select("book_id, vibe")
+      .select("book_id, vibe, tag_category")
       .eq("is_canonical", true)
       .range(from, from + PAGE_SIZE - 1);
 
-    if (error) throw new Error(`fetchAllCanonicalVibes: ${error.message}`);
+    if (error) throw new Error(`fetchAllCanonicalTags: ${error.message}`);
     rows.push(...data);
     if (data.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
   }
 
-  const map = new Map<string, string[]>();
+  const map = new Map<string, { vibe: string; tag_category: string }[]>();
   for (const row of rows) {
     const existing = map.get(row.book_id);
-    if (existing) existing.push(row.vibe);
-    else map.set(row.book_id, [row.vibe]);
+    if (existing) existing.push(row);
+    else map.set(row.book_id, [row]);
   }
   return map;
+}
+
+// --- Tag formatting ---
+
+const TAG_LABELS: Record<string, string> = {
+  vibe: "vibes",
+  topic: "topics",
+  form: "form",
+  depth: "depth",
+  movement: "movement",
+  formal_feel: "feel",
+  accessibility: "accessibility",
+};
+
+function formatCalibrationTags(book: CalibratedBook): string {
+  if (book.tags.length === 0) return "";
+  if (book.book_type === "fiction") {
+    const vibes = book.tags.filter((t) => t.tag_category === "vibe").map((t) => t.vibe);
+    return vibes.length > 0 ? ` | vibes: ${vibes.join(", ")}` : "";
+  }
+  const grouped = new Map<string, string[]>();
+  for (const t of book.tags) {
+    const existing = grouped.get(t.tag_category);
+    if (existing) existing.push(t.vibe);
+    else grouped.set(t.tag_category, [t.vibe]);
+  }
+  const parts: string[] = [];
+  for (const [cat, vals] of grouped) {
+    const label = TAG_LABELS[cat] ?? cat;
+    parts.push(`${label}: ${vals.join(", ")}`);
+  }
+  return parts.length > 0 ? ` | ${parts.join("; ")}` : "";
+}
+
+function formatBookTags(
+  tags: { vibe: string; tag_category: string }[],
+  bookType: string,
+): string {
+  if (tags.length === 0) return "";
+  if (bookType === "fiction") {
+    const vibes = tags.filter((t) => t.tag_category === "vibe").map((t) => t.vibe);
+    return vibes.length > 0 ? `Vibes: ${vibes.join(", ")}` : "";
+  }
+  const grouped = new Map<string, string[]>();
+  for (const t of tags) {
+    const existing = grouped.get(t.tag_category);
+    if (existing) existing.push(t.vibe);
+    else grouped.set(t.tag_category, [t.vibe]);
+  }
+  const parts: string[] = [];
+  for (const [cat, vals] of grouped) {
+    const label = TAG_LABELS[cat] ?? cat;
+    parts.push(`${label[0].toUpperCase() + label.slice(1)}: ${vals.join(", ")}`);
+  }
+  return parts.join(" | ");
 }
 
 // --- Prompt Building ---
@@ -287,9 +363,9 @@ function buildSystemPrompt(
 
   const calibrationSection = calibration
     .map((b) => {
-      const vibeStr = b.vibes.length > 0 ? ` | vibes: ${b.vibes.join(", ")}` : "";
+      const tagStr = formatCalibrationTags(b);
       const genreStr = b.genre ? ` | ${b.genre}` : "";
-      return `- ★${b.rating} "${b.title}" by ${b.author}${genreStr}${vibeStr}`;
+      return `- ★${b.rating} "${b.title}" by ${b.author} [${b.book_type}]${genreStr}${tagStr}`;
     })
     .join("\n");
 
@@ -303,6 +379,12 @@ based on their reading profile, taste patterns, and rating history.
 - 3.0-3.75: Good, solid but not exceptional
 - 2.0-2.75: Below average for this reader
 - 0.25-1.75: Poor match, likely wouldn't finish
+
+The library contains fiction, nonfiction, and poetry. Each type has different
+classification vocabularies (vibes for fiction, topics/form/depth for nonfiction,
+movement/feel/accessibility for poetry). Consider the book's type when predicting —
+how this reader responds to fiction may differ from how they respond to nonfiction
+or poetry.
 
 ## Reader Profile
 ${profileText}
@@ -319,6 +401,7 @@ Rules:
 - A critically acclaimed book gets a low prediction if it doesn't match this reader's patterns
 - Personal canon themes should pull related predictions UP
 - Be honest: use the full range. Most predictions should have genuine spread.
+- Consider the book's type: the reader may rate nonfiction or poetry on different criteria than fiction
 - Include a brief rationale (1-2 sentences) explaining why this reader would rate the book this way
 
 Return ONLY a JSON array with id, predicted_rating, and rationale fields. No other text.`;
@@ -331,15 +414,19 @@ function truncate(text: string, maxLen: number): string {
 
 function buildUserPrompt(
   batch: BookForPrediction[],
-  vibeMap: Map<string, string[]>,
+  tagMap: Map<string, { vibe: string; tag_category: string }[]>,
 ): string {
   const blocks = batch.map((book, i) => {
+    const bookType = book.book_type ?? "fiction";
     const lines: string[] = [];
     lines.push(`[${i + 1}] id: ${book.id}`);
-    lines.push(`"${book.title}" by ${book.author}`);
+    lines.push(`"${book.title}" by ${book.author} [${bookType}]`);
     if (book.genre) lines.push(`Genre: ${book.genre}`);
-    const vibes = vibeMap.get(book.id);
-    if (vibes && vibes.length > 0) lines.push(`Vibes: ${vibes.join(", ")}`);
+    const tags = tagMap.get(book.id);
+    if (tags && tags.length > 0) {
+      const tagStr = formatBookTags(tags, bookType);
+      if (tagStr) lines.push(tagStr);
+    }
     if (book.summary) lines.push(`Summary: ${truncate(book.summary, 300)}`);
     if (book.notes) lines.push(`Notes: ${truncate(book.notes, 150)}`);
     return lines.join("\n");
@@ -430,14 +517,14 @@ async function main() {
   const profileText = formatProfileForPrompt(profileResult.profile);
   const canonIds = profileResult.profile.personal_canon ?? [];
 
-  // Fetch all canonical vibes once (avoids URL-length issues with .in() filters)
-  const [canonBooks, unreadBooks, vibeMap] = await Promise.all([
+  // Fetch all canonical tags once (avoids URL-length issues with .in() filters)
+  const [canonBooks, unreadBooks, tagMap] = await Promise.all([
     fetchCanonBooks(canonIds),
     fetchUnreadBooks(),
-    fetchAllCanonicalVibes(),
+    fetchAllCanonicalTags(),
   ]);
 
-  const calibration = await fetchCalibrationSet(vibeMap);
+  const calibration = await fetchCalibrationSet(tagMap);
 
   let booksToPredict = unreadBooks;
   if (limit && limit > 0) {
@@ -490,7 +577,7 @@ async function main() {
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const batch = booksToPredict.slice(i, i + BATCH_SIZE);
     const batchIds = new Set(batch.map((b) => b.id));
-    const userPrompt = buildUserPrompt(batch, vibeMap);
+    const userPrompt = buildUserPrompt(batch, tagMap);
 
     let results: PredictionResult[] | null = null;
 
