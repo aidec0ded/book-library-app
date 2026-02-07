@@ -1,7 +1,19 @@
+export type BookType = "fiction" | "nonfiction" | "poetry";
+
+export type TagCategory =
+  | "vibe"
+  | "topic"
+  | "form"
+  | "depth"
+  | "movement"
+  | "formal_feel"
+  | "accessibility";
+
 export interface BookSummary {
   id: string;
   title: string;
   author: string;
+  book_type: BookType;
   status: string | null;
   rating: number | null;
   timing_raw: string | null;
@@ -16,6 +28,7 @@ export interface Book {
   volume: string | null;
   author: string;
   isbn: string | null;
+  book_type: BookType;
   genre: string | null;
   summary: string | null;
   category: string | null;
@@ -45,10 +58,19 @@ export interface BookVibe {
   id: string;
   book_id: string;
   vibe: string;
+  tag_category: TagCategory;
   ai_assigned: boolean;
   user_confirmed: boolean;
   is_canonical: boolean;
   created_at: string;
+}
+
+export interface CanonicalTag {
+  id: string;
+  tag: string;
+  tag_category: TagCategory;
+  description: string;
+  display_order: number;
 }
 
 export interface Conversation {

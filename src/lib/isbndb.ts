@@ -34,6 +34,7 @@ export interface BookInsert {
   title: string;
   author: string;
   isbn: string | null;
+  book_type: "fiction" | "nonfiction" | "poetry";
   cover_image_url: string | null;
   publisher: string | null;
   publication_year: number | null;
@@ -194,6 +195,23 @@ export function groupEditions(
   return result;
 }
 
+// --- Book type detection ---
+
+const POETRY_SUBJECT_RE = /\bpoetry\b|\bpoems\b|\bverse\b/i;
+const FICTION_SUBJECT_RE =
+  /\bfiction\b|\bnovel\b|\bthriller\b|\bmystery\b|\bromance\b|\bfantasy\b|\bsci-fi\b|\bscience fiction\b|\bhorror\b|\bsuspense\b|\bdetective\b/i;
+
+export function detectBookType(
+  subjects?: string[],
+): "fiction" | "nonfiction" | "poetry" {
+  if (!subjects || subjects.length === 0) return "fiction";
+  if (subjects.some((s) => POETRY_SUBJECT_RE.test(s))) return "poetry";
+  if (subjects.some((s) => FICTION_SUBJECT_RE.test(s))) return "fiction";
+  return "nonfiction";
+}
+
+// --- Mapping ---
+
 export function mapToBookInsert(book: ISBNdbBook, status: string): BookInsert {
   const isbn = book.isbn13 || book.isbn || null;
   const author = book.authors?.join(", ") ?? "Unknown";
@@ -221,6 +239,7 @@ export function mapToBookInsert(book: ISBNdbBook, status: string): BookInsert {
     title: book.title,
     author,
     isbn,
+    book_type: detectBookType(book.subjects),
     cover_image_url: book.image || null,
     publisher,
     publication_year: publicationYear,

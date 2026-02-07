@@ -43,7 +43,7 @@
 
 **Non-fiction & poetry**
 
-- Design first-class experience for non-fiction and poetry — these need their own discovery axes rather than being forced through fiction's canonical vibe system. Non-fiction: subject, approach (narrative/analytical/memoir/essay), intellectual weight. Poetry: movement, form, emotional register. Needs dedicated design thinking before implementation
+- Design first-class experience for non-fiction and poetry — adaptive hybrid architecture chosen. Design docs at `.claude/design/`. Data foundation complete: `book_type` column on books (backfilled: 1088 fiction, 595 nonfiction, 18 poetry), `tag_category` on book_vibes, `canonical_tags` table seeded with 57 tags across 7 categories. Implementation plan at `.claude/plans/implementation-plan.md` — Phase A complete, continuing with Phase B (classification UI) **[Phase A DONE]**
 
 
 **Social & engagement**
