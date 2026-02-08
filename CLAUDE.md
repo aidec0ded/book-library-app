@@ -300,6 +300,16 @@ Requires `.env` (not committed) with:
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
 - `VITE_ISBNDB_API_KEY` — ISBNdb key for frontend Add Book search (proxied via Vite dev server)
 
+## Design Prototyping (Stitch)
+
+Stitch (Google's MCP-based UI design tool) is used for visual prototyping before implementing page redesigns. The workflow:
+
+1. **Generate** — Use `generate_screen_from_text` with a detailed prompt describing the desired layout, typography, colors, and content. Use the existing project ID `3670163361293626826`. Always use `DESKTOP` device type and `GEMINI_3_PRO` model.
+2. **Review** — The `list_screens` API is unreliable for detecting new screens. After generating, the user reviews screens in the Stitch browser UI and selects the ones they like.
+3. **Handoff** — The user saves the HTML code from selected screens as `.html` files in the project root (e.g. `shelf-index-stitch.html`). Claude reads these files and translates the design patterns into the React/Tailwind codebase.
+
+Do NOT attempt to poll `list_screens` or `get_screen` to retrieve generated results — the user will provide them. Stitch HTML files are design references only and are not part of the app build.
+
 ## Code Style
 
 - Strict TypeScript, ESM imports

@@ -74,9 +74,9 @@
 **Page redesigns**
 
 - **Book Detail page** — Cover + status/rating/favorite/up next on left; predicted rating, notes, metadata, vibes, summary on right; Notes section below both **[DONE]**
-- **Shelf page** — Reference Cosmos screenshot; consider unified cover-based view for entire library with dynamic filtering
+- **Shelf page** — Reference Cosmos screenshot; consider unified cover-based view for entire library with dynamic filtering **[DONE]**
 - **Vibes page** — Current box layout needs visual refresh
-- **Reader Profile page** — More attractive layout, better visuals
+- **Reader Profile page** — More attractive layout, better visuals **[DONE]**
 
 **Polish**
 

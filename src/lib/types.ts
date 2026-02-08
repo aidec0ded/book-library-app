@@ -195,6 +195,7 @@ export interface ShelfItem {
 export interface ShelfWithCover extends Shelf {
   book_count: number;
   cover_book: Pick<Book, "id" | "title" | "author" | "cover_image_url"> | null;
+  cover_books: Pick<Book, "id" | "title" | "author" | "cover_image_url">[];
 }
 
 export interface NewRelease {

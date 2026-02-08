@@ -10,13 +10,13 @@ import type {
 
 export type ShelfBook = Pick<
   Book,
-  "id" | "title" | "author" | "cover_image_url"
+  "id" | "title" | "author" | "cover_image_url" | "status" | "rating" | "book_type" | "page_count" | "is_favorite" | "summary"
 >;
 
 async function buildAutoShelfQuery(filter: ShelfFilter) {
   let q = supabase
     .from("books")
-    .select("id, title, author, cover_image_url");
+    .select("id, title, author, cover_image_url, status, rating, book_type, page_count, is_favorite, summary");
 
   if (filter.status) {
     q = q.eq("status", filter.status);
@@ -72,12 +72,14 @@ export async function fetchShelves(): Promise<ShelfWithCover[]> {
     shelfItemsMap.set(item.shelf_id, list);
   }
 
-  // Collect all first-position book IDs for cover books (manual shelves)
+  // Collect top-3 book IDs per shelf for cover display (manual shelves)
   const coverBookIds = new Set<string>();
   for (const [, shelfItems] of shelfItemsMap) {
     if (shelfItems.length > 0) {
       const sorted = shelfItems.sort((a, b) => a.position - b.position);
-      coverBookIds.add(sorted[0].book_id);
+      for (const item of sorted.slice(0, 3)) {
+        coverBookIds.add(item.book_id);
+      }
     }
   }
 
@@ -86,7 +88,7 @@ export async function fetchShelves(): Promise<ShelfWithCover[]> {
   if (coverBookIds.size > 0) {
     const { data: coverBooks, error: coverError } = await supabase
       .from("books")
-      .select("id, title, author, cover_image_url")
+      .select("id, title, author, cover_image_url, status, rating, book_type, page_count, is_favorite, summary")
       .in("id", [...coverBookIds]);
 
     if (coverError) throw coverError;
@@ -102,7 +104,7 @@ export async function fetchShelves(): Promise<ShelfWithCover[]> {
       // Auto shelf: execute the filter query
       const q = await buildAutoShelfQuery(shelf.filter as ShelfFilter);
       if (q === null) {
-        results.push({ ...shelf, book_count: 0, cover_book: null });
+        results.push({ ...shelf, book_count: 0, cover_book: null, cover_books: [] });
         continue;
       }
       const { data, error } = await q;
@@ -112,20 +114,21 @@ export async function fetchShelves(): Promise<ShelfWithCover[]> {
         ...shelf,
         book_count: books.length,
         cover_book: books.length > 0 ? books[0] : null,
+        cover_books: books.slice(0, 3),
       });
     } else {
       // Manual shelf
       const shelfItems = shelfItemsMap.get(shelf.id) ?? [];
-      const firstItem = shelfItems.sort(
-        (a, b) => a.position - b.position,
-      )[0];
-      const coverBook = firstItem
-        ? coverBooksMap.get(firstItem.book_id) ?? null
-        : null;
+      const sorted = [...shelfItems].sort((a, b) => a.position - b.position);
+      const topBooks = sorted
+        .slice(0, 3)
+        .map((item) => coverBooksMap.get(item.book_id))
+        .filter((b): b is ShelfBook => b != null);
       results.push({
         ...shelf,
         book_count: shelfItems.length,
-        cover_book: coverBook,
+        cover_book: topBooks[0] ?? null,
+        cover_books: topBooks,
       });
     }
   }
@@ -156,7 +159,7 @@ export async function fetchShelfBooks(shelf: Shelf): Promise<ShelfBook[]> {
   // Manual shelf: join through shelf_items
   const { data, error } = await supabase
     .from("shelf_items")
-    .select("*, book:books(id, title, author, cover_image_url)")
+    .select("*, book:books(id, title, author, cover_image_url, status, rating, book_type, page_count, is_favorite, summary)")
     .eq("shelf_id", shelf.id)
     .order("position");
 
