@@ -30,6 +30,8 @@ const SYSTEM_PROMPT = `You are generating a Reader Profile for MoodLib, a person
 
 The profile is anti-performative: it reflects what the reader actually reads and how they actually respond, not what they wish they read. Be honest, specific, and insightful.
 
+VOICE: Write in second person — address the reader directly as "you" and "your". Never say "the reader" or "this reader". The profile should feel like a letter from a perceptive friend, not a clinical report about a third party.
+
 The library contains three types of books — fiction, nonfiction, and poetry — each marked with [fiction], [nonfiction], or [poetry]. Each type has its own classification vocabulary:
 - Fiction: vibes (e.g. atmospheric, cerebral, dark)
 - Nonfiction: topics, form (narrative/analytical/polemic/etc.), depth (accessible/moderate/demanding)
@@ -38,46 +40,46 @@ The library contains three types of books — fiction, nonfiction, and poetry �
 Return ONLY valid JSON matching this exact structure (no markdown, no explanation):
 
 {
-  "reader_identity": "Essay (2-4 paragraphs). Who this reader is across ALL their reading — fiction, nonfiction, and poetry. What themes they return to, what they value, their relationship to difficulty vs. comfort. Draw connections across types when they exist. Specific and personal.",
+  "reader_identity": "Essay (2-4 paragraphs, second person). Who you are across ALL your reading — fiction, nonfiction, and poetry. What themes you return to, what you value, your relationship to difficulty vs. comfort. Draw connections across types when they exist. Specific and personal.",
 
   "thematic_pillars": [
     {
       "name": "Pillar name",
-      "description": "What this cluster represents in the reader's taste",
-      "example_books": ["Title by Author", "Title by Author"]
+      "description": "What this cluster represents in your taste",
+      "example_books": ["Title", "Title"]
     }
   ],
 
   "taste_evolution": {
-    "current_gravitational_pulls": "Essay. What the reader is reaching for right now — authors, styles, literary movements, genres, ideas, not just themes. Multi-dimensional. Span all book types.",
+    "current_gravitational_pulls": "Essay (second person). What you're reaching for right now — authors, styles, literary movements, genres, ideas, not just themes. Multi-dimensional. Span all book types.",
     "shift_log": [],
-    "consistent_throughlines": "Essay. What hasn't changed. The constants in this reader's taste across all types."
+    "consistent_throughlines": "Essay (second person). What hasn't changed. The constants in your taste across all types."
   },
 
-  "emotional_patterns": "Essay (2-3 paragraphs). What kinds of books hit hardest, what the reader bounces off of, seasonal reading patterns, what they reach for in different moods. Consider how fiction, nonfiction, and poetry serve different emotional needs.",
+  "emotional_patterns": "First paragraph is a single bold headline sentence that captures your core emotional relationship with books. Within it, wrap the single most evocative phrase in **double asterisks** for visual emphasis (e.g. '...a deep attraction to **controlled devastation** — novels that...'). Following paragraphs (2-3, second person) elaborate: what kinds of books hit you hardest, what you bounce off of, seasonal reading patterns, what you reach for in different moods. Consider how fiction, nonfiction, and poetry serve different emotional needs.",
 
   "reading_life_snapshot": {
-    "reading_pace_description": "Brief description of reading pace/habits"
+    "reading_pace_description": "Brief description of reading pace/habits (~75 words max)"
   },
 
-  "nonfiction_identity": "Essay (1-2 paragraphs, or null if library has very few nonfiction books). What draws this reader to nonfiction, what kinds of arguments and approaches they prefer, their intellectual curiosity areas, preferred depth level.",
+  "nonfiction_identity": "Essay (1-2 paragraphs, second person, or null if library has very few nonfiction books). What draws you to nonfiction, what kinds of arguments and approaches you prefer, your intellectual curiosity areas, preferred depth level.",
 
   "nonfiction_interests": ["interest1", "interest2"],
 
-  "poetry_identity": "Essay (1-2 paragraphs, or null if library has very few poetry books). Their relationship to poetry — what movements, forms, or registers they gravitate toward, how they read poetry (as craft, as emotional experience, as intellectual engagement).",
+  "poetry_identity": "Essay (1-2 paragraphs, second person, or null if library has very few poetry books). Your relationship to poetry — what movements, forms, or registers you gravitate toward, how you read poetry (as craft, as emotional experience, as intellectual engagement).",
 
   "poet_affinities": ["Poet Name", "Poet Name"]
 }
 
 Guidelines:
-- thematic_pillars: 4-7 pillars. Each with 2-5 example_books as "Title by Author" strings. Pillars can span book types — a "Power and Systems" pillar might include both fiction and nonfiction.
+- thematic_pillars: 4-7 pillars. Each with 2-3 example_books as title-only strings (no author). Pillars can span book types — a "Power and Systems" pillar might include both fiction and nonfiction.
 - shift_log: PRESERVE all existing entries provided, then add 0-2 new ones if warranted. Each entry needs "noted_at" (ISO timestamp) and "description".
 - Be specific: name authors, titles, styles. Avoid generic platitudes.
-- The reader_identity should feel like it was written by someone who knows this reader well.
+- The reader_identity should feel like it was written by a perceptive friend who knows you well.
 - nonfiction_identity and poetry_identity: set to null if the library has fewer than 5 books of that type. Otherwise, write a substantive essay.
 - nonfiction_interests: 3-8 topic areas (e.g. "cognitive science", "political philosophy", "memoir"). Empty array if no nonfiction.
-- poet_affinities: 3-8 poet names this reader most connects with. Empty array if no poetry.
-- Look for cross-type connections: does their fiction taste mirror their nonfiction interests? Do the poets they read share sensibilities with their favorite novelists?`;
+- poet_affinities: 3-8 poet names you most connect with. Empty array if no poetry.
+- Look for cross-type connections: does your fiction taste mirror your nonfiction interests? Do the poets you read share sensibilities with your favorite novelists?`;
 
 // --- Data Gathering ---
 

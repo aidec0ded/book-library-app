@@ -122,3 +122,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ── Scroll-snap utilities ── */
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
