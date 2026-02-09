@@ -1,10 +1,9 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Pagination } from "@/components/Pagination";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -17,15 +16,9 @@ import { ReadingQuote } from "@/components/ReadingQuote";
 import { ShelvesView } from "@/components/ShelvesView";
 import { TagPillBar } from "@/components/TagPillBar";
 import { BookCoverCard } from "@/components/BookCoverCard";
-import {
-  fetchBookIdsByCanonicalVibes,
-  fetchCanonicalVibesForBooks,
-} from "@/lib/vibes";
+import { fetchCanonicalVibesForBooks } from "@/lib/vibes";
 import { fetchDistinctGenres } from "@/lib/filters";
-import {
-  fetchCanonicalTags,
-  formatCanonicalVibe,
-} from "@/lib/canonical-vibes";
+import { fetchCanonicalTags } from "@/lib/canonical-vibes";
 import { fetchGalleryBooks, GALLERY_PAGE_SIZE } from "@/lib/gallery";
 import type { BookSummary, CanonicalTag, TagCategory } from "@/lib/types";
 
@@ -55,19 +48,6 @@ const GALLERY_TAG_CATEGORIES: Record<string, TagCategory[]> = {
   poetry: ["movement", "formal_feel", "accessibility"],
 };
 
-// Which canonical tag categories to show as multi-select badges per type (All tab)
-const MULTI_SELECT_CATEGORIES: Record<string, TagCategory[]> = {
-  all: ["vibe"],
-};
-
-// Which canonical tag categories to show as single-select dropdowns per type (All tab)
-const SINGLE_SELECT_CATEGORIES: Record<
-  string,
-  { category: TagCategory; label: string }[]
-> = {
-  all: [],
-};
-
 function parseCommaSeparated(param: string | null): string[] {
   if (!param) return [];
   return param
@@ -80,15 +60,19 @@ function hasActiveFilters(params: {
   status: string;
   rating: string;
   genre: string;
-  tags: string[];
-  singleTags: Map<TagCategory, string>;
+  pagesMin: string;
+  pagesMax: string;
+  yearMin: string;
+  yearMax: string;
 }): boolean {
   return (
     params.status !== "any" ||
     params.rating !== "any" ||
     params.genre !== "any" ||
-    params.tags.length > 0 ||
-    Array.from(params.singleTags.values()).some((v) => v !== "any")
+    params.pagesMin !== "" ||
+    params.pagesMax !== "" ||
+    params.yearMin !== "" ||
+    params.yearMax !== ""
   );
 }
 
@@ -96,19 +80,22 @@ function buildFilterSummary(params: {
   status: string;
   rating: string;
   genre: string;
-  tags: string[];
-  singleTags: Map<TagCategory, string>;
+  pagesMin: string;
+  pagesMax: string;
+  yearMin: string;
+  yearMax: string;
 }): string {
   const parts: string[] = [];
   if (params.status !== "any") parts.push(params.status);
   if (params.rating === "unrated") parts.push("unrated");
   else if (params.rating !== "any") parts.push(`${params.rating}+ stars`);
   if (params.genre !== "any") parts.push(params.genre);
-  if (params.tags.length > 0)
-    parts.push(params.tags.map(formatCanonicalVibe).join(", "));
-  for (const [, val] of params.singleTags) {
-    if (val !== "any") parts.push(formatCanonicalVibe(val));
-  }
+  if (params.pagesMin && params.pagesMax) parts.push(`${params.pagesMin}–${params.pagesMax} pp`);
+  else if (params.pagesMin) parts.push(`${params.pagesMin}+ pp`);
+  else if (params.pagesMax) parts.push(`≤${params.pagesMax} pp`);
+  if (params.yearMin && params.yearMax) parts.push(`${params.yearMin}–${params.yearMax}`);
+  else if (params.yearMin) parts.push(`${params.yearMin}+`);
+  else if (params.yearMax) parts.push(`≤${params.yearMax}`);
   return parts.join(" · ");
 }
 
@@ -302,17 +289,11 @@ export function BookList() {
   const initialRating = searchParams.get("rating") ?? "any";
   const initialGenre = searchParams.get("genre") ?? "any";
   const initialType = searchParams.get("type") ?? "all";
-  const initialTags = parseCommaSeparated(searchParams.get("tags"));
+  const initialPagesMin = searchParams.get("pages_min") ?? "";
+  const initialPagesMax = searchParams.get("pages_max") ?? "";
+  const initialYearMin = searchParams.get("year_min") ?? "";
+  const initialYearMax = searchParams.get("year_max") ?? "";
   const view = searchParams.get("view") === "shelves" ? "shelves" : "list";
-
-  // Parse single-select tag params from URL
-  function parseInitialSingleTags(): Map<TagCategory, string> {
-    const map = new Map<TagCategory, string>();
-    for (const key of ["form", "depth", "accessibility"] as TagCategory[]) {
-      map.set(key, searchParams.get(key) ?? "any");
-    }
-    return map;
-  }
 
   const [query, setQuery] = useState(initialQuery);
   const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
@@ -326,42 +307,21 @@ export function BookList() {
   const [status, setStatus] = useState(initialStatus);
   const [rating, setRating] = useState(initialRating);
   const [genre, setGenre] = useState(initialGenre);
-  const [selectedTags, setSelectedTags] = useState<string[]>(initialTags);
-  const [singleTags, setSingleTags] = useState<Map<TagCategory, string>>(
-    parseInitialSingleTags,
-  );
+  const [pagesMin, setPagesMin] = useState(initialPagesMin);
+  const [pagesMax, setPagesMax] = useState(initialPagesMax);
+  const [yearMin, setYearMin] = useState(initialYearMin);
+  const [yearMax, setYearMax] = useState(initialYearMax);
   const [filtersOpen, setFiltersOpen] = useState(
     hasActiveFilters({
       status: initialStatus,
       rating: initialRating,
       genre: initialGenre,
-      tags: initialTags,
-      singleTags: parseInitialSingleTags(),
+      pagesMin: initialPagesMin,
+      pagesMax: initialPagesMax,
+      yearMin: initialYearMin,
+      yearMax: initialYearMax,
     }),
   );
-
-  // Canonical tags for current type's categories (fetched from DB) — All tab only
-  const [canonicalTags, setCanonicalTags] = useState<CanonicalTag[]>([]);
-
-  // Fetch canonical tags when book type changes (only for All tab)
-  useEffect(() => {
-    if (bookType !== "all") {
-      setCanonicalTags([]);
-      return;
-    }
-    const multiCats = MULTI_SELECT_CATEGORIES[bookType] ?? [];
-    const singleCats = (SINGLE_SELECT_CATEGORIES[bookType] ?? []).map(
-      (c) => c.category,
-    );
-    const allCats = [...multiCats, ...singleCats];
-    if (allCats.length === 0) {
-      setCanonicalTags([]);
-      return;
-    }
-    Promise.all(allCats.map((cat) => fetchCanonicalTags(cat)))
-      .then((results) => setCanonicalTags(results.flat()))
-      .catch(() => setCanonicalTags([]));
-  }, [bookType]);
 
   // Genre options (fetched once)
   const [genres, setGenres] = useState<string[]>([]);
@@ -398,10 +358,10 @@ export function BookList() {
     if (status !== "any") params.status = status;
     if (rating !== "any") params.rating = rating;
     if (genre !== "any") params.genre = genre;
-    if (selectedTags.length > 0) params.tags = selectedTags.join(",");
-    for (const [key, val] of singleTags) {
-      if (val !== "any") params[key] = val;
-    }
+    if (pagesMin) params.pages_min = pagesMin;
+    if (pagesMax) params.pages_max = pagesMax;
+    if (yearMin) params.year_min = yearMin;
+    if (yearMax) params.year_max = yearMax;
     if (view === "shelves") params.view = "shelves";
     setSearchParams(params, { replace: true });
   }, [
@@ -411,8 +371,10 @@ export function BookList() {
     status,
     rating,
     genre,
-    selectedTags,
-    singleTags,
+    pagesMin,
+    pagesMax,
+    yearMin,
+    yearMax,
     view,
     setSearchParams,
   ]);
@@ -421,25 +383,6 @@ export function BookList() {
   const fetchBooks = useCallback(async () => {
     if (bookType !== "all") return;
     setLoading(true);
-
-    // Collect all selected canonical tags (multi + single)
-    const allSelectedTags = [...selectedTags];
-    for (const [, val] of singleTags) {
-      if (val !== "any") allSelectedTags.push(val);
-    }
-
-    // If tags are selected, first get matching book IDs
-    let tagBookIds: string[] | null = null;
-    if (allSelectedTags.length > 0) {
-      tagBookIds = await fetchBookIdsByCanonicalVibes(allSelectedTags);
-      if (tagBookIds.length === 0) {
-        setBooks([]);
-        setCount(0);
-        setVibeMap(new Map());
-        setLoading(false);
-        return;
-      }
-    }
 
     const from = (page - 1) * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
@@ -469,13 +412,23 @@ export function BookList() {
       q = q.eq("genre", genre);
     }
 
+    if (pagesMin) {
+      q = q.gte("page_count", Number(pagesMin));
+    }
+    if (pagesMax) {
+      q = q.lte("page_count", Number(pagesMax));
+    }
+
+    if (yearMin) {
+      q = q.gte("publication_year", Number(yearMin));
+    }
+    if (yearMax) {
+      q = q.lte("publication_year", Number(yearMax));
+    }
+
     if (debouncedQuery) {
       const pattern = `%${debouncedQuery}%`;
       q = q.or(`title.ilike.${pattern},author.ilike.${pattern}`);
-    }
-
-    if (tagBookIds) {
-      q = q.in("id", tagBookIds);
     }
 
     const { data, count: totalCount, error } = await q;
@@ -507,8 +460,10 @@ export function BookList() {
     status,
     rating,
     genre,
-    selectedTags,
-    singleTags,
+    pagesMin,
+    pagesMax,
+    yearMin,
+    yearMax,
   ]);
 
   useEffect(() => {
@@ -521,29 +476,6 @@ export function BookList() {
 
   function handleTypeChange(type: string) {
     setBookType(type);
-    // Clear type-specific filters when type changes
-    setSelectedTags([]);
-    setSingleTags(new Map([
-      ["form", "any"],
-      ["depth", "any"],
-      ["accessibility", "any"],
-    ] as [TagCategory, string][]));
-    setPage(1);
-  }
-
-  function toggleTag(tag: string) {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((v) => v !== tag) : [...prev, tag],
-    );
-    setPage(1);
-  }
-
-  function setSingleTag(category: TagCategory, value: string) {
-    setSingleTags((prev) => {
-      const next = new Map(prev);
-      next.set(category, value);
-      return next;
-    });
     setPage(1);
   }
 
@@ -551,12 +483,10 @@ export function BookList() {
     setStatus("any");
     setRating("any");
     setGenre("any");
-    setSelectedTags([]);
-    setSingleTags(new Map([
-      ["form", "any"],
-      ["depth", "any"],
-      ["accessibility", "any"],
-    ] as [TagCategory, string][]));
+    setPagesMin("");
+    setPagesMax("");
+    setYearMin("");
+    setYearMax("");
     setPage(1);
   }
 
@@ -564,22 +494,13 @@ export function BookList() {
     status,
     rating,
     genre,
-    tags: selectedTags,
-    singleTags,
+    pagesMin,
+    pagesMax,
+    yearMin,
+    yearMax,
   };
   const active = hasActiveFilters(filterState);
   const summary = buildFilterSummary(filterState);
-
-  // Group canonical tags by category for rendering (All tab)
-  const tagsByCategory = useMemo(() => {
-    const map = new Map<TagCategory, CanonicalTag[]>();
-    for (const t of canonicalTags) {
-      const existing = map.get(t.tag_category);
-      if (existing) existing.push(t);
-      else map.set(t.tag_category, [t]);
-    }
-    return map;
-  }, [canonicalTags]);
 
   function setView(v: "list" | "shelves") {
     const params: Record<string, string> = {};
@@ -587,23 +508,14 @@ export function BookList() {
     setSearchParams(params, { replace: true });
   }
 
-  // All tab filter controls
-  const multiCats = MULTI_SELECT_CATEGORIES["all"] ?? [];
-  const singleCats = SINGLE_SELECT_CATEGORIES["all"] ?? [];
-
-  const categoryLabels: Record<string, string> = {
-    vibe: "Vibes",
-    topic: "Topics",
-    movement: "Movement",
-    formal_feel: "Formal Feel",
-  };
-
   const activeFilterCount = [
     status !== "any",
     rating !== "any",
     genre !== "any",
-    selectedTags.length > 0,
-    ...Array.from(singleTags.values()).map((v) => v !== "any"),
+    pagesMin !== "",
+    pagesMax !== "",
+    yearMin !== "",
+    yearMax !== "",
   ].filter(Boolean).length;
 
   return (
@@ -749,65 +661,54 @@ export function BookList() {
                     </Select>
                   </div>
 
-                  {/* Single-select tag categories */}
-                  {singleCats.map(({ category, label }) => {
-                    const tags = tagsByCategory.get(category) ?? [];
-                    return (
-                      <div key={category} className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">
-                          {label}
-                        </label>
-                        <Select
-                          value={singleTags.get(category) ?? "any"}
-                          onValueChange={(v) => setSingleTag(category, v)}
-                        >
-                          <SelectTrigger size="sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="any">Any</SelectItem>
-                            {tags.map((t) => (
-                              <SelectItem key={t.tag} value={t.tag}>
-                                {formatCanonicalVibe(t.tag)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Multi-select tag categories (vibes) */}
-                {multiCats.map((category) => {
-                  const tags = tagsByCategory.get(category) ?? [];
-                  if (tags.length === 0) return null;
-                  return (
-                    <div key={category} className="space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {categoryLabels[category] ?? formatCanonicalVibe(category)}
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {tags.map((ct) => {
-                          const isActive = selectedTags.includes(ct.tag);
-                          return (
-                            <Badge
-                              key={ct.tag}
-                              variant={isActive ? "default" : "outline"}
-                              className={`cursor-pointer transition-opacity ${
-                                isActive ? "" : "opacity-60 hover:opacity-90"
-                              }`}
-                              title={ct.description}
-                              onClick={() => toggleTag(ct.tag)}
-                            >
-                              {formatCanonicalVibe(ct.tag)}
-                            </Badge>
-                          );
-                        })}
-                      </div>
+                  {/* Page count */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Pages
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        placeholder="Min"
+                        value={pagesMin}
+                        onChange={(e) => { setPagesMin(e.target.value); setPage(1); }}
+                        className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
+                      />
+                      <span className="text-xs text-muted-foreground">–</span>
+                      <input
+                        type="number"
+                        placeholder="Max"
+                        value={pagesMax}
+                        onChange={(e) => { setPagesMax(e.target.value); setPage(1); }}
+                        className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
+                      />
                     </div>
-                  );
-                })}
+                  </div>
+
+                  {/* Publication year */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Year
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        placeholder="Min"
+                        value={yearMin}
+                        onChange={(e) => { setYearMin(e.target.value); setPage(1); }}
+                        className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
+                      />
+                      <span className="text-xs text-muted-foreground">–</span>
+                      <input
+                        type="number"
+                        placeholder="Max"
+                        value={yearMax}
+                        onChange={(e) => { setYearMax(e.target.value); setPage(1); }}
+                        className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
 
                 {/* Clear */}
                 {active && (
