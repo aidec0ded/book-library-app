@@ -13,6 +13,7 @@ export function ChatPanel() {
     input,
     streaming,
     streamingContent,
+    searchStatus,
     error,
     setInput,
     send,
@@ -163,8 +164,9 @@ export function ChatPanel() {
 
             {streaming && !streamingContent && (
               <div className="flex justify-start">
-                <div className="rounded-2xl bg-muted px-4 py-2.5">
+                <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-2.5">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  {searchStatus && <span className="text-xs text-muted-foreground">{searchStatus}</span>}
                 </div>
               </div>
             )}

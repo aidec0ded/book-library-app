@@ -67,6 +67,8 @@ The companion has access to the reader's complete library (title, author, type, 
 | Excerpts | save, view | Saves polished 1-3 sentence insights from conversations to specific book detail pages. |
 | Book Management | update_status, update_rating, toggle_favorite, delete | Modifies library data based on conversational cues ("I just finished The Road"). |
 | Releases Search | browse, top, search | Searches the new releases pipeline by month, score, or keyword. |
+| Web Search | (server tool) | Real-time web search for author lookups, reviews, book info, and literary news beyond the library. |
+| Web Fetch | (server tool) | Fetches and reads web pages for detailed information from search results. |
 
 **Conversation Design Principles:**
 - Approach fiction through emotional resonance, atmosphere, narrative voice, and thematic connections
@@ -186,8 +188,8 @@ AI is woven throughout MoodLib at multiple levels:
 
 ### Real-Time (Chat)
 - **Model:** Claude Sonnet
-- **Architecture:** Streaming SSE with tool-use loop. The server builds a system prompt from three cached sources (library index, reader profile, syllabi index — all 10-minute TTL) and forwards streaming text deltas to the client while executing tool calls between rounds.
-- **Context:** The AI sees the reader's complete library (compact index format), their full reader profile, all syllabi with contents, and its own persistent memory files.
+- **Architecture:** Streaming SSE with tool-use loop. The server builds a system prompt from three cached sources (library index, reader profile, syllabi index — all 10-minute TTL) and forwards streaming text deltas to the client while executing tool calls between rounds. Server tools (web search, web fetch) are executed by the API transparently — the server handles `pause_turn` stop reasons by re-invoking the model to continue. Status SSE events ("Searching the web...", "Reading page...") are sent to the client when server tools start.
+- **Context:** The AI sees the reader's complete library (compact index format), their full reader profile, all syllabi with contents, its own persistent memory files, and has real-time web access for author lookups, reviews, and literary information beyond the library.
 
 ### Batch Processing (Scripts)
 - **Profile Generation:** Claude Opus, run monthly when activity thresholds are met. Ingests the full library with tags, conversation history, memory files, and the previous profile. Produces structured JSON matching the `ReaderProfileData` schema.
@@ -205,6 +207,18 @@ AI is woven throughout MoodLib at multiple levels:
 - **ISBNdb Enrichment:** Bulk metadata enrichment (covers, page counts, publishers). Rate-limited to 1 request/second with retries.
 - **ISBNdb Releases:** Paginated ingestion of new releases with month validation, batch upsert, and configurable filtering (language, binding, fiction-only).
 - **Wikidata Awards:** SPARQL queries against 17 literary awards using 4 query patterns (point-in-time, qualifier, direct, reversed). Results matched to library books by normalized title+author.
+
+---
+
+## Deployment Architecture
+
+| Component | Platform | Details |
+|-----------|----------|---------|
+| **Frontend** | Vercel | Static Vite build, `vercel.json` rewrites proxy API calls to Render and ISBNdb. SPA fallback for React Router. |
+| **Server** | Render | Persistent Node.js web service ($7/mo Starter). Hosts the chat API (SSE streaming), greeting endpoint, profile scheduler, and all tool execution. 100-minute SSE timeout supports long AI conversations. |
+| **Database** | Supabase | Hosted PostgreSQL with Row Level Security. Service role key for server, anon key for browser. |
+| **API Routing** | Vercel Rewrites | `/api/chat` and `/api/greeting` proxy to Render. `/api/isbndb/*` proxies to ISBNdb API. Same-origin requests — no CORS configuration needed. Mirrors the Vite dev proxy behavior. |
+| **Secrets** | Platform dashboards | Vercel: build-time `VITE_*` env vars. Render: runtime env vars (Supabase, Anthropic, ISBNdb keys). |
 
 ---
 
@@ -240,10 +254,11 @@ AI is woven throughout MoodLib at multiple levels:
 - Shelf and discovery polish (type-aware auto shelf filters)
 - Lists-to-Syllabi redesign with rationale and external book support
 
-### Current Phase: Documentation & Deployment
-- Product documentation (README, user guide, PRD)
-- Deployment architecture decisions
-- Cloud deployment (frontend + server + environment config)
+### Current Phase: Deployment
+- Product documentation (README, user guide, PRD) — complete
+- Deployment architecture — Vercel (frontend) + Render (server) + Supabase (database)
+- Cloud deployment in progress
+- Chat web access tool (web search + web fetch for author lookups, reviews, book info) — complete
 
 ### Next: Authentication & Multi-User
 - Supabase Auth integration with RLS policies
@@ -252,7 +267,6 @@ AI is woven throughout MoodLib at multiple levels:
 - Public landing page for unauthenticated users
 
 ### Future
-- Chat web access tool (search for books, look up author info, check reviews)
 - Reading paths and seminar layer (structured syllabi with sequencing, context, guided reading, post-book discussion)
 - Reading Life narrative (AI-identified eras and chapters in the reader's journey)
 - Social features (shared lists/shelves/profiles, seminar cohorts, taste-based discovery)

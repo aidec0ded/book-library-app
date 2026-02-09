@@ -117,7 +117,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/chat.ts` — Conversation CRUD + SSE streaming client
 - `src/components/ChatMessage.tsx` — Chat message bubble component (user/assistant)
 - `src/components/ConversationList.tsx` — Past conversations panel (collapsible)
-- `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
+- `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop + web search/fetch server tools, port 3001)
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
 - `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete) with rationale support
@@ -162,7 +162,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
-**Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
+**Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search + web search/fetch), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
 **AI Output** — Predicted ratings for unread books, AI-managed syllabi + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page
 
@@ -314,6 +314,17 @@ Stitch (Google's MCP-based UI design tool) is used for visual prototyping before
 3. **Handoff** — The user saves the HTML code from selected screens as `.html` files in the project root (e.g. `shelf-index-stitch.html`). Claude reads these files and translates the design patterns into the React/Tailwind codebase.
 
 Do NOT attempt to poll `list_screens` or `get_screen` to retrieve generated results — the user will provide them. Stitch HTML files are design references only and are not part of the app build.
+
+## Documentation Maintenance
+
+When making changes that affect architecture, features, deployment, or user-facing behavior, update the relevant documentation alongside the code:
+
+- **`CLAUDE.md`** — Architecture, data model, commands, file references
+- **`README.md`** — Developer setup, project structure, tech stack
+- **`docs/product-requirements.md`** — Feature specs, AI integration, deployment architecture, roadmap
+- **`docs/user-guide.md`** — End-user feature documentation
+
+Commit doc updates alongside the code changes, not separately.
 
 ## Code Style
 

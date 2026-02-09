@@ -16,6 +16,7 @@ export interface UseChatSessionReturn {
   input: string;
   streaming: boolean;
   streamingContent: string;
+  searchStatus: string | null;
   error: string | null;
   setInput: (text: string) => void;
   send: (text?: string) => void;
@@ -31,6 +32,7 @@ export function useChatSession(): UseChatSessionReturn {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const streamingContentRef = useRef("");
@@ -75,6 +77,7 @@ export function useChatSession(): UseChatSessionReturn {
     setConversationId(null);
     setMessages([]);
     setStreamingContent("");
+    setSearchStatus(null);
     setError(null);
   }, []);
 
@@ -112,7 +115,11 @@ export function useChatSession(): UseChatSessionReturn {
           setConversationId(conversation_id);
           sessionStorage.setItem(SESSION_KEY, conversation_id);
         },
+        onStatus: ({ message }) => {
+          setSearchStatus(message);
+        },
         onText: ({ content: chunk }) => {
+          setSearchStatus(null);
           streamingContentRef.current += chunk;
           setStreamingContent(streamingContentRef.current);
         },
@@ -130,12 +137,14 @@ export function useChatSession(): UseChatSessionReturn {
           ]);
           setStreamingContent("");
           streamingContentRef.current = "";
+          setSearchStatus(null);
           setStreaming(false);
 
           void fetchConversations().then(setConversations).catch(() => {});
         },
         onError: ({ message }) => {
           setError(message);
+          setSearchStatus(null);
           setStreaming(false);
         },
       });
@@ -153,6 +162,7 @@ export function useChatSession(): UseChatSessionReturn {
     input,
     streaming,
     streamingContent,
+    searchStatus,
     error,
     setInput,
     send,

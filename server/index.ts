@@ -29,7 +29,7 @@ import { startProfileScheduler } from "./profile-scheduler.js";
 config();
 
 const MODEL = "claude-sonnet-4-5-20250929";
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || "3001", 10);
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -89,6 +89,13 @@ and remove books from the library. Always confirm before deleting a book.
 You can browse new releases using your search_releases tool. Use it to check
 what books are coming out, find top recommendations, or search for specific
 titles or authors in the releases pipeline.
+
+You have web search and web fetch tools for real-time web access. Use them when:
+- The reader asks about an author, book, or literary topic beyond what's in the library index and your own knowledge
+- The reader wants reviews, interviews, or recent literary news
+- You need to verify publication details, awards, or other facts
+Do NOT search when the answer is clearly available from the library index, reader profile, or your own knowledge.
+When you include information from web sources, weave source URLs naturally into your response so the reader can explore further.
 
 The library contains three types of books — fiction, nonfiction, and poetry.
 Each type has its own classification vocabulary:
@@ -393,15 +400,40 @@ async function handleChat(
               required: ["action"],
             },
           },
+          {
+            type: "web_search_20250305" as const,
+            name: "web_search",
+            max_uses: 3,
+          },
+          {
+            type: "web_fetch_20250910" as const,
+            name: "web_fetch",
+            max_uses: 2,
+            max_content_tokens: 20000,
+          },
         ],
-        betas: ["context-management-2025-06-27"],
-        max_tokens: 4096,
+        betas: ["context-management-2025-06-27", "web-fetch-2025-09-10"],
+        max_tokens: 8192,
       });
 
       // Forward text deltas to client
       stream.on("text", (text) => {
         accumulatedText += text;
         writeSSE(res, "text", { content: text });
+      });
+
+      // Send status events for server tools (web search/fetch)
+      stream.on("streamEvent", (event) => {
+        if (
+          event.type === "content_block_start" &&
+          event.content_block.type === "server_tool_use"
+        ) {
+          if (event.content_block.name === "web_search") {
+            writeSSE(res, "status", { message: "Searching the web..." });
+          } else if (event.content_block.name === "web_fetch") {
+            writeSSE(res, "status", { message: "Reading page..." });
+          }
+        }
       });
 
       const finalMessage = await stream.finalMessage();
@@ -412,7 +444,11 @@ async function handleChat(
       );
 
       if (toolUseBlocks.length === 0) {
-        // No tool calls — done
+        // Server tools (web search/fetch) use pause_turn — continue the loop
+        if (finalMessage.stop_reason === "pause_turn") {
+          apiMessages.push({ role: "assistant", content: finalMessage.content });
+          continue;
+        }
         break;
       }
 
@@ -551,6 +587,12 @@ const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok" }));
     return;
   }
 
