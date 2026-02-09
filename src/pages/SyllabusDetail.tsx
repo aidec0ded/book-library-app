@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { ChevronUp, ChevronDown, X, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { BookCover } from "@/components/BookCover";
 import {
   SyllabusSearchModal,
   type ExternalBook,
@@ -442,6 +443,16 @@ export function SyllabusDetail() {
                   }`}>
                     {String(item.position).padStart(2, "0")}
                   </span>
+                </div>
+
+                {/* Cover */}
+                <div className="w-10 shrink-0">
+                  <BookCover
+                    title={itemTitle(item)}
+                    author={itemAuthor(item)}
+                    coverUrl={item.book?.cover_image_url ?? item.external_cover_url ?? null}
+                    size="sm"
+                  />
                 </div>
 
                 {/* Content */}
