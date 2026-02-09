@@ -66,7 +66,7 @@
 
 - Create a public-facing home page for all users
 - Move navigation to collapsible sidebar **[DONE]**
-- Make home page closer to screenshot reference
+- Make home page closer to screenshot reference **[DONE]**
 - No direct pagination — need a way to jump to a specific page in Library (currently 46 pages) **[DONE]**
 - New Release detail box should appear directly under selected book, not at bottom of page **[DONE]**
 - ~~"Up Next" toggle~~ — Removed from UI; low utility vs. lists for reading queues **[DONE]**

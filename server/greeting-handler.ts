@@ -61,7 +61,7 @@ async function generateGreeting(
     model: MODEL,
     max_tokens: 150,
     system:
-      "Generate a warm, personal 1-2 sentence greeting for a reader returning to their library app. Reference something specific — what they're reading, a recent discussion, the season. Be brief and natural. Never mention being an AI.",
+      "Generate a warm, personal 1-2 sentence greeting for a reader returning to their library app. Reference something specific — what they're reading, a recent discussion, the season. Be brief and natural. Never mention being an AI. Wrap 1-2 evocative words or phrases in *asterisks* for visual emphasis (e.g. 'You've been drawn to stories of quiet *transformation* lately').",
     messages: [{ role: "user", content: userContent }],
   });
 
