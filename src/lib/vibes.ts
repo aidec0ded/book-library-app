@@ -118,6 +118,30 @@ export async function fetchBookIdsByCanonicalVibes(
   return [...new Set(data.map((r) => r.book_id))];
 }
 
+/** AND-logic: returns book IDs that have ALL of the given canonical tags. */
+export async function fetchBookIdsByAllTags(
+  tags: string[],
+): Promise<string[]> {
+  if (tags.length === 0) return [];
+  if (tags.length === 1) return fetchBookIdsByCanonicalVibes(tags);
+
+  const { data, error } = await supabase
+    .from("book_vibes")
+    .select("book_id, vibe")
+    .in("vibe", tags)
+    .eq("is_canonical", true);
+
+  if (error) throw error;
+
+  const counts = new Map<string, number>();
+  for (const row of data) {
+    counts.set(row.book_id, (counts.get(row.book_id) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .filter(([, count]) => count === tags.length)
+    .map(([id]) => id);
+}
+
 export async function fetchCanonicalVibesForBooks(
   bookIds: string[],
 ): Promise<Map<string, string[]>> {

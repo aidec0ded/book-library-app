@@ -15,6 +15,8 @@ import {
 import { BookRow } from "@/components/BookRow";
 import { ReadingQuote } from "@/components/ReadingQuote";
 import { ShelvesView } from "@/components/ShelvesView";
+import { TagPillBar } from "@/components/TagPillBar";
+import { BookCoverCard } from "@/components/BookCoverCard";
 import {
   fetchBookIdsByCanonicalVibes,
   fetchCanonicalVibesForBooks,
@@ -24,8 +26,9 @@ import {
   fetchCanonicalTags,
   formatCanonicalVibe,
 } from "@/lib/canonical-vibes";
+import { fetchGalleryBooks, GALLERY_PAGE_SIZE } from "@/lib/gallery";
 import { MONTH_NAMES } from "@/lib/timing";
-import type { BookSummary, BookType, CanonicalTag, TagCategory } from "@/lib/types";
+import type { BookSummary, CanonicalTag, TagCategory } from "@/lib/types";
 
 const PAGE_SIZE = 20;
 
@@ -46,26 +49,24 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "poetry", label: "Poetry" },
 ];
 
-// Which canonical tag categories to show as multi-select badges per type
-const MULTI_SELECT_CATEGORIES: Record<string, TagCategory[]> = {
-  all: ["vibe"],
+// Which canonical tag categories to show per type in gallery view
+const GALLERY_TAG_CATEGORIES: Record<string, TagCategory[]> = {
   fiction: ["vibe"],
-  nonfiction: ["topic"],
-  poetry: ["movement", "formal_feel"],
+  nonfiction: ["topic", "form", "depth"],
+  poetry: ["movement", "formal_feel", "accessibility"],
 };
 
-// Which canonical tag categories to show as single-select dropdowns per type
+// Which canonical tag categories to show as multi-select badges per type (All tab)
+const MULTI_SELECT_CATEGORIES: Record<string, TagCategory[]> = {
+  all: ["vibe"],
+};
+
+// Which canonical tag categories to show as single-select dropdowns per type (All tab)
 const SINGLE_SELECT_CATEGORIES: Record<
   string,
   { category: TagCategory; label: string }[]
 > = {
   all: [],
-  fiction: [],
-  nonfiction: [
-    { category: "form", label: "Form" },
-    { category: "depth", label: "Depth" },
-  ],
-  poetry: [{ category: "accessibility", label: "Accessibility" }],
 };
 
 function parseCommaSeparated(param: string | null): string[] {
@@ -123,6 +124,186 @@ function buildFilterSummary(params: {
   return parts.join(" · ");
 }
 
+// ── Gallery Browse (Fiction / Nonfiction / Poetry tabs) ──
+
+function GalleryBrowse({ bookType }: { bookType: string }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Read tags from URL
+  const initialTags = parseCommaSeparated(searchParams.get("tags"));
+
+  const [selectedTags, setSelectedTags] = useState<string[]>(initialTags);
+  const [canonicalTags, setCanonicalTags] = useState<CanonicalTag[]>([]);
+  const [books, setBooks] = useState<BookSummary[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Fade key: changes on every tag toggle to trigger grid crossfade
+  const [fadeKey, setFadeKey] = useState(0);
+  const [fadeIn, setFadeIn] = useState(true);
+
+  // Fetch canonical tags for this type
+  useEffect(() => {
+    const cats = GALLERY_TAG_CATEGORIES[bookType] ?? [];
+    if (cats.length === 0) {
+      setCanonicalTags([]);
+      return;
+    }
+    Promise.all(cats.map((cat) => fetchCanonicalTags(cat)))
+      .then((results) => setCanonicalTags(results.flat()))
+      .catch(() => setCanonicalTags([]));
+  }, [bookType]);
+
+  // Sync tags to URL
+  useEffect(() => {
+    const params: Record<string, string> = { type: bookType };
+    if (selectedTags.length > 0) params.tags = selectedTags.join(",");
+    setSearchParams(params, { replace: true });
+  }, [bookType, selectedTags, setSearchParams]);
+
+  // Fetch books when tags change
+  const fetchInitial = useCallback(async () => {
+    setLoading(true);
+    setFadeIn(false);
+    try {
+      const result = await fetchGalleryBooks(bookType, selectedTags, 0);
+      // Brief delay for crossfade out, then swap data
+      await new Promise((r) => setTimeout(r, 150));
+      setBooks(result.books);
+      setTotalCount(result.totalCount);
+      setFadeIn(true);
+    } catch (err) {
+      console.error("Gallery fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [bookType, selectedTags]);
+
+  useEffect(() => {
+    void fetchInitial();
+  }, [fetchInitial]);
+
+  // Reset tags when type changes
+  const prevType = useRef(bookType);
+  useEffect(() => {
+    if (prevType.current !== bookType) {
+      prevType.current = bookType;
+      setSelectedTags([]);
+    }
+  }, [bookType]);
+
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((v) => v !== tag) : [...prev, tag],
+    );
+    setFadeKey((k) => k + 1);
+  }
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const result = await fetchGalleryBooks(
+        bookType,
+        selectedTags,
+        books.length,
+      );
+      setBooks((prev) => [...prev, ...result.books]);
+      setTotalCount(result.totalCount);
+    } catch (err) {
+      console.error("Load more error:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  const hasMore = books.length < totalCount;
+  const layout = bookType === "fiction" ? "cloud" : "stacked";
+
+  return (
+    <div className="space-y-8">
+      {/* Tag pills */}
+      <div className="max-w-5xl mx-auto">
+        <TagPillBar
+          tags={canonicalTags}
+          selectedTags={selectedTags}
+          onToggleTag={toggleTag}
+          layout={layout as "cloud" | "stacked"}
+        />
+      </div>
+
+      {/* Result count */}
+      <div className="border-t border-border pt-4">
+        <p className="text-sm text-muted-foreground text-right">
+          {loading ? (
+            "Loading..."
+          ) : (
+            <>
+              Showing{" "}
+              <span className="font-semibold text-foreground">{books.length}</span>{" "}
+              of {totalCount.toLocaleString()} book{totalCount !== 1 ? "s" : ""}
+            </>
+          )}
+        </p>
+      </div>
+
+      {/* Cover grid — full bleed */}
+      <div className="w-screen ml-[calc(-50vw+50%)] lg:w-[calc(100vw-15rem)] lg:ml-[calc(-50vw+50%+7.5rem)] px-6 sm:px-10 lg:px-14 xl:px-20">
+        <div
+          key={fadeKey}
+          className={`transition-opacity duration-300 ${fadeIn ? "opacity-100" : "opacity-0"}`}
+        >
+          {books.length > 0 ? (
+            <div className="grid grid-cols-2 gap-6 gap-y-10 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {books.map((book, i) => (
+                <div
+                  key={book.id}
+                  className="gallery-card-enter"
+                  style={{
+                    animationDelay: `${
+                      // Only stagger for newly loaded items (beyond first batch)
+                      i >= books.length - GALLERY_PAGE_SIZE
+                        ? Math.min(i - (books.length - GALLERY_PAGE_SIZE), 30) * 40
+                        : 0
+                    }ms`,
+                  }}
+                >
+                  <BookCoverCard
+                    id={book.id}
+                    title={book.title}
+                    author={book.author}
+                    coverUrl={book.cover_image_url}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            !loading && (
+              <div className="rounded-md border border-dashed px-4 py-16 text-center text-sm text-muted-foreground">
+                No books match the selected tags.
+              </div>
+            )
+          )}
+        </div>
+
+        {/* Load more */}
+        {hasMore && !loading && (
+          <div className="flex justify-center pt-10 pb-4">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="h-11 px-8 rounded-full border border-border text-sm font-medium text-muted-foreground transition-all hover:border-accent hover:text-accent disabled:opacity-50"
+            >
+              {loadingMore ? "Loading..." : "Load more"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main BookList page ──
+
 export function BookList() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -177,11 +358,15 @@ export function BookList() {
     }),
   );
 
-  // Canonical tags for current type's categories (fetched from DB)
+  // Canonical tags for current type's categories (fetched from DB) — All tab only
   const [canonicalTags, setCanonicalTags] = useState<CanonicalTag[]>([]);
 
-  // Fetch canonical tags when book type changes
+  // Fetch canonical tags when book type changes (only for All tab)
   useEffect(() => {
+    if (bookType !== "all") {
+      setCanonicalTags([]);
+      return;
+    }
     const multiCats = MULTI_SELECT_CATEGORIES[bookType] ?? [];
     const singleCats = (SINGLE_SELECT_CATEGORIES[bookType] ?? []).map(
       (c) => c.category,
@@ -214,8 +399,6 @@ export function BookList() {
   }, [query]);
 
   // Reset page when debounced query actually changes (not on mount).
-  // Uses a ref comparison instead of a mount guard so it works correctly
-  // with React 18 StrictMode double-mounting.
   const prevDebouncedQuery = useRef(debouncedQuery);
   useEffect(() => {
     if (prevDebouncedQuery.current !== debouncedQuery) {
@@ -224,15 +407,12 @@ export function BookList() {
     }
   }, [debouncedQuery]);
 
-  // Filter changes reset page via their event handlers below (not effects),
-  // so navigating back preserves the page from the URL.
-
-  // Sync state to URL params
+  // Sync state to URL params (All tab only — gallery manages its own URL)
   useEffect(() => {
+    if (bookType !== "all") return;
     const params: Record<string, string> = {};
     if (debouncedQuery) params.q = debouncedQuery;
     if (page > 1) params.page = String(page);
-    if (bookType !== "all") params.type = bookType;
     if (status !== "any") params.status = status;
     if (rating !== "any") params.rating = rating;
     if (genre !== "any") params.genre = genre;
@@ -259,8 +439,9 @@ export function BookList() {
     setSearchParams,
   ]);
 
-  // Fetch books
+  // Fetch books (All tab only)
   const fetchBooks = useCallback(async () => {
+    if (bookType !== "all") return;
     setLoading(true);
 
     // Collect all selected canonical tags (multi + single)
@@ -287,16 +468,11 @@ export function BookList() {
 
     let q = supabase
       .from("books")
-      .select("id, title, author, status, rating, timing_raw, cover_image_url", {
+      .select("id, title, author, book_type, status, rating, timing_raw, cover_image_url", {
         count: "exact",
       })
       .order("title", { ascending: true })
       .range(from, to);
-
-    // Book type filter
-    if (bookType !== "all") {
-      q = q.eq("book_type", bookType);
-    }
 
     // Apply filters
     if (status !== "any") {
@@ -319,8 +495,8 @@ export function BookList() {
       q = q.eq("timing_month", Number(month));
     }
 
-    // "Show all" toggle only applies to fiction/all (seasonal timing)
-    if (!showAll && (bookType === "all" || bookType === "fiction")) {
+    // "Show all" toggle
+    if (!showAll) {
       q = q.or("timing_raw.not.is.null,status.eq.wishlist,status.eq.reading");
     }
 
@@ -373,6 +549,8 @@ export function BookList() {
   }, [fetchBooks]);
 
   const totalPages = Math.ceil(count / PAGE_SIZE);
+
+  const isGalleryTab = bookType !== "all";
 
   function handleTypeChange(type: string) {
     setBookType(type);
@@ -431,7 +609,7 @@ export function BookList() {
   const active = hasActiveFilters(filterState);
   const summary = buildFilterSummary(filterState);
 
-  // Group canonical tags by category for rendering
+  // Group canonical tags by category for rendering (All tab)
   const tagsByCategory = useMemo(() => {
     const map = new Map<TagCategory, CanonicalTag[]>();
     for (const t of canonicalTags) {
@@ -448,14 +626,12 @@ export function BookList() {
     setSearchParams(params, { replace: true });
   }
 
-  // Determine which filter sections to show based on type
-  const showMonth = bookType === "all" || bookType === "fiction";
-  const showGenre = bookType !== "poetry";
-  const showShowAll = bookType === "all" || bookType === "fiction";
-  const multiCats = MULTI_SELECT_CATEGORIES[bookType] ?? [];
-  const singleCats = SINGLE_SELECT_CATEGORIES[bookType] ?? [];
+  // All tab filter controls
+  const showMonth = true;
+  const showGenre = true;
+  const multiCats = MULTI_SELECT_CATEGORIES["all"] ?? [];
+  const singleCats = SINGLE_SELECT_CATEGORIES["all"] ?? [];
 
-  // Category labels for display
   const categoryLabels: Record<string, string> = {
     vibe: "Vibes",
     topic: "Topics",
@@ -477,282 +653,286 @@ export function BookList() {
     <div className="space-y-6">
       <ReadingQuote />
 
-      {/* View toggle + Type filter row */}
-      <div className="flex items-center justify-between gap-4">
-        {/* Type segmented control */}
-        <div className="flex rounded-md border">
-          {TYPE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => handleTypeChange(opt.value)}
-              className={`px-3 py-1.5 text-sm transition-colors ${
-                bookType === opt.value
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* View toggle */}
-        <div className="flex rounded-md border">
+      {/* Tabs — centered accent underline */}
+      <div className="flex justify-center gap-10 border-b border-border mb-2">
+        {TYPE_OPTIONS.map((opt) => (
           <button
-            onClick={() => setView("list")}
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              view === "list"
-                ? "bg-primary text-primary-foreground"
-                : "hover:bg-muted"
+            key={opt.value}
+            onClick={() => handleTypeChange(opt.value)}
+            className={`pb-3 text-sm font-semibold transition-colors border-b-[3px] ${
+              bookType === opt.value
+                ? "text-accent border-accent"
+                : "text-muted-foreground border-transparent hover:text-foreground"
             }`}
           >
-            List
+            {opt.label}
           </button>
-          <button
-            onClick={() => setView("shelves")}
-            className={`px-3 py-1.5 text-sm transition-colors ${
-              view === "shelves"
-                ? "bg-primary text-primary-foreground"
-                : "hover:bg-muted"
-            }`}
-          >
-            Shelves
-          </button>
-        </div>
+        ))}
       </div>
 
-      {view === "shelves" ? (
-        <ShelvesView />
+      {/* Gallery tabs (Fiction / Nonfiction / Poetry) */}
+      {isGalleryTab ? (
+        <GalleryBrowse bookType={bookType} />
       ) : (
-      <div className="space-y-4">
-        <Input
-          type="search"
-          placeholder="Search by title or author..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <>
+          {/* View toggle — only on All tab */}
+          <div className="flex justify-end">
+            <div className="flex rounded-md border">
+              <button
+                onClick={() => setView("list")}
+                className={`px-3 py-1.5 text-sm transition-colors ${
+                  view === "list"
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted"
+                }`}
+              >
+                List
+              </button>
+              <button
+                onClick={() => setView("shelves")}
+                className={`px-3 py-1.5 text-sm transition-colors ${
+                  view === "shelves"
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted"
+                }`}
+              >
+                Shelves
+              </button>
+            </div>
+          </div>
 
-        {/* Filter toggle */}
-        <button
-          onClick={() => setFiltersOpen((o) => !o)}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {filtersOpen ? (
-            <ChevronUp className="h-4 w-4" />
+          {view === "shelves" ? (
+            <ShelvesView />
           ) : (
-            <ChevronDown className="h-4 w-4" />
-          )}
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] leading-none text-primary-foreground">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+          <div className="space-y-4">
+            <Input
+              type="search"
+              placeholder="Search by title or author..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
 
-        {/* Filter bar */}
-        {filtersOpen && (
-          <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
-            <div className="flex flex-wrap gap-3">
-              {/* Status */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Status
-                </label>
-                <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-                  <SelectTrigger size="sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="any">Any</SelectItem>
-                    <SelectItem value="read">Read</SelectItem>
-                    <SelectItem value="unread">Unread</SelectItem>
-                    <SelectItem value="reading">Reading</SelectItem>
-                    <SelectItem value="unfinished">Unfinished</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Rating */}
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Rating
-                </label>
-                <Select value={rating} onValueChange={(v) => { setRating(v); setPage(1); }}>
-                  <SelectTrigger size="sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RATING_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Genre — shown for all/fiction/nonfiction */}
-              {showGenre && (
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Genre
-                  </label>
-                  <Select value={genre} onValueChange={(v) => { setGenre(v); setPage(1); }}>
-                    <SelectTrigger size="sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any</SelectItem>
-                      {genres.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            {/* Filter toggle */}
+            <button
+              onClick={() => setFiltersOpen((o) => !o)}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {filtersOpen ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
               )}
-
-              {/* Month — fiction/all only */}
-              {showMonth && (
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Month
-                  </label>
-                  <Select value={month} onValueChange={(v) => { setMonth(v); setPage(1); }}>
-                    <SelectTrigger size="sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any</SelectItem>
-                      {MONTH_NAMES.map((name, i) => (
-                        <SelectItem key={i} value={String(i + 1)}>
-                          {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] leading-none text-primary-foreground">
+                  {activeFilterCount}
+                </span>
               )}
+            </button>
 
-              {/* Single-select tag categories (form, depth, accessibility) */}
-              {singleCats.map(({ category, label }) => {
-                const tags = tagsByCategory.get(category) ?? [];
-                return (
-                  <div key={category} className="space-y-1">
+            {/* Filter bar */}
+            {filtersOpen && (
+              <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                <div className="flex flex-wrap gap-3">
+                  {/* Status */}
+                  <div className="space-y-1">
                     <label className="text-xs font-medium text-muted-foreground">
-                      {label}
+                      Status
                     </label>
-                    <Select
-                      value={singleTags.get(category) ?? "any"}
-                      onValueChange={(v) => setSingleTag(category, v)}
-                    >
+                    <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
                       <SelectTrigger size="sm">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="any">Any</SelectItem>
-                        {tags.map((t) => (
-                          <SelectItem key={t.tag} value={t.tag}>
-                            {formatCanonicalVibe(t.tag)}
+                        <SelectItem value="read">Read</SelectItem>
+                        <SelectItem value="unread">Unread</SelectItem>
+                        <SelectItem value="reading">Reading</SelectItem>
+                        <SelectItem value="unfinished">Unfinished</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Rating */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Rating
+                    </label>
+                    <Select value={rating} onValueChange={(v) => { setRating(v); setPage(1); }}>
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RATING_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                );
-              })}
-            </div>
 
-            {/* Show all toggle — fiction/all only */}
-            {showShowAll && (
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={showAll}
-                  onChange={(e) => { setShowAll(e.target.checked); setPage(1); }}
-                  className="rounded"
-                />
-                <span className="text-muted-foreground">
-                  Show books without seasonal timing
-                </span>
-              </label>
-            )}
+                  {/* Genre */}
+                  {showGenre && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Genre
+                      </label>
+                      <Select value={genre} onValueChange={(v) => { setGenre(v); setPage(1); }}>
+                        <SelectTrigger size="sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="any">Any</SelectItem>
+                          {genres.map((g) => (
+                            <SelectItem key={g} value={g}>
+                              {g}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
-            {/* Multi-select tag categories (vibes, topics, movement, formal_feel) */}
-            {multiCats.map((category) => {
-              const tags = tagsByCategory.get(category) ?? [];
-              if (tags.length === 0) return null;
-              return (
-                <div key={category} className="space-y-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {categoryLabels[category] ?? formatCanonicalVibe(category)}
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {tags.map((ct) => {
-                      const isActive = selectedTags.includes(ct.tag);
-                      return (
-                        <Badge
-                          key={ct.tag}
-                          variant={isActive ? "default" : "outline"}
-                          className={`cursor-pointer transition-opacity ${
-                            isActive ? "" : "opacity-60 hover:opacity-90"
-                          }`}
-                          title={ct.description}
-                          onClick={() => toggleTag(ct.tag)}
+                  {/* Month */}
+                  {showMonth && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Month
+                      </label>
+                      <Select value={month} onValueChange={(v) => { setMonth(v); setPage(1); }}>
+                        <SelectTrigger size="sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="any">Any</SelectItem>
+                          {MONTH_NAMES.map((name, i) => (
+                            <SelectItem key={i} value={String(i + 1)}>
+                              {name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Single-select tag categories */}
+                  {singleCats.map(({ category, label }) => {
+                    const tags = tagsByCategory.get(category) ?? [];
+                    return (
+                      <div key={category} className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          {label}
+                        </label>
+                        <Select
+                          value={singleTags.get(category) ?? "any"}
+                          onValueChange={(v) => setSingleTag(category, v)}
                         >
-                          {formatCanonicalVibe(ct.tag)}
-                        </Badge>
-                      );
-                    })}
-                  </div>
+                          <SelectTrigger size="sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="any">Any</SelectItem>
+                            {tags.map((t) => (
+                              <SelectItem key={t.tag} value={t.tag}>
+                                {formatCanonicalVibe(t.tag)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
 
-            {/* Clear */}
-            {active && (
-              <button
-                onClick={clearFilters}
-                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-                Clear filters
-              </button>
+                {/* Show all toggle */}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={showAll}
+                    onChange={(e) => { setShowAll(e.target.checked); setPage(1); }}
+                    className="rounded"
+                  />
+                  <span className="text-muted-foreground">
+                    Show books without seasonal timing
+                  </span>
+                </label>
+
+                {/* Multi-select tag categories (vibes) */}
+                {multiCats.map((category) => {
+                  const tags = tagsByCategory.get(category) ?? [];
+                  if (tags.length === 0) return null;
+                  return (
+                    <div key={category} className="space-y-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {categoryLabels[category] ?? formatCanonicalVibe(category)}
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {tags.map((ct) => {
+                          const isActive = selectedTags.includes(ct.tag);
+                          return (
+                            <Badge
+                              key={ct.tag}
+                              variant={isActive ? "default" : "outline"}
+                              className={`cursor-pointer transition-opacity ${
+                                isActive ? "" : "opacity-60 hover:opacity-90"
+                              }`}
+                              title={ct.description}
+                              onClick={() => toggleTag(ct.tag)}
+                            >
+                              {formatCanonicalVibe(ct.tag)}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Clear */}
+                {active && (
+                  <button
+                    onClick={clearFilters}
+                    className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Result count + filter summary */}
+            <div className="text-sm text-muted-foreground">
+              {loading
+                ? "Loading..."
+                : `${count} book${count !== 1 ? "s" : ""}${summary ? ` — ${summary}` : ""}`}
+            </div>
+
+            {books.length > 0 ? (
+              <div className="divide-y rounded-lg border">
+                {books.map((book) => (
+                  <BookRow
+                    key={book.id}
+                    book={book}
+                    vibes={vibeMap.get(book.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              !loading && (
+                <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                  No books found.
+                </div>
+              )
+            )}
+
+            {totalPages > 1 && (
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
             )}
           </div>
-        )}
-
-        {/* Result count + filter summary */}
-        <div className="text-sm text-muted-foreground">
-          {loading
-            ? "Loading..."
-            : `${count} book${count !== 1 ? "s" : ""}${summary ? ` — ${summary}` : ""}`}
-        </div>
-
-        {books.length > 0 ? (
-          <div className="divide-y rounded-lg border">
-            {books.map((book) => (
-              <BookRow
-                key={book.id}
-                book={book}
-                vibes={vibeMap.get(book.id)}
-              />
-            ))}
-          </div>
-        ) : (
-          !loading && (
-            <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-              No books found.
-            </div>
-          )
-        )}
-
-        {totalPages > 1 && (
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-        )}
-      </div>
+          )}
+        </>
       )}
     </div>
   );

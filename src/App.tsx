@@ -4,7 +4,6 @@ import { Home } from "@/pages/Home";
 import { BookList } from "@/pages/BookList";
 import { BookDetail } from "@/pages/BookDetail";
 import { RecommendationsPage } from "@/pages/RecommendationsPage";
-import { VibesPage } from "@/pages/VibesPage";
 import { AddBook } from "@/pages/AddBook";
 import { Chat } from "@/pages/Chat";
 import { Profile } from "@/pages/Profile";
@@ -19,7 +18,6 @@ export function App() {
         <Route index element={<Home />} />
         <Route path="library" element={<BookList />} />
         <Route path="recommendations" element={<RecommendationsPage />} />
-        <Route path="discover" element={<VibesPage />} />
         <Route path="lists" element={<ListsPage />} />
         <Route path="lists/:id" element={<ListDetail />} />
         <Route path="releases" element={<ReleasesPage />} />

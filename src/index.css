@@ -130,3 +130,18 @@
 .scrollbar-hidden::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Gallery card stagger animation ── */
+.gallery-card-enter {
+  animation: gallery-card-in 300ms ease both;
+}
+@keyframes gallery-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
