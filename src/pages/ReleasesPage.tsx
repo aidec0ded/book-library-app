@@ -132,40 +132,42 @@ function ReleaseGrid({
       <button
         key={release.id}
         onClick={() => onToggleExpanded(release.id)}
-        className={`group relative text-left transition-opacity ${
+        className={`group text-left transition-opacity ${
           expandedId && expandedId !== release.id ? "opacity-60" : ""
         } ${release.dismissed ? "opacity-40" : ""}`}
       >
-        {release.ai_score != null && (
-          <div
-            className={`absolute top-1 left-1 z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold shadow-sm ${scoreBadgeColor(release.ai_score)}`}
-          >
-            {Math.round(release.ai_score)}
-          </div>
-        )}
-        {inLibrary && (
-          <Badge
-            variant="secondary"
-            className="absolute top-1 right-1 z-10 text-[10px] shadow-sm"
-          >
-            In Library
-          </Badge>
-        )}
-        <BookCover
-          title={release.title}
-          author={release.authors.join(", ") || "Unknown"}
-          coverUrl={release.cover_image_url}
-          size="sm"
-        />
-        <div className="mt-1.5 space-y-0.5">
-          <p className="font-serif text-sm font-medium leading-tight line-clamp-2">
+        <div className="relative aspect-[2/3] overflow-hidden rounded-lg shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl">
+          {release.ai_score != null && (
+            <div
+              className={`absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold shadow-sm ${scoreBadgeColor(release.ai_score)}`}
+            >
+              {Math.round(release.ai_score)}
+            </div>
+          )}
+          {inLibrary && (
+            <Badge
+              variant="secondary"
+              className="absolute top-2 right-2 z-10 text-[10px] shadow-sm"
+            >
+              In Library
+            </Badge>
+          )}
+          <BookCover
+            title={release.title}
+            author={release.authors.join(", ") || "Unknown"}
+            coverUrl={release.cover_image_url}
+            size="sm"
+          />
+        </div>
+        <div className="mt-3">
+          <p className="font-serif text-base font-bold leading-tight line-clamp-2">
             {release.title}
           </p>
-          <p className="text-xs text-muted-foreground line-clamp-1">
+          <p className="mt-1 text-sm text-muted-foreground line-clamp-1">
             {release.authors.join(", ") || "Unknown author"}
           </p>
           {(release.publisher || release.binding) && (
-            <p className="text-xs text-muted-foreground/70 line-clamp-1">
+            <p className="mt-0.5 text-xs text-muted-foreground/70 line-clamp-1">
               {[release.publisher, release.binding]
                 .filter(Boolean)
                 .join(" · ")}
@@ -324,7 +326,7 @@ function ReleaseGrid({
   return (
     <div
       ref={gridRef}
-      className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+      className="grid grid-cols-2 gap-6 gap-y-10 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
     >
       {items}
     </div>
@@ -492,23 +494,26 @@ export function ReleasesPage() {
   // No data at all
   if (initialized && availableMonths.length === 0) {
     return (
-      <div className="space-y-6">
-        <h1 className="font-serif text-2xl font-bold">New Releases</h1>
-        <p className="text-muted-foreground">
-          No release data yet. Run the ingestion script to get started.
-        </p>
-        <pre className="rounded-md bg-secondary px-4 py-3 text-sm">
-          npx tsx scripts/ingest-releases.ts
-        </pre>
+      <div className="-mx-4 -mt-6">
+        <div className="w-screen ml-[calc(-50vw+50%)] lg:w-[calc(100vw-15rem)] lg:ml-[calc(-50vw+50%+7.5rem)] px-6 sm:px-10 lg:px-14 xl:px-20 pb-16 pt-8 lg:pt-12">
+          <h1 className="font-serif text-3xl font-bold tracking-tight">New Releases</h1>
+          <p className="mt-4 text-muted-foreground">
+            No release data yet. Run the ingestion script to get started.
+          </p>
+          <pre className="mt-2 rounded-md bg-secondary px-4 py-3 text-sm">
+            npx tsx scripts/ingest-releases.ts
+          </pre>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="-mx-4 -mt-6">
+      <div className="w-screen ml-[calc(-50vw+50%)] lg:w-[calc(100vw-15rem)] lg:ml-[calc(-50vw+50%+7.5rem)] px-6 sm:px-10 lg:px-14 xl:px-20 pb-16 pt-8 lg:pt-12 space-y-8">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-serif text-2xl font-bold">New Releases</h1>
+      <div className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <h1 className="font-serif text-3xl font-bold tracking-tight">New Releases</h1>
         <div className="flex items-center gap-3">
           {/* Sort toggle */}
           <div className="flex rounded-md border">
@@ -635,6 +640,7 @@ export function ReleasesPage() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }
