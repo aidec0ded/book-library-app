@@ -146,6 +146,7 @@ export interface List {
   id: string;
   name: string;
   description: string | null;
+  ai_generated: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -185,6 +185,14 @@ export function SyllabiPage() {
                     </span>
                     <span>&middot;</span>
                     <span>{relativeDate(s.updated_at)}</span>
+                    {s.ai_generated && (
+                      <>
+                        <span>&middot;</span>
+                        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-accent normal-case tracking-normal">
+                          MoodLib Generated
+                        </span>
+                      </>
+                    )}
                   </div>
                   <h3 className="mb-2 font-serif text-2xl font-bold transition-colors group-hover:text-accent">
                     {s.name}

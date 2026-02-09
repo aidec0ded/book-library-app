@@ -79,6 +79,7 @@ export async function executeSyllabusCommand(
         .insert({
           name: command.list_name,
           description: command.description ?? null,
+          ai_generated: true,
         })
         .select("id")
         .single();
