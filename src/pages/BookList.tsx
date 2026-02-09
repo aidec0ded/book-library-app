@@ -27,7 +27,6 @@ import {
   formatCanonicalVibe,
 } from "@/lib/canonical-vibes";
 import { fetchGalleryBooks, GALLERY_PAGE_SIZE } from "@/lib/gallery";
-import { MONTH_NAMES } from "@/lib/timing";
 import type { BookSummary, CanonicalTag, TagCategory } from "@/lib/types";
 
 const PAGE_SIZE = 20;
@@ -81,19 +80,15 @@ function hasActiveFilters(params: {
   status: string;
   rating: string;
   genre: string;
-  month: string;
   tags: string[];
   singleTags: Map<TagCategory, string>;
-  showAll: boolean;
 }): boolean {
   return (
     params.status !== "any" ||
     params.rating !== "any" ||
     params.genre !== "any" ||
-    params.month !== "any" ||
     params.tags.length > 0 ||
-    Array.from(params.singleTags.values()).some((v) => v !== "any") ||
-    params.showAll
+    Array.from(params.singleTags.values()).some((v) => v !== "any")
   );
 }
 
@@ -101,26 +96,19 @@ function buildFilterSummary(params: {
   status: string;
   rating: string;
   genre: string;
-  month: string;
   tags: string[];
   singleTags: Map<TagCategory, string>;
-  showAll: boolean;
 }): string {
   const parts: string[] = [];
   if (params.status !== "any") parts.push(params.status);
   if (params.rating === "unrated") parts.push("unrated");
   else if (params.rating !== "any") parts.push(`${params.rating}+ stars`);
   if (params.genre !== "any") parts.push(params.genre);
-  if (params.month !== "any") {
-    const idx = Number(params.month) - 1;
-    parts.push(MONTH_NAMES[idx]);
-  }
   if (params.tags.length > 0)
     parts.push(params.tags.map(formatCanonicalVibe).join(", "));
   for (const [, val] of params.singleTags) {
     if (val !== "any") parts.push(formatCanonicalVibe(val));
   }
-  if (params.showAll) parts.push("all books");
   return parts.join(" · ");
 }
 
@@ -313,10 +301,8 @@ export function BookList() {
   const initialStatus = searchParams.get("status") ?? "any";
   const initialRating = searchParams.get("rating") ?? "any";
   const initialGenre = searchParams.get("genre") ?? "any";
-  const initialMonth = searchParams.get("month") ?? "any";
   const initialType = searchParams.get("type") ?? "all";
   const initialTags = parseCommaSeparated(searchParams.get("tags"));
-  const initialShowAll = searchParams.get("all") === "1";
   const view = searchParams.get("view") === "shelves" ? "shelves" : "list";
 
   // Parse single-select tag params from URL
@@ -340,21 +326,17 @@ export function BookList() {
   const [status, setStatus] = useState(initialStatus);
   const [rating, setRating] = useState(initialRating);
   const [genre, setGenre] = useState(initialGenre);
-  const [month, setMonth] = useState(initialMonth);
   const [selectedTags, setSelectedTags] = useState<string[]>(initialTags);
   const [singleTags, setSingleTags] = useState<Map<TagCategory, string>>(
     parseInitialSingleTags,
   );
-  const [showAll, setShowAll] = useState(initialShowAll);
   const [filtersOpen, setFiltersOpen] = useState(
     hasActiveFilters({
       status: initialStatus,
       rating: initialRating,
       genre: initialGenre,
-      month: initialMonth,
       tags: initialTags,
       singleTags: parseInitialSingleTags(),
-      showAll: initialShowAll,
     }),
   );
 
@@ -416,12 +398,10 @@ export function BookList() {
     if (status !== "any") params.status = status;
     if (rating !== "any") params.rating = rating;
     if (genre !== "any") params.genre = genre;
-    if (month !== "any") params.month = month;
     if (selectedTags.length > 0) params.tags = selectedTags.join(",");
     for (const [key, val] of singleTags) {
       if (val !== "any") params[key] = val;
     }
-    if (showAll) params.all = "1";
     if (view === "shelves") params.view = "shelves";
     setSearchParams(params, { replace: true });
   }, [
@@ -431,10 +411,8 @@ export function BookList() {
     status,
     rating,
     genre,
-    month,
     selectedTags,
     singleTags,
-    showAll,
     view,
     setSearchParams,
   ]);
@@ -491,15 +469,6 @@ export function BookList() {
       q = q.eq("genre", genre);
     }
 
-    if (month !== "any") {
-      q = q.eq("timing_month", Number(month));
-    }
-
-    // "Show all" toggle
-    if (!showAll) {
-      q = q.or("timing_raw.not.is.null,status.eq.wishlist,status.eq.reading");
-    }
-
     if (debouncedQuery) {
       const pattern = `%${debouncedQuery}%`;
       q = q.or(`title.ilike.${pattern},author.ilike.${pattern}`);
@@ -538,10 +507,8 @@ export function BookList() {
     status,
     rating,
     genre,
-    month,
     selectedTags,
     singleTags,
-    showAll,
   ]);
 
   useEffect(() => {
@@ -561,8 +528,6 @@ export function BookList() {
       ["depth", "any"],
       ["accessibility", "any"],
     ] as [TagCategory, string][]));
-    setMonth("any");
-    setShowAll(false);
     setPage(1);
   }
 
@@ -586,14 +551,12 @@ export function BookList() {
     setStatus("any");
     setRating("any");
     setGenre("any");
-    setMonth("any");
     setSelectedTags([]);
     setSingleTags(new Map([
       ["form", "any"],
       ["depth", "any"],
       ["accessibility", "any"],
     ] as [TagCategory, string][]));
-    setShowAll(false);
     setPage(1);
   }
 
@@ -601,10 +564,8 @@ export function BookList() {
     status,
     rating,
     genre,
-    month,
     tags: selectedTags,
     singleTags,
-    showAll,
   };
   const active = hasActiveFilters(filterState);
   const summary = buildFilterSummary(filterState);
@@ -627,8 +588,6 @@ export function BookList() {
   }
 
   // All tab filter controls
-  const showMonth = true;
-  const showGenre = true;
   const multiCats = MULTI_SELECT_CATEGORIES["all"] ?? [];
   const singleCats = SINGLE_SELECT_CATEGORIES["all"] ?? [];
 
@@ -643,10 +602,8 @@ export function BookList() {
     status !== "any",
     rating !== "any",
     genre !== "any",
-    month !== "any",
     selectedTags.length > 0,
     ...Array.from(singleTags.values()).map((v) => v !== "any"),
-    showAll,
   ].filter(Boolean).length;
 
   return (
@@ -773,48 +730,24 @@ export function BookList() {
                   </div>
 
                   {/* Genre */}
-                  {showGenre && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Genre
-                      </label>
-                      <Select value={genre} onValueChange={(v) => { setGenre(v); setPage(1); }}>
-                        <SelectTrigger size="sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any">Any</SelectItem>
-                          {genres.map((g) => (
-                            <SelectItem key={g} value={g}>
-                              {g}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Month */}
-                  {showMonth && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">
-                        Month
-                      </label>
-                      <Select value={month} onValueChange={(v) => { setMonth(v); setPage(1); }}>
-                        <SelectTrigger size="sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any">Any</SelectItem>
-                          {MONTH_NAMES.map((name, i) => (
-                            <SelectItem key={i} value={String(i + 1)}>
-                              {name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Genre
+                    </label>
+                    <Select value={genre} onValueChange={(v) => { setGenre(v); setPage(1); }}>
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any</SelectItem>
+                        {genres.map((g) => (
+                          <SelectItem key={g} value={g}>
+                            {g}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
                   {/* Single-select tag categories */}
                   {singleCats.map(({ category, label }) => {
@@ -844,19 +777,6 @@ export function BookList() {
                     );
                   })}
                 </div>
-
-                {/* Show all toggle */}
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={showAll}
-                    onChange={(e) => { setShowAll(e.target.checked); setPage(1); }}
-                    className="rounded"
-                  />
-                  <span className="text-muted-foreground">
-                    Show books without seasonal timing
-                  </span>
-                </label>
 
                 {/* Multi-select tag categories (vibes) */}
                 {multiCats.map((category) => {
