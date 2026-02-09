@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export interface ListCommand {
+export interface SyllabusCommand {
   action: "create" | "view" | "add_books" | "remove_books" | "delete";
   list_name?: string;
   description?: string;
   books?: string[];
+  rationale?: string;
 }
 
 interface ResolvedBooks {
@@ -39,7 +40,7 @@ async function resolveBooks(
   return { found, notFound };
 }
 
-async function findListByName(
+async function findSyllabusByName(
   supabase: SupabaseClient,
   name: string,
 ): Promise<{ id: string; name: string } | null> {
@@ -54,9 +55,9 @@ async function findListByName(
   return data;
 }
 
-export async function executeListCommand(
+export async function executeSyllabusCommand(
   supabase: SupabaseClient,
-  command: ListCommand,
+  command: SyllabusCommand,
 ): Promise<string> {
   switch (command.action) {
     case "create": {
@@ -65,14 +66,14 @@ export async function executeListCommand(
       }
 
       // Check for duplicate name
-      const existing = await findListByName(supabase, command.list_name);
+      const existing = await findSyllabusByName(supabase, command.list_name);
       if (existing) {
         throw new Error(
-          `A list named '${existing.name}' already exists. Use add_books to add books to it.`,
+          `A syllabus named '${existing.name}' already exists. Use add_books to add books to it.`,
         );
       }
 
-      // Create the list
+      // Create the syllabus
       const { data: list, error: createError } = await supabase
         .from("lists")
         .insert({
@@ -93,6 +94,7 @@ export async function executeListCommand(
             list_id: list.id,
             book_id: book.id,
             position: i + 1,
+            rationale: command.rationale ?? null,
           }));
 
           const { error: insertError } = await supabase
@@ -102,7 +104,7 @@ export async function executeListCommand(
           if (insertError) throw insertError;
         }
 
-        let msg = `Created list '${command.list_name}'`;
+        let msg = `Created syllabus '${command.list_name}'`;
         if (found.length > 0) {
           msg += ` with ${found.length} book${found.length === 1 ? "" : "s"}.`;
         } else {
@@ -114,12 +116,12 @@ export async function executeListCommand(
         return msg;
       }
 
-      return `Created list '${command.list_name}'.`;
+      return `Created syllabus '${command.list_name}'.`;
     }
 
     case "view": {
       if (!command.list_name) {
-        // View all lists
+        // View all syllabi
         const { data: lists, error } = await supabase
           .from("lists")
           .select("id, name, description")
@@ -127,7 +129,7 @@ export async function executeListCommand(
 
         if (error) throw error;
         if (!lists || lists.length === 0) {
-          return "No lists exist yet.";
+          return "No syllabi exist yet.";
         }
 
         // Get item counts
@@ -149,33 +151,42 @@ export async function executeListCommand(
           return line;
         });
 
-        return `Your lists:\n${lines.join("\n")}`;
+        return `Your syllabi:\n${lines.join("\n")}`;
       }
 
-      // View a specific list
-      const list = await findListByName(supabase, command.list_name);
+      // View a specific syllabus
+      const list = await findSyllabusByName(supabase, command.list_name);
       if (!list) {
-        return `No list found matching '${command.list_name}'.`;
+        return `No syllabus found matching '${command.list_name}'.`;
       }
 
       const { data: items, error } = await supabase
         .from("list_items")
-        .select("position, book:books(title, author)")
+        .select("position, rationale, book_id, external_title, external_author, book:books(title, author)")
         .eq("list_id", list.id)
         .order("position");
 
       if (error) throw error;
 
       if (!items || items.length === 0) {
-        return `'${list.name}' exists but has no books.`;
+        return `'${list.name}' exists but has no items.`;
       }
 
       const lines = items.map((item) => {
-        const book = item.book as unknown as { title: string; author: string };
-        return `${item.position}. ${book.title} by ${book.author}`;
+        let line: string;
+        if (item.book_id) {
+          const book = item.book as unknown as { title: string; author: string };
+          line = `${item.position}. ${book.title} by ${book.author}`;
+        } else {
+          line = `${item.position}. ${item.external_title} by ${item.external_author ?? "Unknown"} [not in library]`;
+        }
+        if (item.rationale) {
+          line += ` — ${item.rationale}`;
+        }
+        return line;
       });
 
-      return `${list.name} (${items.length} book${items.length === 1 ? "" : "s"}):\n${lines.join("\n")}`;
+      return `${list.name} (${items.length} item${items.length === 1 ? "" : "s"}):\n${lines.join("\n")}`;
     }
 
     case "add_books": {
@@ -186,9 +197,9 @@ export async function executeListCommand(
         throw new Error("'add_books' requires at least one book title");
       }
 
-      const list = await findListByName(supabase, command.list_name);
+      const list = await findSyllabusByName(supabase, command.list_name);
       if (!list) {
-        throw new Error(`No list found matching '${command.list_name}'.`);
+        throw new Error(`No syllabus found matching '${command.list_name}'.`);
       }
 
       const { found, notFound } = await resolveBooks(supabase, command.books);
@@ -211,10 +222,11 @@ export async function executeListCommand(
           list_id: list.id,
           book_id: found[i].id,
           position: startPosition + i,
+          rationale: command.rationale ?? null,
         });
 
         if (error) {
-          // 23505 = unique violation (book already in list) — skip silently
+          // 23505 = unique violation (book already in syllabus) — skip silently
           if (error.code === "23505") continue;
           throw error;
         }
@@ -227,7 +239,7 @@ export async function executeListCommand(
       }
       const skipped = found.length - added;
       if (skipped > 0) {
-        msg += ` ${skipped} already in the list.`;
+        msg += ` ${skipped} already in the syllabus.`;
       }
       return msg;
     }
@@ -240,9 +252,9 @@ export async function executeListCommand(
         throw new Error("'remove_books' requires at least one book title");
       }
 
-      const list = await findListByName(supabase, command.list_name);
+      const list = await findSyllabusByName(supabase, command.list_name);
       if (!list) {
-        throw new Error(`No list found matching '${command.list_name}'.`);
+        throw new Error(`No syllabus found matching '${command.list_name}'.`);
       }
 
       const { found, notFound } = await resolveBooks(supabase, command.books);
@@ -291,9 +303,9 @@ export async function executeListCommand(
         throw new Error("'delete' requires list_name");
       }
 
-      const list = await findListByName(supabase, command.list_name);
+      const list = await findSyllabusByName(supabase, command.list_name);
       if (!list) {
-        throw new Error(`No list found matching '${command.list_name}'.`);
+        throw new Error(`No syllabus found matching '${command.list_name}'.`);
       }
 
       const { error } = await supabase
@@ -303,10 +315,10 @@ export async function executeListCommand(
 
       if (error) throw error;
 
-      return `Deleted list '${list.name}'.`;
+      return `Deleted syllabus '${list.name}'.`;
     }
 
     default:
-      throw new Error(`Unknown list action: ${(command as ListCommand).action}`);
+      throw new Error(`Unknown syllabus action: ${(command as SyllabusCommand).action}`);
   }
 }

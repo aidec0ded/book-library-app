@@ -3,7 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import {
   Home,
   Library,
-  List,
+  GraduationCap,
+  Layers,
   Compass,
   Newspaper,
   MessageCircle,
@@ -32,7 +33,8 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Library",
     items: [
       { label: "Library", path: "/library", icon: Library },
-      { label: "Lists", path: "/lists", icon: List },
+      { label: "Syllabi", path: "/syllabi", icon: GraduationCap },
+      { label: "Shelves", path: "/library?view=shelves", icon: Layers },
     ],
   },
   {
@@ -57,13 +59,24 @@ const FOOTER_ITEM: NavItem = {
   icon: PlusCircle,
 };
 
-function isActive(pathname: string, path: string) {
+function isActive(pathname: string, search: string, path: string) {
   if (path === "/") return pathname === "/";
+
+  // Handle query-string routes like /library?view=shelves
+  if (path.includes("?")) {
+    const [pathPart, queryPart] = path.split("?");
+    if (pathname !== pathPart) return false;
+    return search.includes(queryPart);
+  }
+
+  // Plain /library should NOT be active if ?view=shelves is present
+  if (path === "/library" && search.includes("view=shelves")) return false;
+
   return pathname.startsWith(path);
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   return (
     <div className="flex h-full flex-col">
@@ -89,7 +102,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             )}
             <ul className="space-y-0.5">
               {group.items.map((item) => {
-                const active = isActive(pathname, item.path);
+                const active = isActive(pathname, search, item.path);
                 const Icon = item.icon;
                 return (
                   <li key={item.path}>
@@ -119,12 +132,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           to={FOOTER_ITEM.path}
           onClick={onNavigate}
           className={`flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors ${
-            isActive(pathname, FOOTER_ITEM.path)
+            isActive(pathname, search, FOOTER_ITEM.path)
               ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
               : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
           }`}
         >
-          <PlusCircle className={`h-4 w-4 shrink-0 ${isActive(pathname, FOOTER_ITEM.path) ? "text-accent" : ""}`} />
+          <PlusCircle className={`h-4 w-4 shrink-0 ${isActive(pathname, search, FOOTER_ITEM.path) ? "text-accent" : ""}`} />
           {FOOTER_ITEM.label}
         </Link>
       </div>

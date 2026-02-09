@@ -1,7 +1,9 @@
 import { supabase } from "@/lib/supabase";
 import type { Book, List, ListItem, ListWithCount } from "@/lib/types";
 
-export async function fetchLists(): Promise<ListWithCount[]> {
+export type SyllabusItemWithBook = ListItem & { book: Book | null };
+
+export async function fetchSyllabi(): Promise<ListWithCount[]> {
   const { data: lists, error: listsError } = await supabase
     .from("lists")
     .select("*")
@@ -11,35 +13,35 @@ export async function fetchLists(): Promise<ListWithCount[]> {
 
   const { data: items, error: itemsError } = await supabase
     .from("list_items")
-    .select("list_id, book_id, position")
+    .select("list_id, book_id, position, external_title, external_author, external_cover_url")
     .order("position");
 
   if (itemsError) throw itemsError;
 
-  // Group items by list for counts and first-position book IDs
-  const listItemsMap = new Map<string, { book_id: string; position: number }[]>();
-  for (const item of items) {
+  // Group items by list
+  const listItemsMap = new Map<string, typeof items>();
+  for (const item of items ?? []) {
     const group = listItemsMap.get(item.list_id) ?? [];
-    group.push({ book_id: item.book_id, position: item.position });
+    group.push(item);
     listItemsMap.set(item.list_id, group);
   }
 
-  // Collect first-position book IDs for cover books
-  const coverBookIds = new Set<string>();
+  // Collect book IDs for cover lookups (up to 3 per list)
+  const allCoverBookIds = new Set<string>();
   for (const [, listItems] of listItemsMap) {
-    if (listItems.length > 0) {
-      const sorted = listItems.sort((a, b) => a.position - b.position);
-      coverBookIds.add(sorted[0].book_id);
+    const sorted = listItems.sort((a, b) => a.position - b.position);
+    for (const item of sorted.slice(0, 3)) {
+      if (item.book_id) allCoverBookIds.add(item.book_id);
     }
   }
 
   // Fetch cover books in one query
   const coverBooksMap = new Map<string, { title: string; author: string; cover_image_url: string | null }>();
-  if (coverBookIds.size > 0) {
+  if (allCoverBookIds.size > 0) {
     const { data: coverBooks, error: coverError } = await supabase
       .from("books")
       .select("id, title, author, cover_image_url")
-      .in("id", [...coverBookIds]);
+      .in("id", [...allCoverBookIds]);
 
     if (coverError) throw coverError;
     for (const book of coverBooks ?? []) {
@@ -48,18 +50,32 @@ export async function fetchLists(): Promise<ListWithCount[]> {
   }
 
   return (lists ?? []).map((list) => {
-    const listItems = listItemsMap.get(list.id) ?? [];
-    const firstItem = listItems.sort((a, b) => a.position - b.position)[0];
-    const coverBook = firstItem ? coverBooksMap.get(firstItem.book_id) ?? null : null;
+    const listItems = (listItemsMap.get(list.id) ?? []).sort((a, b) => a.position - b.position);
+    const coverBooks: { title: string; author: string; cover_image_url: string | null }[] = [];
+
+    for (const item of listItems.slice(0, 3)) {
+      if (item.book_id) {
+        const book = coverBooksMap.get(item.book_id);
+        if (book) coverBooks.push(book);
+      } else if (item.external_title) {
+        coverBooks.push({
+          title: item.external_title,
+          author: item.external_author ?? "Unknown",
+          cover_image_url: item.external_cover_url,
+        });
+      }
+    }
+
     return {
       ...list,
       book_count: listItems.length,
-      cover_book: coverBook,
+      cover_book: coverBooks[0] ?? null,
+      cover_books: coverBooks,
     };
   });
 }
 
-export async function fetchList(id: string): Promise<List | null> {
+export async function fetchSyllabus(id: string): Promise<List | null> {
   const { data, error } = await supabase
     .from("lists")
     .select("*")
@@ -70,9 +86,9 @@ export async function fetchList(id: string): Promise<List | null> {
   return data;
 }
 
-export async function fetchListItems(
+export async function fetchSyllabusItems(
   listId: string,
-): Promise<(ListItem & { book: Book })[]> {
+): Promise<SyllabusItemWithBook[]> {
   const { data, error } = await supabase
     .from("list_items")
     .select("*, book:books(*)")
@@ -80,10 +96,10 @@ export async function fetchListItems(
     .order("position");
 
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as SyllabusItemWithBook[];
 }
 
-export async function createList(
+export async function createSyllabus(
   name: string,
   description: string | null,
 ): Promise<List> {
@@ -97,7 +113,7 @@ export async function createList(
   return data;
 }
 
-export async function updateList(
+export async function updateSyllabus(
   id: string,
   fields: Partial<Pick<List, "name" | "description">>,
 ): Promise<void> {
@@ -105,51 +121,88 @@ export async function updateList(
   if (error) throw error;
 }
 
-export async function deleteList(id: string): Promise<void> {
+export async function deleteSyllabus(id: string): Promise<void> {
   const { error } = await supabase.from("lists").delete().eq("id", id);
   if (error) throw error;
 }
 
-export async function addListItem(
-  listId: string,
-  bookId: string,
-): Promise<ListItem | null> {
-  // Get max position
-  const { data: existing, error: fetchError } = await supabase
+async function getNextPosition(listId: string): Promise<number> {
+  const { data, error } = await supabase
     .from("list_items")
     .select("position")
     .eq("list_id", listId)
     .order("position", { ascending: false })
     .limit(1);
 
-  if (fetchError) throw fetchError;
+  if (error) throw error;
+  return (data?.[0]?.position ?? 0) + 1;
+}
 
-  const nextPosition = (existing?.[0]?.position ?? 0) + 1;
+export async function addSyllabusItem(
+  listId: string,
+  bookId: string,
+  rationale?: string | null,
+): Promise<ListItem | null> {
+  const nextPosition = await getNextPosition(listId);
 
   const { data, error } = await supabase
     .from("list_items")
-    .insert({ list_id: listId, book_id: bookId, position: nextPosition })
+    .insert({
+      list_id: listId,
+      book_id: bookId,
+      position: nextPosition,
+      rationale: rationale ?? null,
+    })
     .select()
     .single();
 
   if (error) {
-    // unique_violation — book already in this list
-    if (error.code === "23505") return null;
+    if (error.code === "23505") return null; // duplicate
     throw error;
   }
   return data;
 }
 
-export async function removeListItem(
+export async function addExternalItem(
   listId: string,
-  bookId: string,
+  title: string,
+  author: string | null,
+  coverUrl: string | null,
+  isbn: string | null,
+  rationale?: string | null,
+): Promise<ListItem | null> {
+  const nextPosition = await getNextPosition(listId);
+
+  const { data, error } = await supabase
+    .from("list_items")
+    .insert({
+      list_id: listId,
+      book_id: null,
+      position: nextPosition,
+      rationale: rationale ?? null,
+      external_title: title,
+      external_author: author,
+      external_cover_url: coverUrl,
+      external_isbn: isbn,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === "23505") return null; // duplicate external entry
+    throw error;
+  }
+  return data;
+}
+
+export async function removeSyllabusItem(
+  listId: string,
+  itemId: string,
 ): Promise<void> {
-  // Get the position of the item being removed
   const { data: removed, error: fetchError } = await supabase
     .from("list_items")
     .select("position")
-    .eq("list_id", listId)
-    .eq("book_id", bookId)
+    .eq("id", itemId)
     .single();
 
   if (fetchError) throw fetchError;
@@ -157,8 +210,7 @@ export async function removeListItem(
   const { error: deleteError } = await supabase
     .from("list_items")
     .delete()
-    .eq("list_id", listId)
-    .eq("book_id", bookId);
+    .eq("id", itemId);
 
   if (deleteError) throw deleteError;
 
@@ -181,29 +233,27 @@ export async function removeListItem(
   );
 }
 
-export async function reorderListItem(
+export async function reorderSyllabusItem(
   listId: string,
-  bookId: string,
+  itemId: string,
   newPosition: number,
 ): Promise<void> {
   const { data: items, error } = await supabase
     .from("list_items")
-    .select("id, book_id, position")
+    .select("id, position")
     .eq("list_id", listId)
     .order("position");
 
   if (error) throw error;
   if (!items || items.length === 0) return;
 
-  // Remove target from array and insert at new index
-  const targetIdx = items.findIndex((item) => item.book_id === bookId);
+  const targetIdx = items.findIndex((item) => item.id === itemId);
   if (targetIdx === -1) return;
 
   const [target] = items.splice(targetIdx, 1);
   const insertIdx = Math.max(0, Math.min(newPosition - 1, items.length));
   items.splice(insertIdx, 0, target);
 
-  // Assign dense positions 1, 2, 3, ... and update changed rows
   const updates = items
     .map((item, i) => ({ id: item.id, oldPosition: item.position, newPosition: i + 1 }))
     .filter((u) => u.oldPosition !== u.newPosition);
@@ -216,4 +266,16 @@ export async function reorderListItem(
         .eq("id", u.id),
     ),
   );
+}
+
+export async function updateItemRationale(
+  itemId: string,
+  rationale: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("list_items")
+    .update({ rationale })
+    .eq("id", itemId);
+
+  if (error) throw error;
 }

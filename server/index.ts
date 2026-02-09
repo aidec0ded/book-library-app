@@ -5,7 +5,7 @@ import { config } from "dotenv";
 import { buildLibraryIndex } from "./library-index.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
-import { executeListCommand, type ListCommand } from "./list-handler.js";
+import { executeSyllabusCommand, type SyllabusCommand } from "./syllabus-handler.js";
 import {
   executeWishlistCommand,
   type WishlistCommand,
@@ -22,7 +22,7 @@ import {
   executeReleasesCommand,
   type ReleasesCommand,
 } from "./releases-handler.js";
-import { buildListIndex } from "./list-index.js";
+import { buildSyllabusIndex } from "./syllabus-index.js";
 import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
 
@@ -43,7 +43,7 @@ const anthropic = new Anthropic({
 function buildSystemPrompt(
   libraryIndex: string,
   readerProfile: string | null,
-  listIndex: string | null,
+  syllabusIndex: string | null,
 ): string {
   let prompt = `You are the reading companion for MoodLib, a personal book library app.
 You are an empathetic, knowledgeable reading partner — not a search
@@ -63,10 +63,10 @@ Check your memory at the start of each conversation.
 Keep your memory organized. Prefer updating existing files over creating
 new ones.
 
-You can create and manage curated book lists using your manage_lists tool.
-Create lists when the reader asks, or suggest them when you notice patterns
+You can create and manage curated syllabi using your manage_syllabi tool.
+Create syllabi when the reader asks, or suggest them when you notice patterns
 (e.g. "You've mentioned several cold, atmospheric novels — want me to
-make a list?"). Always confirm before creating proactively.
+make a syllabus?"). Always confirm before creating proactively.
 Reference books by their exact title as shown in the library.
 
 You can manage the reader's wishlist using your manage_wishlist tool.
@@ -106,8 +106,8 @@ Approach each type differently in conversation:
     prompt += `\n\n## Reader Profile\n\n${readerProfile}`;
   }
 
-  if (listIndex) {
-    prompt += `\n\n${listIndex}`;
+  if (syllabusIndex) {
+    prompt += `\n\n${syllabusIndex}`;
   }
 
   prompt += `\n\n## The Reader's Library\n\n${libraryIndex}`;
@@ -193,12 +193,12 @@ async function handleChat(
     if (histError) throw histError;
 
     // Build system prompt with library index, reader profile, and list context
-    const [libraryIndex, readerProfile, listIndex] = await Promise.all([
+    const [libraryIndex, readerProfile, syllabusIndex] = await Promise.all([
       buildLibraryIndex(supabase),
       loadReaderProfile(supabase),
-      buildListIndex(supabase),
+      buildSyllabusIndex(supabase),
     ]);
-    const systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, listIndex);
+    const systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex);
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
@@ -224,9 +224,9 @@ async function handleChat(
         tools: [
           { type: "memory_20250818" as const, name: "memory" },
           {
-            name: "manage_lists",
+            name: "manage_syllabi",
             description:
-              "Create and manage curated book lists from the reader's library. Use this to build themed lists, reading recommendations, or collections based on conversation context. Books are referenced by their exact title as shown in the library index.",
+              "Create and manage curated syllabi (themed reading collections) from the reader's library. Use this to build themed syllabi, reading recommendations, or collections based on conversation context. Books are referenced by their exact title as shown in the library index.",
             input_schema: {
               type: "object" as const,
               properties: {
@@ -244,17 +244,22 @@ async function handleChat(
                 list_name: {
                   type: "string",
                   description:
-                    "Name of the list (required for all actions except view-all)",
+                    "Name of the syllabus (required for all actions except view-all)",
                 },
                 description: {
                   type: "string",
-                  description: "List description (used with create)",
+                  description: "Syllabus description (used with create)",
                 },
                 books: {
                   type: "array",
                   items: { type: "string" },
                   description:
                     "Book titles exactly as they appear in the library (e.g. 'The Road')",
+                },
+                rationale: {
+                  type: "string",
+                  description:
+                    "Brief explanation of why these books belong in the syllabus (used with create and add_books)",
                 },
               },
               required: ["action"],
@@ -424,10 +429,10 @@ async function handleChat(
 
         let result: string;
         try {
-          if (block.name === "manage_lists") {
-            result = await executeListCommand(
+          if (block.name === "manage_syllabi") {
+            result = await executeSyllabusCommand(
               supabase,
-              block.input as ListCommand,
+              block.input as SyllabusCommand,
             );
           } else if (block.name === "manage_wishlist") {
             result = await executeWishlistCommand(

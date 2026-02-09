@@ -99,7 +99,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/lists` (ListsPage), `/lists/:id` (ListDetail), `/releases` (ReleasesPage), `/profile` (Profile)
+- `src/App.tsx` — React Router: `/` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`, wraps all routes in ChatProvider
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger
@@ -120,9 +120,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
-- `server/list-handler.ts` — List tool command executor (create, view, add_books, remove_books, delete)
+- `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete) with rationale support
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
-- `server/list-index.ts` — Builds existing-lists context for system prompt (cached 10min)
+- `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete)
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
@@ -137,9 +137,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, opus model)
 - `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (batches of 20, Sonnet 4.5, --dry-run/--limit/--force flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
-- `src/pages/ListsPage.tsx` — Lists index with create form and grid of list cards
-- `src/pages/ListDetail.tsx` — List detail with ordered books, reorder controls, add/remove, inline editing
-- `src/lib/lists.ts` — List CRUD operations (create, update, delete, add/remove/reorder items)
+- `src/pages/SyllabiPage.tsx` — Syllabi course catalog index with editorial card layout
+- `src/pages/SyllabusDetail.tsx` — Numbered editorial syllabus detail with inline rationale editing, external book support
+- `src/components/SyllabusSearchModal.tsx` — Dual-search modal (library + ISBNdb) for adding items to syllabi
+- `src/lib/lists.ts` — Syllabus CRUD operations (create, update, delete, add/remove/reorder items, rationale, external items)
 - `src/pages/Home.tsx` — Personalized home page with greeting, currently reading, suggestions, recent additions, library stats
 - `src/lib/home.ts` — Home page data queries (currently reading, AI suggestions, recent additions, library stats, greeting)
 - `src/components/BookCover.tsx` — Cover image with styled placeholder fallback (sm/lg sizes)
@@ -163,7 +164,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
-**AI Output** — Predicted ratings for unread books, AI-managed lists + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page
+**AI Output** — Predicted ratings for unread books, AI-managed syllabi + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page
 
 **Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases, literary awards via Wikidata (17 awards, winner/shortlist/longlist/nominee)
 
@@ -228,16 +229,20 @@ Fourteen tables in Supabase:
 - `conversation_id` — FK to conversations (nullable)
 - `content` — polished 1-3 sentence insight
 
-**lists** — User-created curated book lists. Key fields:
+**lists** — User-created syllabi (curated reading collections). UI shows as "Syllabi" but table name unchanged. Key fields:
 - `name` — required, non-empty
 - `description` — optional
 - `updated_at` — auto-updated via trigger
 
-**list_items** — Ordered book references within lists. Key fields:
+**list_items** — Ordered item references within syllabi (supports both library and external books). Key fields:
 - `list_id` — FK to lists, CASCADE delete
-- `book_id` — FK to books, CASCADE delete
+- `book_id` — FK to books, SET NULL on delete (nullable — null for external items)
 - `position` — dense 1-based integer, renormalized on every mutation
-- `UNIQUE (list_id, book_id)` — prevents duplicate books in a list
+- `rationale` — optional text explaining why the item belongs in the syllabus
+- `external_title`, `external_author`, `external_cover_url`, `external_isbn` — metadata for non-library items (populated when `book_id` is null)
+- `UNIQUE (list_id, book_id)` — prevents duplicate library books in a syllabus
+- `CHECK (book_id IS NOT NULL OR external_title IS NOT NULL)` — every row has either a library book or an external title
+- Partial unique index on `(list_id, external_title, external_author) WHERE book_id IS NULL` — prevents duplicate external entries
 
 **new_releases** — Books ingested from ISBNdb for discovery browsing. Key fields:
 - `isbn13` (UNIQUE) — enables upsert-safe re-runs

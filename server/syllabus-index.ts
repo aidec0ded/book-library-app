@@ -4,7 +4,7 @@ let cachedIndex: string | null = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-export async function buildListIndex(
+export async function buildSyllabusIndex(
   supabase: SupabaseClient,
 ): Promise<string | null> {
   if (cachedIndex !== null && Date.now() - cachedAt < CACHE_TTL_MS) {
@@ -27,7 +27,7 @@ export async function buildListIndex(
   // Fetch all list items with joined book data
   const { data: items, error: itemsError } = await supabase
     .from("list_items")
-    .select("list_id, position, book:books(title, author)")
+    .select("list_id, position, rationale, book_id, external_title, external_author, book:books(title, author)")
     .order("position");
 
   if (itemsError) throw itemsError;
@@ -35,32 +35,49 @@ export async function buildListIndex(
   // Group items by list
   const itemsByList = new Map<
     string,
-    { position: number; title: string; author: string }[]
+    { position: number; title: string; author: string; rationale: string | null; isExternal: boolean }[]
   >();
   for (const item of items ?? []) {
-    const book = item.book as unknown as { title: string; author: string };
-    if (!book) continue;
+    let title: string;
+    let author: string;
+    let isExternal = false;
+
+    if (item.book_id) {
+      const book = item.book as unknown as { title: string; author: string };
+      if (!book) continue;
+      title = book.title;
+      author = book.author;
+    } else {
+      title = (item.external_title as string) ?? "Untitled";
+      author = (item.external_author as string) ?? "Unknown";
+      isExternal = true;
+    }
 
     const list = itemsByList.get(item.list_id) ?? [];
     list.push({
       position: item.position as number,
-      title: book.title,
-      author: book.author,
+      title,
+      author,
+      rationale: item.rationale as string | null,
+      isExternal,
     });
     itemsByList.set(item.list_id, list);
   }
 
   // Format output
-  const sections: string[] = ["### Your Lists"];
+  const sections: string[] = ["### Your Syllabi"];
 
   for (const list of lists) {
     const listItems = itemsByList.get(list.id as string) ?? [];
-    let header = `\n${list.name} (${listItems.length} book${listItems.length === 1 ? "" : "s"})`;
+    let header = `\n${list.name} (${listItems.length} item${listItems.length === 1 ? "" : "s"})`;
     if (list.description) header += `: ${list.description}`;
     sections.push(header);
 
     for (const item of listItems) {
-      sections.push(`  ${item.position}. ${item.title} by ${item.author}`);
+      let line = `  ${item.position}. ${item.title} by ${item.author}`;
+      if (item.isExternal) line += " [not in library]";
+      if (item.rationale) line += ` — ${item.rationale}`;
+      sections.push(line);
     }
   }
 

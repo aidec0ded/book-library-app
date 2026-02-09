@@ -153,14 +153,20 @@ export interface List {
 export interface ListItem {
   id: string;
   list_id: string;
-  book_id: string;
+  book_id: string | null;
   position: number;
   added_at: string;
+  rationale: string | null;
+  external_title: string | null;
+  external_author: string | null;
+  external_cover_url: string | null;
+  external_isbn: string | null;
 }
 
 export interface ListWithCount extends List {
   book_count: number;
   cover_book: { title: string; author: string; cover_image_url: string | null } | null;
+  cover_books: { title: string; author: string; cover_image_url: string | null }[];
 }
 
 export interface ShelfFilter {
