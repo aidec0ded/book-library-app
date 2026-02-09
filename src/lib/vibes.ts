@@ -142,6 +142,38 @@ export async function fetchBookIdsByAllTags(
     .map(([id]) => id);
 }
 
+/**
+ * OR within each category, AND across categories.
+ * e.g. topics=["memoir","history"] + form=["narrative"] → books that are (memoir OR history) AND narrative.
+ */
+export async function fetchBookIdsByTagFilters(
+  categoryFilters: { tags: string[]; category: TagCategory }[],
+): Promise<string[]> {
+  const active = categoryFilters.filter((f) => f.tags.length > 0);
+  if (active.length === 0) return [];
+
+  const perCategory: Set<string>[] = [];
+
+  for (const { tags, category } of active) {
+    const { data, error } = await supabase
+      .from("book_vibes")
+      .select("book_id")
+      .in("vibe", tags)
+      .eq("tag_category", category)
+      .eq("is_canonical", true);
+    if (error) throw error;
+    perCategory.push(new Set(data.map((r) => r.book_id)));
+  }
+
+  // Intersect all sets (AND across categories)
+  let result = perCategory[0];
+  for (let i = 1; i < perCategory.length; i++) {
+    result = new Set([...result].filter((id) => perCategory[i].has(id)));
+  }
+
+  return [...result];
+}
+
 export async function fetchCanonicalVibesForBooks(
   bookIds: string[],
 ): Promise<Map<string, string[]>> {

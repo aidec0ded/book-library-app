@@ -164,11 +164,18 @@ export interface ListWithCount extends List {
 }
 
 export interface ShelfFilter {
+  book_type?: BookType;
   status?: string;
   genre?: string;
   rating_min?: number;
   timing_month?: number;
   vibes?: string[];
+  topics?: string[];
+  form?: string[];
+  depth?: string[];
+  movement?: string[];
+  formal_feel?: string[];
+  accessibility?: string[];
   is_favorite?: boolean;
 }
 

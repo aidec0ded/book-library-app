@@ -1,11 +1,12 @@
 import { supabase } from "@/lib/supabase";
-import { fetchBookIdsByCanonicalVibes } from "@/lib/vibes";
+import { fetchBookIdsByTagFilters } from "@/lib/vibes";
 import type {
   Book,
   Shelf,
   ShelfFilter,
   ShelfItem,
   ShelfWithCover,
+  TagCategory,
 } from "@/lib/types";
 
 export type ShelfBook = Pick<
@@ -30,12 +31,23 @@ async function buildAutoShelfQuery(filter: ShelfFilter) {
   if (filter.timing_month != null) {
     q = q.eq("timing_month", filter.timing_month);
   }
+  if (filter.book_type) {
+    q = q.eq("book_type", filter.book_type);
+  }
   if (filter.is_favorite) {
     q = q.eq("is_favorite", true);
   }
-  // Vibe filtering requires a pre-query
-  if (filter.vibes && filter.vibes.length > 0) {
-    const ids = await fetchBookIdsByCanonicalVibes(filter.vibes);
+  // Tag-category filtering: OR within each category, AND across categories
+  const tagFilters: { tags: string[]; category: TagCategory }[] = [];
+  if (filter.vibes?.length) tagFilters.push({ tags: filter.vibes, category: "vibe" });
+  if (filter.topics?.length) tagFilters.push({ tags: filter.topics, category: "topic" });
+  if (filter.form?.length) tagFilters.push({ tags: filter.form, category: "form" });
+  if (filter.depth?.length) tagFilters.push({ tags: filter.depth, category: "depth" });
+  if (filter.movement?.length) tagFilters.push({ tags: filter.movement, category: "movement" });
+  if (filter.formal_feel?.length) tagFilters.push({ tags: filter.formal_feel, category: "formal_feel" });
+  if (filter.accessibility?.length) tagFilters.push({ tags: filter.accessibility, category: "accessibility" });
+  if (tagFilters.length > 0) {
+    const ids = await fetchBookIdsByTagFilters(tagFilters);
     if (ids.length === 0) return null;
     q = q.in("id", ids);
   }
