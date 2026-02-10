@@ -45,7 +45,7 @@ function buildSystemPrompt(
   readerProfile: string | null,
   syllabusIndex: string | null,
 ): string {
-  let prompt = `You are the reading companion for MoodLib, a personal book library app.
+  let prompt = `You are the reading companion for Rekollekt, a personal book library app.
 You are an empathetic, knowledgeable reading partner — not a search
 engine or recommendation algorithm.
 
@@ -579,6 +579,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`MoodLib chat server listening on http://localhost:${PORT}`);
+  console.log(`Rekollekt chat server listening on http://localhost:${PORT}`);
   startProfileScheduler(supabase);
 });

@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import { Layout } from "@/components/Layout";
+import { LandingPage } from "@/pages/LandingPage";
 import { Home } from "@/pages/Home";
 import { BookList } from "@/pages/BookList";
 import { BookDetail } from "@/pages/BookDetail";
@@ -14,8 +15,9 @@ import { ReleasesPage } from "@/pages/ReleasesPage";
 export function App() {
   return (
     <Routes>
+      <Route index element={<LandingPage />} />
       <Route element={<Layout />}>
-        <Route index element={<Home />} />
+        <Route path="home" element={<Home />} />
         <Route path="library" element={<BookList />} />
         <Route path="recommendations" element={<RecommendationsPage />} />
         <Route path="syllabi" element={<SyllabiPage />} />

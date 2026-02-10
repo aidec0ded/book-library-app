@@ -170,7 +170,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("MoodLib ISBNdb Enrichment");
+  console.log("Rekollekt ISBNdb Enrichment");
 
   // Step 1: Fetch books with ISBNs
   let query = supabase

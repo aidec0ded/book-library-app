@@ -125,7 +125,7 @@ async function querySparql(query: string): Promise<Record<string, unknown>[]> {
   const res = await fetch(url, {
     headers: {
       Accept: "application/sparql-results+json",
-      "User-Agent": "MoodLib/1.0 (book-library-app; literary-awards-ingestion)",
+      "User-Agent": "Rekollekt/1.0 (book-library-app; literary-awards-ingestion)",
     },
   });
 
@@ -257,7 +257,7 @@ async function main() {
 
   const awardList: Award[] = limit ? awards.slice(0, limit) : awards;
 
-  console.log("MoodLib Award Ingestion\n");
+  console.log("Rekollekt Award Ingestion\n");
   console.log(`  Mode: ${dryRun ? "dry-run" : matchOnly ? "match-only" : "live"}`);
   console.log(`  Awards: ${awardList.length}`);
   if (force) console.log("  Force: re-fetching all from Wikidata");

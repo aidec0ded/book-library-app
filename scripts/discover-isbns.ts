@@ -180,7 +180,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("MoodLib ISBN Discovery");
+  console.log("Rekollekt ISBN Discovery");
 
   // Step 1: Fetch books without ISBNs
   let query = supabase

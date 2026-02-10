@@ -144,7 +144,7 @@ async function sleep(ms: number): Promise<void> {
 // --- Main ---
 
 async function main() {
-  console.log("MoodLib AI Vibe Tagging (canonical)");
+  console.log("Rekollekt AI Vibe Tagging (canonical)");
 
   // Step 1: Fetch books to tag
   let query = supabase

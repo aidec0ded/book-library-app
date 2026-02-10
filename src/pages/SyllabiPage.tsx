@@ -189,7 +189,7 @@ export function SyllabiPage() {
                       <>
                         <span>&middot;</span>
                         <span className="rounded-full bg-accent/10 px-2 py-0.5 text-accent normal-case tracking-normal">
-                          MoodLib Generated
+                          Rekollekt Generated
                         </span>
                       </>
                     )}

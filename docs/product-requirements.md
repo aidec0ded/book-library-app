@@ -1,10 +1,10 @@
-# MoodLib Product Requirements Document
+# Rekollekt Product Requirements Document
 
 ## Mission
 
-Most book apps and communities have drifted toward social performance and goal-chasing — read counts, public ratings, challenges completed — at the expense of actually reading meaningfully. MoodLib is the antidote: an app that helps readers understand how books affect them, and uses that understanding to guide what they read next.
+Most book apps and communities have drifted toward social performance and goal-chasing — read counts, public ratings, challenges completed — at the expense of actually reading meaningfully. Rekollekt is the antidote: an app that helps readers understand how books affect them, and uses that understanding to guide what they read next.
 
-MoodLib exists for readers who want a personal, reflective relationship with their library. Not a public review site, not a social platform, not a reading sprint tracker — a space that celebrates the reader's own collection and makes them excited to step into it.
+Rekollekt exists for readers who want a personal, reflective relationship with their library. Not a public review site, not a social platform, not a reading sprint tracker — a space that celebrates the reader's own collection and makes them excited to step into it.
 
 ## Vision
 
@@ -18,7 +18,7 @@ Everything should feel personal. The app should celebrate the reader's own libra
 
 ## Product Direction
 
-MoodLib is being built as a public web application (and eventually mobile). The current development phase uses a single library to get the experience right before adding authentication, multi-user data isolation, and hosting. Features are evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
+Rekollekt is being built as a public web application (and eventually mobile). The current development phase uses a single library to get the experience right before adding authentication, multi-user data isolation, and hosting. Features are evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
 
 ---
 
@@ -26,7 +26,7 @@ MoodLib is being built as a public web application (and eventually mobile). The 
 
 ### 1. Personal Library
 
-**Purpose:** The foundation of MoodLib — a reader's complete book collection, searchable and browsable with rich metadata.
+**Purpose:** The foundation of Rekollekt — a reader's complete book collection, searchable and browsable with rich metadata.
 
 **Requirements:**
 - Support fiction, nonfiction, and poetry as distinct book types, each with its own classification vocabulary
@@ -121,7 +121,7 @@ The companion has access to the reader's complete library (title, author, type, 
 - Numbered editorial layout (01, 02, 03...) with cover thumbnails
 - Inline rationale editing (click to add/edit)
 - Reorder and remove items via hover actions
-- AI-generated syllabi marked with "MoodLib Generated" badge
+- AI-generated syllabi marked with "Rekollekt Generated" badge
 - Editable titles and descriptions
 
 ### 6. Visual Shelves
@@ -182,7 +182,7 @@ The companion has access to the reader's complete library (title, author, type, 
 
 ## AI Integration Architecture
 
-AI is woven throughout MoodLib at multiple levels:
+AI is woven throughout Rekollekt at multiple levels:
 
 ### Real-Time (Chat)
 - **Model:** Claude Sonnet

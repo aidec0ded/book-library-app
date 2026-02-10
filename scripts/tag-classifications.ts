@@ -567,7 +567,7 @@ async function processType(
 }
 
 async function main() {
-  console.log("MoodLib AI Classification Tagging");
+  console.log("Rekollekt AI Classification Tagging");
   console.log(
     `  Flags: ${dryRun ? "--dry-run " : ""}${force ? "--force " : ""}${limit ? `--limit ${limit} ` : ""}${typeFilter ? `--${typeFilter}` : "all types"}`,
   );

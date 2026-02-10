@@ -26,7 +26,7 @@ const bootstrap = args.includes("--bootstrap");
 
 const MODEL = "claude-opus-4-5-20251101";
 
-const SYSTEM_PROMPT = `You are generating a Reader Profile for MoodLib, a personal book library app. Analyze the reader's library, conversation history, and your accumulated notes to produce a structured profile.
+const SYSTEM_PROMPT = `You are generating a Reader Profile for Rekollekt, a personal book library app. Analyze the reader's library, conversation history, and your accumulated notes to produce a structured profile.
 
 The profile is anti-performative: it reflects what the reader actually reads and how they actually respond, not what they wish they read. Be honest, specific, and insightful.
 
@@ -327,7 +327,7 @@ async function gatherActivitySnapshot(): Promise<ActivitySnapshot> {
 // --- Main ---
 
 async function main() {
-  console.log("MoodLib Reader Profile Generation\n");
+  console.log("Rekollekt Reader Profile Generation\n");
 
   // Check if generation is needed (unless --force)
   if (!force) {

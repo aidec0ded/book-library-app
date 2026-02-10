@@ -1,10 +1,10 @@
-# MoodLib
+# Rekollekt
 
-A personal book library app that recommends books based on mood, season, and vibe. MoodLib is an AI-powered reading companion that learns your taste and deepens your reading life — built for readers who care more about meaningful engagement with books than read counts and public ratings.
+A personal book library app that recommends books based on mood, season, and vibe. Rekollekt is an AI-powered reading companion that learns your taste and deepens your reading life — built for readers who care more about meaningful engagement with books than read counts and public ratings.
 
 ## Overview
 
-MoodLib's central loop is: **read, reflect, AI understanding deepens, better recommendations and insights, read more intentionally.** The AI reading companion is the mechanism for deeper reflection — a place to discuss what you're reading, how it's making you feel, and how it connects to other books and ideas. Over time, the AI builds a reader profile that enables genuinely personal recommendations, predicted ratings, and proactive suggestions.
+Rekollekt's central loop is: **read, reflect, AI understanding deepens, better recommendations and insights, read more intentionally.** The AI reading companion is the mechanism for deeper reflection — a place to discuss what you're reading, how it's making you feel, and how it connects to other books and ideas. Over time, the AI builds a reader profile that enables genuinely personal recommendations, predicted ratings, and proactive suggestions.
 
 ### Key Features
 
@@ -78,6 +78,7 @@ MoodLib's central loop is: **read, reflect, AI understanding deepens, better rec
 src/
   App.tsx                     # React Router configuration
   pages/
+    LandingPage.tsx           # Public landing page (standalone, no sidebar)
     Home.tsx                  # Personalized home with greeting, reading, suggestions, stats
     BookList.tsx              # Library with search, filters, gallery tabs, shelves view
     BookDetail.tsx            # Full book metadata with inline editing and AI insights

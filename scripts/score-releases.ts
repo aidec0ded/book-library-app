@@ -508,7 +508,7 @@ const MONTH_NAMES = [
 // --- Main ---
 
 async function main() {
-  console.log("MoodLib Release Scoring\n");
+  console.log("Rekollekt Release Scoring\n");
 
   const target = getTargetMonth();
   const monthLabel = `${MONTH_NAMES[target.month - 1]} ${target.year}`;

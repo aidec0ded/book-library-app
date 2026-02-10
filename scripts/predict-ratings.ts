@@ -491,7 +491,7 @@ async function sleep(ms: number): Promise<void> {
 // --- Main ---
 
 async function main() {
-  console.log("MoodLib Predicted Ratings\n");
+  console.log("Rekollekt Predicted Ratings\n");
 
   // Prerequisites
   const [profileResult, ratedCount] = await Promise.all([

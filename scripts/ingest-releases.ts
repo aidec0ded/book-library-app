@@ -282,7 +282,7 @@ async function main() {
 
   const months = getMonthRange();
 
-  console.log("MoodLib New Releases Ingestion");
+  console.log("Rekollekt New Releases Ingestion");
   console.log(`  Mode: ${dryRun ? "dry-run" : "live"}`);
   console.log(`  Months: ${months.map((m) => formatMonthLabel(m.year, m.month)).join(", ")}`);
   if (filterLanguage) console.log(`  Language filter: ${filterLanguage}`);

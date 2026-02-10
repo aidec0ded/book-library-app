@@ -1,16 +1,16 @@
-# MoodLib
+# Rekollekt
 
 A book library app that recommends books based on mood, season, and vibe. AI-powered reading companion that learns your taste and deepens your reading life.
 
 ## Vision
 
-MoodLib exists because most book apps and communities have drifted toward social performance and goal-chasing — read counts, public ratings, challenges completed — at the expense of actually reading meaningfully. MoodLib is the antidote: an app that helps readers understand how books affect them, and uses that understanding to guide what they read next.
+Rekollekt exists because most book apps and communities have drifted toward social performance and goal-chasing — read counts, public ratings, challenges completed — at the expense of actually reading meaningfully. Rekollekt is the antidote: an app that helps readers understand how books affect them, and uses that understanding to guide what they read next.
 
 The app's central loop is: **read → reflect → AI understanding deepens → better recommendations and insights → read more intentionally**. Ratings and notes alone don't capture why a book resonated. The AI reading companion is the mechanism for deeper reflection — a place to discuss what you're reading, how it's making you feel, and how it connects to other books and ideas. Over time, the AI builds a reader profile that enables genuinely personal recommendations, predicted ratings, and proactive suggestions grounded in the reader's evolving tastes.
 
 Everything should feel personal. The app should celebrate the reader's own library and make them excited to "step into" it — not replicate a public review site or bookstore.
 
-**Product direction:** MoodLib is being built as a public web application (and eventually mobile). The current development phase uses a single library to get the experience right before adding authentication, multi-user data isolation, and hosting. Features should be evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
+**Product direction:** Rekollekt is being built as a public web application (and eventually mobile). The current development phase uses a single library to get the experience right before adding authentication, multi-user data isolation, and hosting. Features should be evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
 
 ## Commands
 
@@ -99,7 +99,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile)
+- `src/App.tsx` — React Router: `/` (LandingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile)
+- `src/pages/LandingPage.tsx` — Public landing page (standalone, no sidebar/Layout wrapper)
 - `src/components/Layout.tsx` — App shell with header + `<Outlet />`, wraps all routes in ChatProvider
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger
@@ -169,6 +170,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 **Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases, literary awards via Wikidata (17 awards, winner/shortlist/longlist/nominee)
 
 **Library as Space** — Visual bookshelf with manual + auto shelves, coverflow carousel, Bookshop.org purchase links
+
+**Public Presence** — Public landing page at `/` with editorial design, brand tagline, value proposition, and feature highlights. Personalized home at `/home`.
 
 ### Active & Upcoming
 

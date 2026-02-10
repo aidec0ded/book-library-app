@@ -27,7 +27,7 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    items: [{ label: "Home", path: "/", icon: Home }],
+    items: [{ label: "Home", path: "/home", icon: Home }],
   },
   {
     heading: "Library",
@@ -60,7 +60,7 @@ const FOOTER_ITEM: NavItem = {
 };
 
 function isActive(pathname: string, search: string, path: string) {
-  if (path === "/") return pathname === "/";
+  if (path === "/home") return pathname === "/home";
 
   // Handle query-string routes like /library?view=shelves
   if (path.includes("?")) {
@@ -83,11 +83,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Logo */}
       <div className="px-5 py-5">
         <Link
-          to="/"
+          to="/home"
           onClick={onNavigate}
           className="font-serif text-xl font-bold tracking-tight text-sidebar-foreground"
         >
-          MoodLib
+          Rekollekt
         </Link>
       </div>
 

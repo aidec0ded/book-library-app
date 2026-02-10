@@ -21,8 +21,8 @@ export function Layout() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <Link to="/" className="font-serif text-lg font-bold tracking-tight">
-            MoodLib
+          <Link to="/home" className="font-serif text-lg font-bold tracking-tight">
+            Rekollekt
           </Link>
         </header>
 

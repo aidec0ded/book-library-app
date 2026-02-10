@@ -267,7 +267,7 @@ function parseResponse(raw: string, batchIds: Set<string>): GenreResult[] {
 // --- Apply Mode ---
 
 async function applyReviewFile(filename: string): Promise<void> {
-  console.log(`MoodLib Genre Reclassification — Apply Mode\n`);
+  console.log(`Rekollekt Genre Reclassification — Apply Mode\n`);
 
   let entries: ReviewEntry[];
   try {
@@ -331,7 +331,7 @@ async function applyReviewFile(filename: string): Promise<void> {
 // --- Generate Mode ---
 
 async function generateReviewFile(): Promise<void> {
-  console.log("MoodLib Genre Reclassification\n");
+  console.log("Rekollekt Genre Reclassification\n");
 
   const books = await fetchBooksForClassification();
 

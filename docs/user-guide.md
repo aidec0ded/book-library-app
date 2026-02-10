@@ -1,6 +1,6 @@
-# MoodLib User Guide
+# Rekollekt User Guide
 
-MoodLib is a personal book library app designed for readers who want more than a reading tracker. It uses AI to understand your tastes, predict what you'll love, and help you reflect on your reading life. This guide covers everything you can do in MoodLib.
+Rekollekt is a personal book library app designed for readers who want more than a reading tracker. It uses AI to understand your tastes, predict what you'll love, and help you reflect on your reading life. This guide covers everything you can do in Rekollekt.
 
 ---
 
@@ -10,9 +10,9 @@ The home page is your personalized landing space. It adapts to the time of day a
 
 **Currently Reading** — If you have books marked as "reading," the hero section showcases the current one with its cover, title, and author. A "Dive Deeper" button opens a conversation about it with the AI reading companion. If you're reading multiple books, dots let you navigate between them.
 
-**Personalized Greeting** — Below the hero, MoodLib generates a brief, personalized greeting that reflects your current reading activity and interests. Highlighted phrases appear in the app's accent color.
+**Personalized Greeting** — Below the hero, Rekollekt generates a brief, personalized greeting that reflects your current reading activity and interests. Highlighted phrases appear in the app's accent color.
 
-**Picked for You** — Up to five AI-recommended books from your library, each showing its predicted rating. These are books MoodLib thinks you'd enjoy based on your reading profile. A link leads to the full Recommendations page.
+**Picked for You** — Up to five AI-recommended books from your library, each showing its predicted rating. These are books Rekollekt thinks you'd enjoy based on your reading profile. A link leads to the full Recommendations page.
 
 **Recently Added** — The latest books you've added to your library, displayed as cover thumbnails.
 
@@ -22,7 +22,7 @@ The home page is your personalized landing space. It adapts to the time of day a
 
 ## Library
 
-The library is the heart of MoodLib — a searchable, filterable view of your entire book collection.
+The library is the heart of Rekollekt — a searchable, filterable view of your entire book collection.
 
 ### All Books View
 
@@ -81,7 +81,7 @@ Click any of these to edit them directly on the page:
 
 ### AI Features
 
-**Predicted Rating** — For unread and wishlist books, MoodLib displays an AI-predicted rating based on your reading profile, along with a brief rationale explaining the prediction.
+**Predicted Rating** — For unread and wishlist books, Rekollekt displays an AI-predicted rating based on your reading profile, along with a brief rationale explaining the prediction.
 
 **From Conversations** — When you discuss a book with the AI reading companion, insightful observations can be saved as "excerpts" that appear here. Each excerpt links back to its source conversation.
 
@@ -99,13 +99,13 @@ Click any of these to edit them directly on the page:
 
 ## Adding Books
 
-Navigate to "Add Book" from the sidebar footer. MoodLib searches the ISBNdb database to find books.
+Navigate to "Add Book" from the sidebar footer. Rekollekt searches the ISBNdb database to find books.
 
 **Search** — Enter a title, author name, or ISBN. Results are grouped by edition so you see one entry per work rather than dozens of editions.
 
-**Preview** — Click a result to see its full details: cover, metadata, and synopsis. MoodLib auto-detects the book type (fiction, nonfiction, or poetry) from the book's subjects — you can override this before adding.
+**Preview** — Click a result to see its full details: cover, metadata, and synopsis. Rekollekt auto-detects the book type (fiction, nonfiction, or poetry) from the book's subjects — you can override this before adding.
 
-**Add to Library** — Choose a reading status and add the book. If the ISBN already exists in your library, MoodLib warns you and links to the existing entry.
+**Add to Library** — Choose a reading status and add the book. If the ISBN already exists in your library, Rekollekt warns you and links to the existing entry.
 
 **Wishlist** — Use the "Wishlist" button to add a book you want to read but don't own yet.
 
@@ -117,7 +117,7 @@ Syllabi are curated, editorial reading collections — think of them as themed c
 
 ### Course Catalog
 
-The syllabi index page shows all your syllabi in an editorial card layout. Each card displays a cover thumbnail from the first book, the item count, a relative update date, and the syllabus description. AI-generated syllabi (created by the reading companion) show a "MoodLib Generated" badge.
+The syllabi index page shows all your syllabi in an editorial card layout. Each card displays a cover thumbnail from the first book, the item count, a relative update date, and the syllabus description. AI-generated syllabi (created by the reading companion) show a "Rekollekt Generated" badge.
 
 ### Creating a Syllabus
 
@@ -200,7 +200,7 @@ Your reader profile is an AI-generated portrait of who you are as a reader. It's
 
 ### Profile Regeneration
 
-Your profile regenerates periodically (roughly monthly) when MoodLib detects meaningful new activity — new books read, ratings added, conversations held, or notes written. This happens automatically in the background.
+Your profile regenerates periodically (roughly monthly) when Rekollekt detects meaningful new activity — new books read, ratings added, conversations held, or notes written. This happens automatically in the background.
 
 ---
 
@@ -240,7 +240,7 @@ A toggle at the bottom lets you show or hide dismissed books.
 
 ## Navigation
 
-MoodLib's sidebar provides access to all major sections:
+Rekollekt's sidebar provides access to all major sections:
 
 | Section | Description |
 |---------|-------------|

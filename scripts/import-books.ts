@@ -323,7 +323,7 @@ async function batchInsert(books: BookRow[]): Promise<void> {
 async function main() {
   const rootDir = path.resolve(import.meta.dirname, "..");
 
-  console.log("=== MoodLib Import ===\n");
+  console.log("=== Rekollekt Import ===\n");
 
   // Step 1: Process catalog
   console.log("Processing library catalog...");
