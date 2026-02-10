@@ -2,9 +2,15 @@ import { createContext, useContext, useState, useCallback } from "react";
 import { useChatSession } from "@/hooks/useChatSession";
 import type { UseChatSessionReturn } from "@/hooks/useChatSession";
 
+interface OpenPanelOptions {
+  bookTitle?: string;
+  pathName?: string;
+  pathBookTitle?: string;
+}
+
 interface ChatContextValue extends UseChatSessionReturn {
   panelOpen: boolean;
-  openPanel: (options?: { bookTitle?: string }) => void;
+  openPanel: (options?: OpenPanelOptions) => void;
   closePanel: () => void;
   togglePanel: () => void;
 }
@@ -16,9 +22,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [panelOpen, setPanelOpen] = useState(false);
 
   const openPanel = useCallback(
-    (options?: { bookTitle?: string }) => {
+    (options?: OpenPanelOptions) => {
       setPanelOpen(true);
-      if (options?.bookTitle) {
+      if (options?.pathName && options?.pathBookTitle) {
+        session.setInput(
+          `Let's discuss "${options.pathBookTitle}" from my reading path "${options.pathName}"`,
+        );
+      } else if (options?.bookTitle) {
         session.setInput(`Let's discuss "${options.bookTitle}"`);
       }
     },

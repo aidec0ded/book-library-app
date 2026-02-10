@@ -47,6 +47,7 @@ async function findSyllabusByName(
   const { data, error } = await supabase
     .from("lists")
     .select("id, name")
+    .eq("list_type", "syllabus")
     .ilike("name", name)
     .limit(1)
     .maybeSingle();
@@ -79,6 +80,7 @@ export async function executeSyllabusCommand(
         .insert({
           name: command.list_name,
           description: command.description ?? null,
+          list_type: "syllabus",
           ai_generated: true,
         })
         .select("id")
@@ -126,6 +128,7 @@ export async function executeSyllabusCommand(
         const { data: lists, error } = await supabase
           .from("lists")
           .select("id, name, description")
+          .eq("list_type", "syllabus")
           .order("created_at", { ascending: false });
 
         if (error) throw error;

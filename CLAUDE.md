@@ -122,6 +122,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
 - `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete) with rationale support
+- `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content) with seminar content support
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
@@ -133,6 +134,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
 - `src/lib/profile.ts` — Profile CRUD + personal canon updates
 - `src/components/BookSearchModal.tsx` — Library search modal for canon editing
+- `src/components/ProgressBadge.tsx` — Reading path progress badge (not_started/reading/completed) with click-to-cycle
+- `src/components/SeminarSection.tsx` — Expandable seminar content (pre-reading context, focus questions, post-reading prompts) with inline editing
 - `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
 - `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
 - `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, opus model)
@@ -165,7 +168,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
-**AI Output** — Predicted ratings for unread books, AI-managed syllabi + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page
+**AI Output** — Predicted ratings for unread books, AI-managed syllabi + reading paths + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page, reading paths with seminar-style scaffolding (thesis, pre-reading context, focus questions, post-reading prompts, progress tracking)
 
 **Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases, literary awards via Wikidata (17 awards, winner/shortlist/longlist/nominee)
 
@@ -232,16 +235,20 @@ Fourteen tables in Supabase:
 - `conversation_id` — FK to conversations (nullable)
 - `content` — polished 1-3 sentence insight
 
-**lists** — User-created syllabi (curated reading collections). UI shows as "Syllabi" but table name unchanged. Key fields:
+**lists** — User-created syllabi and reading paths. Key fields:
 - `name` — required, non-empty
 - `description` — optional
+- `list_type` — `'syllabus'` or `'reading_path'` (check-constrained, default `'syllabus'`)
+- `thesis` — framing thesis for reading paths (null for syllabi)
 - `updated_at` — auto-updated via trigger
 
-**list_items** — Ordered item references within syllabi (supports both library and external books). Key fields:
+**list_items** — Ordered item references within syllabi/paths (supports both library and external books). Key fields:
 - `list_id` — FK to lists, CASCADE delete
 - `book_id` — FK to books, SET NULL on delete (nullable — null for external items)
 - `position` — dense 1-based integer, renormalized on every mutation
 - `rationale` — optional text explaining why the item belongs in the syllabus
+- `seminar_content` (jsonb) — for reading path items: `{ pre_reading_context, focus_questions[], post_reading_prompts[] }`
+- `path_progress` — `'not_started'`, `'reading'`, or `'completed'` (check-constrained, null for syllabi items)
 - `external_title`, `external_author`, `external_cover_url`, `external_isbn` — metadata for non-library items (populated when `book_id` is null)
 - `UNIQUE (list_id, book_id)` — prevents duplicate library books in a syllabus
 - `CHECK (book_id IS NOT NULL OR external_title IS NOT NULL)` — every row has either a library book or an external title

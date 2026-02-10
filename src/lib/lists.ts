@@ -1,19 +1,35 @@
 import { supabase } from "@/lib/supabase";
-import type { Book, List, ListItem, ListWithCount } from "@/lib/types";
+import type {
+  Book,
+  List,
+  ListItem,
+  ListType,
+  ListWithCount,
+  PathProgress,
+  PathProgressCounts,
+  SeminarContent,
+} from "@/lib/types";
 
 export type SyllabusItemWithBook = ListItem & { book: Book | null };
 
-export async function fetchSyllabi(): Promise<ListWithCount[]> {
-  const { data: lists, error: listsError } = await supabase
+export async function fetchSyllabi(
+  listType?: ListType,
+): Promise<ListWithCount[]> {
+  let query = supabase
     .from("lists")
     .select("*")
     .order("created_at", { ascending: false });
 
+  if (listType) {
+    query = query.eq("list_type", listType);
+  }
+
+  const { data: lists, error: listsError } = await query;
   if (listsError) throw listsError;
 
   const { data: items, error: itemsError } = await supabase
     .from("list_items")
-    .select("list_id, book_id, position, external_title, external_author, external_cover_url")
+    .select("list_id, book_id, position, path_progress, external_title, external_author, external_cover_url")
     .order("position");
 
   if (itemsError) throw itemsError;
@@ -66,11 +82,22 @@ export async function fetchSyllabi(): Promise<ListWithCount[]> {
       }
     }
 
+    // Compute progress counts for reading paths
+    let progress: PathProgressCounts | undefined;
+    if (list.list_type === "reading_path") {
+      progress = { not_started: 0, reading: 0, completed: 0 };
+      for (const item of listItems) {
+        const p = (item.path_progress as PathProgress) ?? "not_started";
+        progress[p]++;
+      }
+    }
+
     return {
       ...list,
       book_count: listItems.length,
       cover_book: coverBooks[0] ?? null,
       cover_books: coverBooks,
+      progress,
     };
   });
 }
@@ -102,10 +129,16 @@ export async function fetchSyllabusItems(
 export async function createSyllabus(
   name: string,
   description: string | null,
+  options?: { listType?: ListType; thesis?: string | null },
 ): Promise<List> {
   const { data, error } = await supabase
     .from("lists")
-    .insert({ name, description })
+    .insert({
+      name,
+      description,
+      list_type: options?.listType ?? "syllabus",
+      thesis: options?.thesis ?? null,
+    })
     .select()
     .single();
 
@@ -142,6 +175,7 @@ export async function addSyllabusItem(
   listId: string,
   bookId: string,
   rationale?: string | null,
+  options?: { seminarContent?: SeminarContent | null; pathProgress?: PathProgress },
 ): Promise<ListItem | null> {
   const nextPosition = await getNextPosition(listId);
 
@@ -152,6 +186,8 @@ export async function addSyllabusItem(
       book_id: bookId,
       position: nextPosition,
       rationale: rationale ?? null,
+      seminar_content: options?.seminarContent ?? null,
+      path_progress: options?.pathProgress ?? null,
     })
     .select()
     .single();
@@ -170,6 +206,7 @@ export async function addExternalItem(
   coverUrl: string | null,
   isbn: string | null,
   rationale?: string | null,
+  options?: { seminarContent?: SeminarContent | null; pathProgress?: PathProgress },
 ): Promise<ListItem | null> {
   const nextPosition = await getNextPosition(listId);
 
@@ -184,6 +221,8 @@ export async function addExternalItem(
       external_author: author,
       external_cover_url: coverUrl,
       external_isbn: isbn,
+      seminar_content: options?.seminarContent ?? null,
+      path_progress: options?.pathProgress ?? null,
     })
     .select()
     .single();
@@ -278,4 +317,66 @@ export async function updateItemRationale(
     .eq("id", itemId);
 
   if (error) throw error;
+}
+
+export async function updatePathThesis(
+  id: string,
+  thesis: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("lists")
+    .update({ thesis })
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function updateItemSeminarContent(
+  itemId: string,
+  content: SeminarContent | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("list_items")
+    .update({ seminar_content: content })
+    .eq("id", itemId);
+
+  if (error) throw error;
+}
+
+export async function updateItemProgress(
+  itemId: string,
+  progress: PathProgress,
+): Promise<void> {
+  const { error: updateError } = await supabase
+    .from("list_items")
+    .update({ path_progress: progress })
+    .eq("id", itemId);
+
+  if (updateError) throw updateError;
+
+  // When completed, sync book status to 'read'
+  if (progress === "completed") {
+    const { data: item, error: fetchError } = await supabase
+      .from("list_items")
+      .select("book_id")
+      .eq("id", itemId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    if (item.book_id) {
+      const { data: book } = await supabase
+        .from("books")
+        .select("status")
+        .eq("id", item.book_id)
+        .single();
+
+      if (book && book.status !== "read") {
+        await supabase
+          .from("books")
+          .update({ status: "read" })
+          .eq("id", item.book_id);
+      }
+    }
+  }
 }

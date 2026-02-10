@@ -142,10 +142,21 @@ export interface ReaderProfile {
   created_at: string;
 }
 
+export type ListType = "syllabus" | "reading_path";
+export type PathProgress = "not_started" | "reading" | "completed";
+
+export interface SeminarContent {
+  pre_reading_context: string;
+  focus_questions: string[];
+  post_reading_prompts: string[];
+}
+
 export interface List {
   id: string;
   name: string;
   description: string | null;
+  list_type: ListType;
+  thesis: string | null;
   ai_generated: boolean;
   created_at: string;
   updated_at: string;
@@ -162,12 +173,21 @@ export interface ListItem {
   external_author: string | null;
   external_cover_url: string | null;
   external_isbn: string | null;
+  seminar_content: SeminarContent | null;
+  path_progress: PathProgress | null;
+}
+
+export interface PathProgressCounts {
+  not_started: number;
+  reading: number;
+  completed: number;
 }
 
 export interface ListWithCount extends List {
   book_count: number;
   cover_book: { title: string; author: string; cover_image_url: string | null } | null;
   cover_books: { title: string; author: string; cover_image_url: string | null }[];
+  progress?: PathProgressCounts;
 }
 
 export interface ShelfFilter {

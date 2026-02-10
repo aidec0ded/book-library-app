@@ -26,6 +26,10 @@ import {
   executeReleasesCommand,
   type ReleasesCommand,
 } from "./releases-handler.js";
+import {
+  executeReadingPathCommand,
+  type ReadingPathCommand,
+} from "./reading-path-handler.js";
 import { buildSyllabusIndex } from "./syllabus-index.js";
 import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
@@ -114,6 +118,18 @@ and remove books from the library. Always confirm before deleting a book.
 You can browse new releases using your search_releases tool. Use it to check
 what books are coming out, find top recommendations, or search for specific
 titles or authors in the releases pipeline.
+
+You can create and manage reading paths using your manage_reading_paths tool.
+Reading paths are structured intellectual journeys — deeper than syllabi, with
+sequencing logic, pre-reading context, focus questions, and post-reading
+reflection prompts. Create paths when the reader wants to explore a theme,
+movement, or idea across multiple books. Each path has a thesis that frames
+the journey. When discussing a book that belongs to an active reading path,
+reference the path's thesis and the book's focus questions naturally. After
+the reader finishes a book, offer to discuss using its post-reading prompts
+and connect themes across books in the path. When starting a new book in the
+path, share the pre-reading context naturally. Use get_seminar_content to
+fetch full content when discussing specific books in a path.
 
 The library contains three types of books — fiction, nonfiction, and poetry.
 Each type has its own classification vocabulary:
@@ -434,6 +450,87 @@ async function handleChat(
               required: ["action"],
             },
           },
+          {
+            name: "manage_reading_paths",
+            description:
+              "Create and manage reading paths — structured intellectual journeys through books with seminar-style scaffolding. Each path has a thesis, and each book has pre-reading context, focus questions, and post-reading prompts. Reading paths are deeper than syllabi and designed for thematic exploration.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                action: {
+                  type: "string",
+                  enum: [
+                    "create_path",
+                    "view_path",
+                    "add_path_books",
+                    "update_progress",
+                    "get_seminar_content",
+                  ],
+                  description: "The action to perform",
+                },
+                path_name: {
+                  type: "string",
+                  description:
+                    "Name of the reading path (required for all actions except view-all)",
+                },
+                thesis: {
+                  type: "string",
+                  description:
+                    "The framing thesis for the reading path (used with create_path)",
+                },
+                description: {
+                  type: "string",
+                  description:
+                    "Path description (used with create_path)",
+                },
+                books: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      title: {
+                        type: "string",
+                        description:
+                          "Book title exactly as it appears in the library",
+                      },
+                      pre_reading_context: {
+                        type: "string",
+                        description:
+                          "Why this book is here and what it builds on",
+                      },
+                      focus_questions: {
+                        type: "array",
+                        items: { type: "string" },
+                        description:
+                          "2-4 questions to consider while reading",
+                      },
+                      post_reading_prompts: {
+                        type: "array",
+                        items: { type: "string" },
+                        description:
+                          "Discussion starters after finishing the book",
+                      },
+                    },
+                    required: ["title"],
+                  },
+                  description:
+                    "Books to add with optional seminar content (used with create_path and add_path_books)",
+                },
+                book_title: {
+                  type: "string",
+                  description:
+                    "Specific book title (used with update_progress and get_seminar_content)",
+                },
+                progress: {
+                  type: "string",
+                  enum: ["not_started", "reading", "completed"],
+                  description:
+                    "New progress status (used with update_progress)",
+                },
+              },
+              required: ["action"],
+            },
+          },
         ],
         betas: ["context-management-2025-06-27"],
         max_tokens: 4096,
@@ -495,6 +592,11 @@ async function handleChat(
             result = await executeReleasesCommand(
               supabase,
               block.input as ReleasesCommand,
+            );
+          } else if (block.name === "manage_reading_paths") {
+            result = await executeReadingPathCommand(
+              supabase,
+              block.input as ReadingPathCommand,
             );
           } else {
             result = await executeMemoryCommand(

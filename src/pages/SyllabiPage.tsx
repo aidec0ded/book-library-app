@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus } from "lucide-react";
+import { MessageSquare, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BookCover } from "@/components/BookCover";
 import { fetchSyllabi, createSyllabus } from "@/lib/lists";
+import { useChatContext } from "@/contexts/ChatContext";
 import type { ListWithCount } from "@/lib/types";
+
+type FilterTab = "all" | "syllabus" | "reading_path";
 
 function relativeDate(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -22,27 +25,37 @@ function relativeDate(dateStr: string): string {
 }
 
 export function SyllabiPage() {
-  const [syllabi, setSyllabi] = useState<ListWithCount[]>([]);
+  const [allLists, setAllLists] = useState<ListWithCount[]>([]);
+  const [activeTab, setActiveTab] = useState<FilterTab>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  const { openPanel } = useChatContext();
 
   useEffect(() => {
     async function load() {
       try {
         const data = await fetchSyllabi();
-        setSyllabi(data);
+        setAllLists(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load syllabi");
+        setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
         setLoading(false);
       }
     }
     void load();
   }, []);
+
+  const filtered =
+    activeTab === "all"
+      ? allLists
+      : allLists.filter((s) => s.list_type === activeTab);
+
+  const hasPaths = allLists.some((s) => s.list_type === "reading_path");
+  const hasSyllabi = allLists.some((s) => s.list_type === "syllabus");
 
   async function handleCreate() {
     const trimmedName = newName.trim();
@@ -54,7 +67,7 @@ export function SyllabiPage() {
         trimmedName,
         newDescription.trim() || null,
       );
-      setSyllabi([{ ...list, book_count: 0, cover_book: null, cover_books: [] }, ...syllabi]);
+      setAllLists([{ ...list, book_count: 0, cover_book: null, cover_books: [] }, ...allLists]);
       setNewName("");
       setNewDescription("");
       setShowCreateForm(false);
@@ -78,8 +91,8 @@ export function SyllabiPage() {
             Course Catalog
           </h1>
           <p className="max-w-xl text-base text-muted-foreground">
-            Curated reading lists for deeper exploration. Each syllabus is an
-            editorial collection designed to illuminate a theme.
+            Curated reading lists and structured intellectual journeys. Syllabi
+            illuminate a theme; reading paths guide you through one.
           </p>
         </div>
         {!showCreateForm && (
@@ -92,6 +105,31 @@ export function SyllabiPage() {
           </button>
         )}
       </div>
+
+      {/* Filter tabs — only show when both types exist */}
+      {hasPaths && hasSyllabi && (
+        <div className="flex gap-1 rounded-lg bg-muted/50 p-1">
+          {(
+            [
+              { key: "all", label: "All" },
+              { key: "syllabus", label: "Syllabi" },
+              { key: "reading_path", label: "Reading Paths" },
+            ] as const
+          ).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                activeTab === key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -146,14 +184,27 @@ export function SyllabiPage() {
         </div>
       )}
 
-      {/* Syllabi list */}
-      {syllabi.length === 0 && !showCreateForm ? (
+      {/* List */}
+      {filtered.length === 0 && !showCreateForm ? (
         <div className="rounded-xl border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-          No syllabi yet. Create one to start curating books around a theme.
+          {activeTab === "reading_path" ? (
+            <div className="space-y-3">
+              <p>No reading paths yet.</p>
+              <button
+                onClick={() => openPanel()}
+                className="inline-flex items-center gap-2 text-accent hover:text-accent/80"
+              >
+                <MessageSquare className="h-4 w-4" />
+                Create one through the AI companion
+              </button>
+            </div>
+          ) : (
+            "No syllabi yet. Create one to start curating books around a theme."
+          )}
         </div>
       ) : (
         <div className="space-y-0">
-          {syllabi.map((s, idx) => (
+          {filtered.map((s, idx) => (
             <div key={s.id}>
               <Link
                 to={`/syllabi/${s.id}`}
@@ -179,13 +230,21 @@ export function SyllabiPage() {
 
                 {/* Text content */}
                 <div className="flex flex-1 flex-col">
-                  <div className="mb-2 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div className="mb-2 flex flex-wrap items-center gap-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <span className="text-accent">
                       {s.book_count} {s.book_count === 1 ? "Book" : "Books"}
                     </span>
                     <span>&middot;</span>
                     <span>{relativeDate(s.updated_at)}</span>
-                    {s.ai_generated && (
+                    {s.list_type === "reading_path" && (
+                      <>
+                        <span>&middot;</span>
+                        <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-violet-600 normal-case tracking-normal dark:text-violet-400">
+                          Reading Path
+                        </span>
+                      </>
+                    )}
+                    {s.list_type === "syllabus" && s.ai_generated && (
                       <>
                         <span>&middot;</span>
                         <span className="rounded-full bg-accent/10 px-2 py-0.5 text-accent normal-case tracking-normal">
@@ -197,16 +256,54 @@ export function SyllabiPage() {
                   <h3 className="mb-2 font-serif text-2xl font-bold transition-colors group-hover:text-accent">
                     {s.name}
                   </h3>
+                  {/* Thesis for reading paths */}
+                  {s.list_type === "reading_path" && s.thesis && (
+                    <p className="mb-2 font-serif text-base italic leading-relaxed text-muted-foreground line-clamp-2">
+                      {s.thesis}
+                    </p>
+                  )}
                   {s.description && (
                     <p className="text-base leading-relaxed text-muted-foreground line-clamp-3">
                       {s.description}
                     </p>
                   )}
+                  {/* Progress bar for reading paths */}
+                  {s.list_type === "reading_path" && s.progress && s.book_count > 0 && (
+                    <div className="mt-3 space-y-1.5">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-violet-500 transition-all"
+                          style={{
+                            width: `${(s.progress.completed / s.book_count) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {s.progress.completed} of {s.book_count} completed
+                      </span>
+                    </div>
+                  )}
                 </div>
               </Link>
-              {idx < syllabi.length - 1 && <hr className="mx-0 border-border" />}
+              {idx < filtered.length - 1 && <hr className="mx-0 border-border" />}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Hint for creating reading paths */}
+      {activeTab !== "reading_path" && !hasPaths && allLists.length > 0 && (
+        <div className="rounded-xl border border-dashed px-6 py-6 text-center">
+          <p className="mb-2 text-sm text-muted-foreground">
+            Want a deeper, structured exploration? Reading paths guide you through a theme with seminar-style scaffolding.
+          </p>
+          <button
+            onClick={() => openPanel()}
+            className="inline-flex items-center gap-2 text-sm font-medium text-accent hover:text-accent/80"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Create a reading path through the AI companion
+          </button>
         </div>
       )}
     </div>
