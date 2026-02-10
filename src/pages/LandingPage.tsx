@@ -14,9 +14,9 @@ export function LandingPage() {
           Rekollekt
         </span>
         <div className="hidden items-center gap-10 sm:flex">
-          <a href="#" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
+          <Link to="/philosophy" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
             Philosophy
-          </a>
+          </Link>
           <a href="#" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
             Features
           </a>
