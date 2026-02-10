@@ -48,24 +48,6 @@ async function resolveBook(
   return data ? { title: data.title as string, id: data.id as string } : null;
 }
 
-async function resolveBooks(
-  supabase: SupabaseClient,
-  titles: string[],
-): Promise<{ found: ResolvedBook[]; notFound: string[] }> {
-  const found: ResolvedBook[] = [];
-  const notFound: string[] = [];
-
-  for (const title of titles) {
-    const result = await resolveBook(supabase, title);
-    if (result) {
-      found.push(result);
-    } else {
-      notFound.push(title);
-    }
-  }
-
-  return { found, notFound };
-}
 
 async function findPathByName(
   supabase: SupabaseClient,
@@ -115,52 +97,67 @@ export async function executeReadingPathCommand(
       if (createError) throw createError;
 
       if (command.books && command.books.length > 0) {
-        const titles = command.books.map((b) => b.title);
-        const { found, notFound } = await resolveBooks(supabase, titles);
-
-        // Build a map of title → seminar content from the command
-        const seminarMap = new Map<string, SeminarContent>();
+        // Resolve each book, preserving original order
+        const resolvedMap = new Map<string, ResolvedBook>();
         for (const book of command.books) {
-          if (book.pre_reading_context || book.focus_questions || book.post_reading_prompts) {
-            seminarMap.set(book.title.toLowerCase(), {
-              pre_reading_context: book.pre_reading_context ?? "",
-              focus_questions: book.focus_questions ?? [],
-              post_reading_prompts: book.post_reading_prompts ?? [],
-            });
+          const result = await resolveBook(supabase, book.title);
+          if (result) {
+            resolvedMap.set(book.title.toLowerCase(), result);
           }
         }
 
-        if (found.length > 0) {
-          const items = found.map((book, i) => {
-            const seminar = seminarMap.get(book.title.toLowerCase()) ?? null;
+        // Build items in original command order — library books get book_id,
+        // unfound books become external items. All preserve seminar content.
+        const items = command.books.map((book, i) => {
+          const resolved = resolvedMap.get(book.title.toLowerCase());
+          const seminar =
+            book.pre_reading_context || book.focus_questions || book.post_reading_prompts
+              ? {
+                  pre_reading_context: book.pre_reading_context ?? "",
+                  focus_questions: book.focus_questions ?? [],
+                  post_reading_prompts: book.post_reading_prompts ?? [],
+                }
+              : null;
+
+          if (resolved) {
             return {
               list_id: list.id,
-              book_id: book.id,
+              book_id: resolved.id,
               position: i + 1,
               path_progress: "not_started",
               seminar_content: seminar,
             };
-          });
+          } else {
+            return {
+              list_id: list.id,
+              book_id: null,
+              position: i + 1,
+              path_progress: "not_started",
+              seminar_content: seminar,
+              external_title: book.title,
+              external_author: null,
+            };
+          }
+        });
 
-          const { error: insertError } = await supabase
-            .from("list_items")
-            .insert(items);
+        const { error: insertError } = await supabase
+          .from("list_items")
+          .insert(items);
 
-          if (insertError) throw insertError;
-        }
+        if (insertError) throw insertError;
+
+        const inLibrary = resolvedMap.size;
+        const external = command.books.length - inLibrary;
 
         let msg = `Created reading path '${command.path_name}'`;
         if (command.thesis) {
           msg += ` with thesis: "${command.thesis}"`;
         }
-        if (found.length > 0) {
-          msg += ` — ${found.length} book${found.length === 1 ? "" : "s"} added.`;
-        } else {
-          msg += ".";
+        msg += ` — ${command.books.length} book${command.books.length === 1 ? "" : "s"} added`;
+        if (external > 0) {
+          msg += ` (${external} not yet in your library — they'll link automatically when you add them)`;
         }
-        if (notFound.length > 0) {
-          msg += ` Could not find: ${notFound.map((t) => `'${t}'`).join(", ")}.`;
-        }
+        msg += ".";
         return msg;
       }
 
@@ -299,18 +296,12 @@ export async function executeReadingPathCommand(
         );
       }
 
-      const titles = command.books.map((b) => b.title);
-      const { found, notFound } = await resolveBooks(supabase, titles);
-
-      // Build seminar map
-      const seminarMap = new Map<string, SeminarContent>();
+      // Resolve each book
+      const resolvedMap = new Map<string, ResolvedBook>();
       for (const book of command.books) {
-        if (book.pre_reading_context || book.focus_questions || book.post_reading_prompts) {
-          seminarMap.set(book.title.toLowerCase(), {
-            pre_reading_context: book.pre_reading_context ?? "",
-            focus_questions: book.focus_questions ?? [],
-            post_reading_prompts: book.post_reading_prompts ?? [],
-          });
+        const result = await resolveBook(supabase, book.title);
+        if (result) {
+          resolvedMap.set(book.title.toLowerCase(), result);
         }
       }
 
@@ -326,17 +317,34 @@ export async function executeReadingPathCommand(
       const startPosition = (existing?.[0]?.position ?? 0) + 1;
 
       let added = 0;
-      for (let i = 0; i < found.length; i++) {
+      for (let i = 0; i < command.books.length; i++) {
+        const book = command.books[i];
+        const resolved = resolvedMap.get(book.title.toLowerCase());
         const seminar =
-          seminarMap.get(found[i].title.toLowerCase()) ?? null;
+          book.pre_reading_context || book.focus_questions || book.post_reading_prompts
+            ? {
+                pre_reading_context: book.pre_reading_context ?? "",
+                focus_questions: book.focus_questions ?? [],
+                post_reading_prompts: book.post_reading_prompts ?? [],
+              }
+            : null;
 
-        const { error } = await supabase.from("list_items").insert({
+        const item: Record<string, unknown> = {
           list_id: path.id,
-          book_id: found[i].id,
           position: startPosition + i,
           path_progress: "not_started",
           seminar_content: seminar,
-        });
+        };
+
+        if (resolved) {
+          item.book_id = resolved.id;
+        } else {
+          item.book_id = null;
+          item.external_title = book.title;
+          item.external_author = null;
+        }
+
+        const { error } = await supabase.from("list_items").insert(item);
 
         if (error) {
           if (error.code === "23505") continue; // duplicate
@@ -345,9 +353,10 @@ export async function executeReadingPathCommand(
         added++;
       }
 
+      const external = command.books.length - resolvedMap.size;
       let msg = `Added ${added} book${added === 1 ? "" : "s"} to '${path.name}'.`;
-      if (notFound.length > 0) {
-        msg += ` Could not find: ${notFound.map((t) => `'${t}'`).join(", ")}.`;
+      if (external > 0) {
+        msg += ` ${external} not yet in your library — they'll link automatically when you add them.`;
       }
       return msg;
     }

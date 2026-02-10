@@ -380,3 +380,33 @@ export async function updateItemProgress(
     }
   }
 }
+
+/** Link external list items to a newly added library book by matching title. */
+export async function linkExternalItemsToBook(
+  bookId: string,
+  bookTitle: string,
+): Promise<number> {
+  // Find external items (no book_id) whose title matches the new book
+  const { data: matches, error: findError } = await supabase
+    .from("list_items")
+    .select("id")
+    .is("book_id", null)
+    .ilike("external_title", bookTitle);
+
+  if (findError) throw findError;
+  if (!matches || matches.length === 0) return 0;
+
+  const { error: updateError } = await supabase
+    .from("list_items")
+    .update({
+      book_id: bookId,
+      external_title: null,
+      external_author: null,
+      external_cover_url: null,
+      external_isbn: null,
+    })
+    .in("id", matches.map((m) => m.id));
+
+  if (updateError) throw updateError;
+  return matches.length;
+}

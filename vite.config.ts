@@ -13,9 +13,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/api/isbndb": {
-        target: "https://api2.isbndb.com",
+        target: "http://localhost:3001",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/isbndb/, ""),
       },
       "/api/chat": {
         target: "http://localhost:3001",

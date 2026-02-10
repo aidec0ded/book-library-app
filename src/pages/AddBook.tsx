@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Loader2, Plus, AlertTriangle, ArrowLeft, Bookmark } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { linkExternalItemsToBook } from "@/lib/lists";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -164,6 +165,13 @@ export function AddBook() {
       setAddError(error.message);
       setAdding(false);
       return;
+    }
+
+    // Auto-link any external list items (e.g. from AI-created reading paths)
+    try {
+      await linkExternalItemsToBook(data.id, payload.title);
+    } catch {
+      // Non-critical — don't block navigation
     }
 
     navigate(`/books/${data.id}`);
