@@ -120,12 +120,12 @@ export function FeaturesPage() {
           >
             Features
           </Link>
-          <a
-            href="#"
+          <Link
+            to="/contact"
             className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             Contact
-          </a>
+          </Link>
         </div>
         <Link
           to={entryLink}
