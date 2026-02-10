@@ -1,4 +1,7 @@
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
@@ -29,7 +32,27 @@ import { startProfileScheduler } from "./profile-scheduler.js";
 config();
 
 const MODEL = "claude-sonnet-4-5-20250929";
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || "3001", 10);
+
+// Static file serving setup
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DIST_DIR = path.join(__dirname, "..", "dist");
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+};
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -544,38 +567,127 @@ async function generateTitle(
   }
 }
 
+async function handleIsbndbProxy(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
+  const apiKey = process.env.ISBNDB_API_KEY;
+  if (!apiKey) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "ISBNdb API key not configured" }));
+    return;
+  }
+
+  // Strip /api/isbndb prefix to get the ISBNdb path
+  const isbndbPath = req.url!.replace(/^\/api\/isbndb/, "");
+  const upstream = `https://api2.isbndb.com${isbndbPath}`;
+
+  try {
+    const response = await fetch(upstream, {
+      method: req.method,
+      headers: { Authorization: apiKey },
+    });
+
+    res.writeHead(response.status, {
+      "Content-Type": response.headers.get("content-type") || "application/json",
+    });
+    const body = await response.arrayBuffer();
+    res.end(Buffer.from(body));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.writeHead(502, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `ISBNdb proxy error: ${message}` }));
+  }
+}
+
+function serveStaticFile(
+  res: http.ServerResponse,
+  filePath: string,
+): boolean {
+  if (!fs.existsSync(filePath)) return false;
+
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) return false;
+
+  const ext = path.extname(filePath);
+  const contentType = MIME_TYPES[ext] || "application/octet-stream";
+  const content = fs.readFileSync(filePath);
+
+  const headers: Record<string, string> = { "Content-Type": contentType };
+  // Cache hashed assets (Vite adds content hashes to filenames in assets/)
+  if (filePath.includes("/assets/")) {
+    headers["Cache-Control"] = "public, max-age=31536000, immutable";
+  }
+
+  res.writeHead(200, headers);
+  res.end(content);
+  return true;
+}
+
 const server = http.createServer((req, res) => {
-  setCorsHeaders(res);
+  const url = req.url || "/";
 
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    res.end();
+  // API routes get CORS headers
+  if (url.startsWith("/api/")) {
+    setCorsHeaders(res);
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === "POST" && url === "/api/chat") {
+      void handleChat(req, res);
+      return;
+    }
+
+    if (req.method === "GET" && url === "/api/greeting") {
+      void (async () => {
+        try {
+          const greeting = await getGreeting(supabase, anthropic);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ greeting }));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: message }));
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "GET" && url.startsWith("/api/isbndb/")) {
+      void handleIsbndbProxy(req, res);
+      return;
+    }
+
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Not found" }));
     return;
   }
 
-  if (req.method === "POST" && req.url === "/api/chat") {
-    void handleChat(req, res);
-    return;
+  // Static file serving (production: dist/ exists)
+  if (fs.existsSync(DIST_DIR)) {
+    // Try exact file path
+    const safePath = path.normalize(url).replace(/^(\.\.[/\\])+/, "");
+    const filePath = path.join(DIST_DIR, safePath);
+
+    if (serveStaticFile(res, filePath)) return;
+
+    // SPA fallback: serve index.html for all non-file routes
+    const indexPath = path.join(DIST_DIR, "index.html");
+    if (fs.existsSync(indexPath)) {
+      const content = fs.readFileSync(indexPath);
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(content);
+      return;
+    }
   }
 
-  if (req.method === "GET" && req.url === "/api/greeting") {
-    void (async () => {
-      try {
-        const greeting = await getGreeting(supabase, anthropic);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ greeting }));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: message }));
-      }
-    })();
-    return;
-  }
-
-  res.writeHead(404, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ error: "Not found" }));
+  // No dist/ directory (dev mode) — only API routes are served
+  res.writeHead(404, { "Content-Type": "text/plain" });
+  res.end("Not found — in development, use Vite dev server for frontend");
 });
 
 server.listen(PORT, () => {
