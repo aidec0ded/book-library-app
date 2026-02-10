@@ -233,10 +233,11 @@ export interface NewRelease {
   ingested_at: string;
   updated_at: string;
   general_signal_score: number | null;
+  is_fiction: boolean | null;
+  // Per-user fields (from user_release_scores join)
   personal_score: number | null;
   ai_score: number | null;
   ai_rationale: string | null;
   scored_at: string | null;
   dismissed: boolean;
-  is_fiction: boolean | null;
 }

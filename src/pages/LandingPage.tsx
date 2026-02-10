@@ -8,6 +8,7 @@ import {
   Newspaper,
   ArrowRight,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const VALUE_PROPS = [
   {
@@ -70,6 +71,9 @@ const FEATURES = [
 ];
 
 export function LandingPage() {
+  const { session } = useAuth();
+  const entryLink = session ? "/home" : "/login";
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Nav */}
@@ -78,10 +82,10 @@ export function LandingPage() {
           Rekollekt
         </span>
         <Link
-          to="/home"
+          to={entryLink}
           className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          Go to your library <ArrowRight className="ml-1 inline h-3.5 w-3.5" />
+          {session ? "Go to your library" : "Sign in"} <ArrowRight className="ml-1 inline h-3.5 w-3.5" />
         </Link>
       </header>
 
@@ -99,7 +103,7 @@ export function LandingPage() {
           through ratings and reviews, but through conversation and recollection.
         </p>
         <Link
-          to="/home"
+          to={entryLink}
           className="mt-10 inline-flex items-center gap-2 rounded-lg bg-foreground px-8 py-3 text-sm font-semibold text-background shadow-md transition-all hover:opacity-90 hover:-translate-y-0.5"
         >
           Enter Your Library
@@ -185,7 +189,7 @@ export function LandingPage() {
           Ready to remember what your books taught you?
         </p>
         <Link
-          to="/home"
+          to={entryLink}
           className="inline-flex items-center gap-2 rounded-lg bg-foreground px-8 py-3 text-sm font-semibold text-background shadow-md transition-all hover:opacity-90 hover:-translate-y-0.5"
         >
           Get Started

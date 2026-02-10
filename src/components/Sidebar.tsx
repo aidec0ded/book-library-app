@@ -11,8 +11,10 @@ import {
   User,
   PlusCircle,
   X,
+  LogOut,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface NavItem {
   label: string;
@@ -77,6 +79,7 @@ function isActive(pathname: string, search: string, path: string) {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname, search } = useLocation();
+  const { signOut, user } = useAuth();
 
   return (
     <div className="flex h-full flex-col">
@@ -126,8 +129,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </nav>
 
-      {/* Footer CTA */}
-      <div className="border-t border-sidebar-border px-3 py-3">
+      {/* Footer */}
+      <div className="border-t border-sidebar-border px-3 py-3 space-y-1">
         <Link
           to={FOOTER_ITEM.path}
           onClick={onNavigate}
@@ -140,6 +143,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <PlusCircle className={`h-4 w-4 shrink-0 ${isActive(pathname, search, FOOTER_ITEM.path) ? "text-accent" : ""}`} />
           {FOOTER_ITEM.label}
         </Link>
+        {user && (
+          <button
+            onClick={() => {
+              void signOut();
+              onNavigate?.();
+            }}
+            className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Sign Out
+          </button>
+        )}
       </div>
     </div>
   );

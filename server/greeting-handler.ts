@@ -5,14 +5,19 @@ import { loadReaderProfile } from "./profile-loader.js";
 const MODEL = "claude-sonnet-4-5-20250929";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-let cachedGreeting: string | null = null;
-let cachedAt = 0;
+interface CacheEntry {
+  data: string;
+  cachedAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
 
 async function generateGreeting(
   supabase: SupabaseClient,
   anthropic: Anthropic,
+  userId: string,
 ): Promise<string> {
-  const readerProfile = await loadReaderProfile(supabase);
+  const readerProfile = await loadReaderProfile(supabase, userId);
 
   // Fetch most recent conversation's last few messages
   let recentContext = "";
@@ -74,17 +79,19 @@ async function generateGreeting(
 export async function getGreeting(
   supabase: SupabaseClient,
   anthropic: Anthropic,
+  userId: string,
 ): Promise<string> {
-  if (cachedGreeting !== null && Date.now() - cachedAt < CACHE_TTL_MS) {
-    return cachedGreeting;
+  const entry = cache.get(userId);
+  if (entry && Date.now() - entry.cachedAt < CACHE_TTL_MS) {
+    return entry.data;
   }
 
   try {
-    cachedGreeting = await generateGreeting(supabase, anthropic);
-    cachedAt = Date.now();
-    return cachedGreeting;
+    const greeting = await generateGreeting(supabase, anthropic, userId);
+    cache.set(userId, { data: greeting, cachedAt: Date.now() });
+    return greeting;
   } catch (err) {
     console.error("Greeting generation failed:", err);
-    return cachedGreeting ?? "Welcome to your library.";
+    return entry?.data ?? "Welcome to your library.";
   }
 }

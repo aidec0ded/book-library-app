@@ -1,14 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-let cachedIndex: string | null = null;
-let cachedAt = 0;
+interface CacheEntry {
+  data: string | null;
+  cachedAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export async function buildSyllabusIndex(
   supabase: SupabaseClient,
+  userId: string,
 ): Promise<string | null> {
-  if (cachedIndex !== null && Date.now() - cachedAt < CACHE_TTL_MS) {
-    return cachedIndex;
+  const entry = cache.get(userId);
+  if (entry && Date.now() - entry.cachedAt < CACHE_TTL_MS) {
+    return entry.data;
   }
 
   const { data: lists, error: listsError } = await supabase
@@ -19,8 +25,7 @@ export async function buildSyllabusIndex(
   if (listsError) throw listsError;
 
   if (!lists || lists.length === 0) {
-    cachedIndex = null;
-    cachedAt = Date.now();
+    cache.set(userId, { data: null, cachedAt: Date.now() });
     return null;
   }
 
@@ -81,7 +86,7 @@ export async function buildSyllabusIndex(
     }
   }
 
-  cachedIndex = sections.join("\n");
-  cachedAt = Date.now();
-  return cachedIndex;
+  const index = sections.join("\n");
+  cache.set(userId, { data: index, cachedAt: Date.now() });
+  return index;
 }

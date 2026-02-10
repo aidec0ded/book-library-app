@@ -37,15 +37,21 @@ function formatTagsForType(
   return parts.join("; ");
 }
 
-let cachedIndex: string | null = null;
-let cachedAt = 0;
+interface CacheEntry {
+  data: string;
+  cachedAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export async function buildLibraryIndex(
   supabase: SupabaseClient,
+  userId: string,
 ): Promise<string> {
-  if (cachedIndex && Date.now() - cachedAt < CACHE_TTL_MS) {
-    return cachedIndex;
+  const entry = cache.get(userId);
+  if (entry && Date.now() - entry.cachedAt < CACHE_TTL_MS) {
+    return entry.data;
   }
 
   // Fetch all books in 1000-row pages
@@ -116,7 +122,7 @@ export async function buildLibraryIndex(
     return parts.join(" | ");
   });
 
-  cachedIndex = lines.join("\n");
-  cachedAt = Date.now();
-  return cachedIndex;
+  const index = lines.join("\n");
+  cache.set(userId, { data: index, cachedAt: Date.now() });
+  return index;
 }

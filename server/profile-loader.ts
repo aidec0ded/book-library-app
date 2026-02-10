@@ -5,15 +5,21 @@ import type {
   TasteShift,
 } from "../src/lib/types.js";
 
-let cachedProfile: string | null = null;
-let cachedAt = 0;
+interface CacheEntry {
+  data: string | null;
+  cachedAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export async function loadReaderProfile(
   supabase: SupabaseClient,
+  userId: string,
 ): Promise<string | null> {
-  if (cachedProfile !== null && Date.now() - cachedAt < CACHE_TTL_MS) {
-    return cachedProfile;
+  const entry = cache.get(userId);
+  if (entry && Date.now() - entry.cachedAt < CACHE_TTL_MS) {
+    return entry.data;
   }
 
   const { data, error } = await supabase
@@ -25,15 +31,14 @@ export async function loadReaderProfile(
 
   if (error) throw error;
   if (!data) {
-    cachedProfile = null;
-    cachedAt = Date.now();
+    cache.set(userId, { data: null, cachedAt: Date.now() });
     return null;
   }
 
   const profile = data.profile_data as ReaderProfileData;
-  cachedProfile = formatProfileForPrompt(profile);
-  cachedAt = Date.now();
-  return cachedProfile;
+  const formatted = formatProfileForPrompt(profile);
+  cache.set(userId, { data: formatted, cachedAt: Date.now() });
+  return formatted;
 }
 
 function formatProfileForPrompt(profile: ReaderProfileData): string {

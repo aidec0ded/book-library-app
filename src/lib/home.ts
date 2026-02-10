@@ -100,7 +100,14 @@ export async function fetchLibraryStats(): Promise<LibraryStats> {
 
 export async function fetchGreeting(): Promise<string> {
   try {
-    const res = await fetch("/api/greeting");
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/greeting", {
+      headers: {
+        ...(session?.access_token && {
+          Authorization: `Bearer ${session.access_token}`,
+        }),
+      },
+    });
     if (!res.ok) return "";
     const data = await res.json();
     return data.greeting ?? "";

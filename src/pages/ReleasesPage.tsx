@@ -68,8 +68,8 @@ interface ReleaseGridProps {
   libraryIsbns: Set<string>;
   addedIsbns: Set<string>;
   onToggleExpanded: (id: string) => void;
-  onDismiss: (isbn13: string) => void;
-  onUndismiss: (isbn13: string) => void;
+  onDismiss: (releaseId: string, isbn13: string) => void;
+  onUndismiss: (releaseId: string, isbn13: string) => void;
   onWishlist: (release: NewRelease) => void;
   onClickOutside: () => void;
   scoreBadgeColor: (score: number) => string;
@@ -276,14 +276,14 @@ function ReleaseGrid({
 
                   {release.dismissed ? (
                     <button
-                      onClick={() => onUndismiss(release.isbn13)}
+                      onClick={() => onUndismiss(release.id, release.isbn13)}
                       className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
                     >
                       Undo dismiss
                     </button>
                   ) : (
                     <button
-                      onClick={() => onDismiss(release.isbn13)}
+                      onClick={() => onDismiss(release.id, release.isbn13)}
                       className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted"
                     >
                       Not interested
@@ -446,7 +446,7 @@ export function ReleasesPage() {
     setExpandedId((prev) => (prev === id ? null : id));
   }
 
-  async function handleDismiss(isbn13: string) {
+  async function handleDismiss(releaseId: string, isbn13: string) {
     // Optimistic update
     setReleases((prev) => prev.map((r) =>
       r.isbn13 === isbn13 ? { ...r, dismissed: true } : r
@@ -457,19 +457,19 @@ export function ReleasesPage() {
       setExpandedId(null);
     }
     try {
-      await dismissRelease(isbn13);
+      await dismissRelease(releaseId);
     } catch (err) {
       console.error("Error dismissing release:", err);
       void fetchData();
     }
   }
 
-  async function handleUndismiss(isbn13: string) {
+  async function handleUndismiss(releaseId: string, isbn13: string) {
     setReleases((prev) => prev.map((r) =>
       r.isbn13 === isbn13 ? { ...r, dismissed: false } : r
     ));
     try {
-      await undismissRelease(isbn13);
+      await undismissRelease(releaseId);
     } catch (err) {
       console.error("Error undismissing release:", err);
       void fetchData();

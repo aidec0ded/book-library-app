@@ -23,7 +23,10 @@ const THRESHOLDS: { key: keyof ActivitySnapshot; delta: number; label: string }[
   { key: "total_messages", delta: 20, label: "messages sent" },
 ];
 
-async function gatherCurrentCounts(supabase: SupabaseClient): Promise<ActivitySnapshot> {
+async function gatherCurrentCounts(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<ActivitySnapshot> {
   const [
     { count: totalBooks },
     { count: booksRead },
@@ -32,12 +35,12 @@ async function gatherCurrentCounts(supabase: SupabaseClient): Promise<ActivitySn
     { count: booksWithNotes },
     { count: totalMessages },
   ] = await Promise.all([
-    supabase.from("books").select("id", { count: "exact", head: true }),
-    supabase.from("books").select("id", { count: "exact", head: true }).eq("status", "read"),
-    supabase.from("books").select("id", { count: "exact", head: true }).not("date_started", "is", null),
-    supabase.from("books").select("id", { count: "exact", head: true }).gt("rating", 0),
-    supabase.from("books").select("id", { count: "exact", head: true }).not("notes", "is", null),
-    supabase.from("messages").select("id", { count: "exact", head: true }),
+    supabase.from("books").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabase.from("books").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "read"),
+    supabase.from("books").select("id", { count: "exact", head: true }).eq("user_id", userId).not("date_started", "is", null),
+    supabase.from("books").select("id", { count: "exact", head: true }).eq("user_id", userId).gt("rating", 0),
+    supabase.from("books").select("id", { count: "exact", head: true }).eq("user_id", userId).not("notes", "is", null),
+    supabase.from("messages").select("id", { count: "exact", head: true }).eq("user_id", userId),
   ]);
 
   return {
@@ -50,71 +53,49 @@ async function gatherCurrentCounts(supabase: SupabaseClient): Promise<ActivitySn
   };
 }
 
-async function checkAndRegenerate(supabase: SupabaseClient): Promise<void> {
+interface UserProfile {
+  user_id: string;
+  generated_at: string;
+  generation_context: Record<string, unknown> | null;
+}
+
+async function fetchLatestProfilePerUser(supabase: SupabaseClient): Promise<UserProfile[]> {
+  // Fetch all profiles, grouped by user — get the latest per user
+  // Service-role client bypasses RLS, so we see all users
+  const { data, error } = await supabase
+    .from("reader_profile")
+    .select("user_id, generated_at, generation_context")
+    .order("generated_at", { ascending: false });
+
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  // Keep only the latest profile per user_id
+  const seen = new Set<string>();
+  const latest: UserProfile[] = [];
+  for (const row of data) {
+    if (!seen.has(row.user_id)) {
+      seen.add(row.user_id);
+      latest.push(row);
+    }
+  }
+  return latest;
+}
+
+async function checkAndRegenerateAll(supabase: SupabaseClient): Promise<void> {
   try {
-    // Fetch latest profile
-    const { data: profile, error } = await supabase
-      .from("reader_profile")
-      .select("generated_at, generation_context")
-      .order("generated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const profiles = await fetchLatestProfilePerUser(supabase);
 
-    if (error) {
-      console.error("[profile-scheduler] Failed to fetch profile:", error.message);
+    if (profiles.length === 0) {
+      console.log("[profile-scheduler] No user profiles exist yet, skipping.");
       return;
     }
 
-    // No profile exists yet — skip (first profile should be manual/bootstrap)
-    if (!profile) {
-      console.log("[profile-scheduler] No profile exists yet, skipping.");
-      return;
+    console.log(`[profile-scheduler] Checking ${profiles.length} user(s)...`);
+
+    for (const profile of profiles) {
+      await checkUserProfile(supabase, profile);
     }
-
-    // Check age
-    const generatedAt = new Date(profile.generated_at);
-    const ageDays = (Date.now() - generatedAt.getTime()) / (1000 * 60 * 60 * 24);
-    if (ageDays < MIN_AGE_DAYS) {
-      console.log(
-        `[profile-scheduler] Profile is ${Math.floor(ageDays)}d old (need ${MIN_AGE_DAYS}d), skipping.`,
-      );
-      return;
-    }
-
-    // Get snapshot from last generation
-    const context = profile.generation_context as Record<string, unknown> | null;
-    const snapshot = context?.activity_snapshot as ActivitySnapshot | undefined;
-
-    if (!snapshot) {
-      // No snapshot stored — can't compare, trigger regeneration since profile is old enough
-      console.log(
-        "[profile-scheduler] No activity snapshot in last profile, regenerating (profile is old enough).",
-      );
-      spawnRegeneration();
-      return;
-    }
-
-    // Gather current counts
-    const current = await gatherCurrentCounts(supabase);
-
-    // Check thresholds
-    const triggered: string[] = [];
-    for (const { key, delta, label } of THRESHOLDS) {
-      const diff = current[key] - snapshot[key];
-      if (diff >= delta) {
-        triggered.push(`${label}: +${diff}`);
-      }
-    }
-
-    if (triggered.length === 0) {
-      console.log("[profile-scheduler] No activity thresholds met, skipping.");
-      return;
-    }
-
-    console.log(
-      `[profile-scheduler] Thresholds met: ${triggered.join(", ")}. Regenerating profile.`,
-    );
-    spawnRegeneration();
   } catch (err) {
     console.error(
       "[profile-scheduler] Error:",
@@ -123,18 +104,70 @@ async function checkAndRegenerate(supabase: SupabaseClient): Promise<void> {
   }
 }
 
-function spawnRegeneration(): void {
-  console.log("[profile-scheduler] Spawning generate-profile.ts --force ...");
+async function checkUserProfile(
+  supabase: SupabaseClient,
+  profile: UserProfile,
+): Promise<void> {
+  const { user_id: uid } = profile;
+  const tag = `[profile-scheduler:${uid.slice(0, 8)}]`;
+
+  // Check age
+  const generatedAt = new Date(profile.generated_at);
+  const ageDays = (Date.now() - generatedAt.getTime()) / (1000 * 60 * 60 * 24);
+  if (ageDays < MIN_AGE_DAYS) {
+    console.log(
+      `${tag} Profile is ${Math.floor(ageDays)}d old (need ${MIN_AGE_DAYS}d), skipping.`,
+    );
+    return;
+  }
+
+  // Get snapshot from last generation
+  const context = profile.generation_context;
+  const snapshot = context?.activity_snapshot as ActivitySnapshot | undefined;
+
+  if (!snapshot) {
+    console.log(
+      `${tag} No activity snapshot in last profile, regenerating (profile is old enough).`,
+    );
+    spawnRegeneration(uid);
+    return;
+  }
+
+  // Gather current counts
+  const current = await gatherCurrentCounts(supabase, uid);
+
+  // Check thresholds
+  const triggered: string[] = [];
+  for (const { key, delta, label } of THRESHOLDS) {
+    const diff = current[key] - snapshot[key];
+    if (diff >= delta) {
+      triggered.push(`${label}: +${diff}`);
+    }
+  }
+
+  if (triggered.length === 0) {
+    console.log(`${tag} No activity thresholds met, skipping.`);
+    return;
+  }
+
+  console.log(
+    `${tag} Thresholds met: ${triggered.join(", ")}. Regenerating profile.`,
+  );
+  spawnRegeneration(uid);
+}
+
+function spawnRegeneration(userId: string): void {
+  console.log(`[profile-scheduler] Spawning generate-profile.ts --force --user-id ${userId} ...`);
   exec(
-    "npx tsx scripts/generate-profile.ts --force",
+    `npx tsx scripts/generate-profile.ts --force --user-id ${userId}`,
     { cwd: process.cwd() },
     (error, stdout, stderr) => {
       if (error) {
-        console.error("[profile-scheduler] Generation failed:", error.message);
-        if (stderr) console.error("[profile-scheduler] stderr:", stderr);
+        console.error(`[profile-scheduler:${userId.slice(0, 8)}] Generation failed:`, error.message);
+        if (stderr) console.error(`[profile-scheduler:${userId.slice(0, 8)}] stderr:`, stderr);
         return;
       }
-      console.log("[profile-scheduler] Generation output:\n" + stdout);
+      console.log(`[profile-scheduler:${userId.slice(0, 8)}] Generation output:\n` + stdout);
     },
   );
 }
@@ -146,11 +179,11 @@ export function startProfileScheduler(supabase: SupabaseClient): void {
 
   // Initial check after startup delay
   setTimeout(() => {
-    void checkAndRegenerate(supabase);
+    void checkAndRegenerateAll(supabase);
   }, STARTUP_DELAY_MS);
 
   // Recurring daily check
   setInterval(() => {
-    void checkAndRegenerate(supabase);
+    void checkAndRegenerateAll(supabase);
   }, CHECK_INTERVAL_MS);
 }

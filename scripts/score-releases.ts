@@ -29,6 +29,8 @@ const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
 const monthIdx = args.indexOf("--month");
 const singleMonth = monthIdx !== -1 ? args[monthIdx + 1] : null;
+const userIdIdx = args.indexOf("--user-id");
+const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
 
 // --- Constants ---
 
@@ -284,7 +286,7 @@ async function fetchReleasesToScore(
     .order("title");
 
   if (!force) {
-    query = query.is("scored_at", null);
+    query = query.is("general_signal_score", null);
   }
 
   const { data, error } = await query;
@@ -643,27 +645,58 @@ async function main() {
       for (const result of results) {
         const aiScore = computeAiScore(result.general_signal, result.personal_match);
 
-        const { error: updateError } = await supabase
+        // Always update general_signal_score on new_releases (shared)
+        const { error: generalError } = await supabase
           .from("new_releases")
           .update({
             general_signal_score: result.general_signal,
-            personal_score: result.personal_match ?? null,
-            ai_score: aiScore,
-            ai_rationale: result.rationale,
-            scored_at: new Date().toISOString(),
           })
           .eq("isbn13", result.isbn);
 
-        if (updateError) {
+        if (generalError) {
           console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 DB error for ${result.isbn}: ${updateError.message}`,
+            `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 DB error for ${result.isbn}: ${generalError.message}`,
           );
           totalErrors++;
-        } else {
-          batchScored++;
-          batchSum += aiScore;
-          allScores.push(aiScore);
+          continue;
         }
+
+        // Write personal scores to user_release_scores if --user-id provided
+        if (userId && result.personal_match != null) {
+          const { data: releaseRow } = await supabase
+            .from("new_releases")
+            .select("id")
+            .eq("isbn13", result.isbn)
+            .single();
+
+          if (releaseRow) {
+            const { error: userScoreError } = await supabase
+              .from("user_release_scores")
+              .upsert(
+                {
+                  user_id: userId,
+                  release_id: releaseRow.id,
+                  personal_score: result.personal_match,
+                  ai_score: aiScore,
+                  ai_rationale: result.rationale,
+                  scored_at: new Date().toISOString(),
+                },
+                { onConflict: "user_id,release_id" },
+              );
+
+            if (userScoreError) {
+              console.log(
+                `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 User score error for ${result.isbn}: ${userScoreError.message}`,
+              );
+              totalErrors++;
+              continue;
+            }
+          }
+        }
+
+        batchScored++;
+        batchSum += aiScore;
+        allScores.push(aiScore);
       }
 
       const avg = batchScored > 0 ? (batchSum / batchScored).toFixed(1) : "0";

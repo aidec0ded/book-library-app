@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
+import { createUserClient, getUserIdFromToken } from "./auth.js";
 import { buildLibraryIndex } from "./library-index.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
@@ -54,7 +55,8 @@ const MIME_TYPES: Record<string, string> = {
   ".ttf": "font/ttf",
 };
 
-const supabase = createClient(
+// Service-role client — used ONLY for profile scheduler (server-side admin tasks)
+const serviceSupabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
@@ -154,13 +156,29 @@ function writeSSE(
 function setCorsHeaders(res: http.ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization",
+  );
 }
 
 async function handleChat(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
+  // Auth: create per-request client
+  let supabase;
+  let userId: string;
+  try {
+    supabase = createUserClient(req.headers.authorization);
+    const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
+    userId = getUserIdFromToken(token);
+  } catch {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Unauthorized" }));
+    return;
+  }
+
   // Parse body
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
@@ -217,9 +235,9 @@ async function handleChat(
 
     // Build system prompt with library index, reader profile, and list context
     const [libraryIndex, readerProfile, syllabusIndex] = await Promise.all([
-      buildLibraryIndex(supabase),
-      loadReaderProfile(supabase),
-      buildSyllabusIndex(supabase),
+      buildLibraryIndex(supabase, userId),
+      loadReaderProfile(supabase, userId),
+      buildSyllabusIndex(supabase, userId),
     ]);
     const systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex);
 
@@ -526,7 +544,7 @@ async function handleChat(
 
     if (count === 2) {
       // Fire-and-forget title generation
-      void generateTitle(conversationId, body.message, accumulatedText);
+      void generateTitle(supabase, conversationId, body.message, accumulatedText);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -537,6 +555,7 @@ async function handleChat(
 }
 
 async function generateTitle(
+  supabase: ReturnType<typeof createUserClient>,
   conversationId: string,
   userMessage: string,
   assistantMessage: string,
@@ -571,6 +590,15 @@ async function handleIsbndbProxy(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
+  // Verify auth — ISBNdb proxy requires authenticated user
+  try {
+    createUserClient(req.headers.authorization);
+  } catch {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Unauthorized" }));
+    return;
+  }
+
   const apiKey = process.env.ISBNDB_API_KEY;
   if (!apiKey) {
     res.writeHead(500, { "Content-Type": "application/json" });
@@ -643,9 +671,22 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.method === "GET" && url === "/api/greeting") {
+      // Auth: create per-request client for greeting
+      let userSupabase;
+      let userId: string;
+      try {
+        userSupabase = createUserClient(req.headers.authorization);
+        const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
+        userId = getUserIdFromToken(token);
+      } catch {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
+
       void (async () => {
         try {
-          const greeting = await getGreeting(supabase, anthropic);
+          const greeting = await getGreeting(userSupabase, anthropic, userId);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ greeting }));
         } catch (err) {
@@ -692,5 +733,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Rekollekt chat server listening on http://localhost:${PORT}`);
-  startProfileScheduler(supabase);
+  startProfileScheduler(serviceSupabase);
 });

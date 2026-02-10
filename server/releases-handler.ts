@@ -41,14 +41,12 @@ function parseMonth(monthStr: string): { year: number; month: number } | null {
 function formatRelease(r: {
   title: string;
   authors: string[];
-  ai_score: number | null;
-  ai_rationale: string | null;
+  general_signal_score: number | null;
   publisher: string | null;
   date_published: string | null;
 }): string {
   const parts = [`- ${r.title} by ${r.authors.join(", ") || "Unknown"}`];
-  if (r.ai_score != null) parts.push(`  Score: ${r.ai_score}/10`);
-  if (r.ai_rationale) parts.push(`  ${r.ai_rationale}`);
+  if (r.general_signal_score != null) parts.push(`  Score: ${r.general_signal_score}/10`);
   if (r.publisher) parts.push(`  Publisher: ${r.publisher}`);
   return parts.join("\n");
 }
@@ -80,11 +78,10 @@ export async function executeReleasesCommand(
 
       const { data, error, count } = await supabase
         .from("new_releases")
-        .select("title, authors, ai_score, ai_rationale, publisher, date_published", { count: "exact" })
+        .select("title, authors, general_signal_score, publisher, date_published", { count: "exact" })
         .eq("pub_year", year)
         .eq("pub_month", month)
-        .eq("dismissed", false)
-        .order("ai_score", { ascending: false, nullsFirst: false })
+        .order("general_signal_score", { ascending: false, nullsFirst: false })
         .order("title")
         .limit(resultLimit);
 
@@ -112,10 +109,9 @@ export async function executeReleasesCommand(
 
       let query = supabase
         .from("new_releases")
-        .select("title, authors, ai_score, ai_rationale, publisher, date_published")
-        .eq("dismissed", false)
-        .gte("ai_score", 7)
-        .order("ai_score", { ascending: false, nullsFirst: false })
+        .select("title, authors, general_signal_score, publisher, date_published")
+        .gte("general_signal_score", 7)
+        .order("general_signal_score", { ascending: false, nullsFirst: false })
         .limit(resultLimit);
 
       if (year != null && month != null) {
@@ -144,10 +140,9 @@ export async function executeReleasesCommand(
       const q = command.query;
       const { data, error } = await supabase
         .from("new_releases")
-        .select("title, authors, ai_score, ai_rationale, publisher, date_published, pub_year, pub_month")
+        .select("title, authors, general_signal_score, publisher, date_published, pub_year, pub_month")
         .or(`title.ilike.%${q}%,authors.cs.{"${q}"}`)
-        .eq("dismissed", false)
-        .order("ai_score", { ascending: false, nullsFirst: false })
+        .order("general_signal_score", { ascending: false, nullsFirst: false })
         .limit(resultLimit);
 
       if (error) throw error;

@@ -6,6 +6,70 @@ const PAGE_SIZE = 24;
 export type ReleaseSort = "score" | "title";
 export type ReleaseCategory = "all" | "fiction" | "nonfiction";
 
+// Shape returned by the join query
+interface ReleaseRow {
+  id: string;
+  isbn13: string;
+  isbn10: string | null;
+  title: string;
+  authors: string[];
+  publisher: string | null;
+  date_published: string | null;
+  pub_year: number | null;
+  pub_month: number | null;
+  cover_image_url: string | null;
+  synopsis: string | null;
+  subjects: string[];
+  binding: string | null;
+  page_count: number | null;
+  language: string | null;
+  edition: string | null;
+  source: string;
+  ingested_at: string;
+  updated_at: string;
+  general_signal_score: number | null;
+  is_fiction: boolean | null;
+  user_release_scores: {
+    personal_score: number | null;
+    ai_score: number | null;
+    ai_rationale: string | null;
+    scored_at: string | null;
+    dismissed: boolean;
+  }[];
+}
+
+function mapRow(row: ReleaseRow): NewRelease {
+  const userScore = row.user_release_scores?.[0];
+  return {
+    id: row.id,
+    isbn13: row.isbn13,
+    isbn10: row.isbn10,
+    title: row.title,
+    authors: row.authors,
+    publisher: row.publisher,
+    date_published: row.date_published,
+    pub_year: row.pub_year,
+    pub_month: row.pub_month,
+    cover_image_url: row.cover_image_url,
+    synopsis: row.synopsis,
+    subjects: row.subjects,
+    binding: row.binding,
+    page_count: row.page_count,
+    language: row.language,
+    edition: row.edition,
+    source: row.source,
+    ingested_at: row.ingested_at,
+    updated_at: row.updated_at,
+    general_signal_score: row.general_signal_score,
+    is_fiction: row.is_fiction,
+    personal_score: userScore?.personal_score ?? null,
+    ai_score: userScore?.ai_score ?? null,
+    ai_rationale: userScore?.ai_rationale ?? null,
+    scored_at: userScore?.scored_at ?? null,
+    dismissed: userScore?.dismissed ?? false,
+  };
+}
+
 export async function fetchReleasesByMonth(
   year: number,
   month: number,
@@ -19,13 +83,9 @@ export async function fetchReleasesByMonth(
 
   let query = supabase
     .from("new_releases")
-    .select("*", { count: "exact" })
+    .select("*, user_release_scores(*)", { count: "exact" })
     .eq("pub_year", year)
     .eq("pub_month", month);
-
-  if (!showDismissed) {
-    query = query.eq("dismissed", false);
-  }
 
   if (category === "fiction") {
     query = query.eq("is_fiction", true);
@@ -35,8 +95,8 @@ export async function fetchReleasesByMonth(
 
   if (sort === "score") {
     query = query
-      .gte("ai_score", 7)
-      .order("ai_score", { ascending: false, nullsFirst: false })
+      .gte("general_signal_score", 7)
+      .order("general_signal_score", { ascending: false, nullsFirst: false })
       .order("title");
   } else {
     query = query.order("title");
@@ -46,26 +106,38 @@ export async function fetchReleasesByMonth(
 
   if (error) throw error;
 
+  const rows = (data ?? []) as unknown as ReleaseRow[];
+  let releases = rows.map(mapRow);
+
+  // Client-side dismissed filtering (since dismissed is now per-user via join)
+  if (!showDismissed) {
+    releases = releases.filter((r) => !r.dismissed);
+  }
+
   return {
-    releases: (data ?? []) as NewRelease[],
+    releases,
     total: count ?? 0,
   };
 }
 
-export async function dismissRelease(isbn13: string): Promise<void> {
+export async function dismissRelease(releaseId: string): Promise<void> {
   const { error } = await supabase
-    .from("new_releases")
-    .update({ dismissed: true })
-    .eq("isbn13", isbn13);
+    .from("user_release_scores")
+    .upsert(
+      { release_id: releaseId, dismissed: true },
+      { onConflict: "user_id,release_id" },
+    );
 
   if (error) throw error;
 }
 
-export async function undismissRelease(isbn13: string): Promise<void> {
+export async function undismissRelease(releaseId: string): Promise<void> {
   const { error } = await supabase
-    .from("new_releases")
-    .update({ dismissed: false })
-    .eq("isbn13", isbn13);
+    .from("user_release_scores")
+    .upsert(
+      { release_id: releaseId, dismissed: false },
+      { onConflict: "user_id,release_id" },
+    );
 
   if (error) throw error;
 }

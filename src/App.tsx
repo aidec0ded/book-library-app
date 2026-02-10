@@ -1,6 +1,8 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { Layout } from "@/components/Layout";
 import { LandingPage } from "@/pages/LandingPage";
+import { LoginPage } from "@/pages/LoginPage";
 import { Home } from "@/pages/Home";
 import { BookList } from "@/pages/BookList";
 import { BookDetail } from "@/pages/BookDetail";
@@ -12,11 +14,36 @@ import { SyllabiPage } from "@/pages/SyllabiPage";
 import { SyllabusDetail } from "@/pages/SyllabusDetail";
 import { ReleasesPage } from "@/pages/ReleasesPage";
 
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 export function App() {
   return (
     <Routes>
       <Route index element={<LandingPage />} />
-      <Route element={<Layout />}>
+      <Route path="login" element={<LoginPage />} />
+      <Route
+        element={
+          <ProtectedRoute>
+            <Layout />
+          </ProtectedRoute>
+        }
+      >
         <Route path="home" element={<Home />} />
         <Route path="library" element={<BookList />} />
         <Route path="recommendations" element={<RecommendationsPage />} />

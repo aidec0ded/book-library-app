@@ -22,6 +22,9 @@ const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
 const bootstrap = args.includes("--bootstrap");
 
+const userIdIdx = args.indexOf("--user-id");
+const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
+
 // --- Constants ---
 
 const MODEL = "claude-opus-4-5-20251101";
@@ -104,13 +107,17 @@ async function fetchAllBooks(): Promise<BookRow[]> {
   let from = 0;
 
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("books")
       .select(
         "id, title, author, book_type, status, rating, genre, category, timing_raw, notes, is_favorite, date_finished",
       )
       .order("title")
       .range(from, from + PAGE_SIZE - 1);
+
+    if (userId) query = query.eq("user_id", userId);
+
+    const { data, error } = await query;
 
     if (error) throw error;
     books.push(...data);
@@ -129,11 +136,15 @@ async function fetchCanonicalTags(): Promise<
   let from = 0;
 
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("book_vibes")
       .select("book_id, vibe, tag_category")
       .eq("is_canonical", true)
       .range(from, from + PAGE_SIZE - 1);
+
+    if (userId) query = query.eq("user_id", userId);
+
+    const { data, error } = await query;
 
     if (error) throw error;
     rows.push(...data);
@@ -151,10 +162,14 @@ async function fetchCanonicalTags(): Promise<
 }
 
 async function fetchMemoryFiles(): Promise<{ path: string; content: string }[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("memory_files")
     .select("path, content")
     .order("updated_at", { ascending: false });
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return data ?? [];
@@ -163,11 +178,15 @@ async function fetchMemoryFiles(): Promise<{ path: string; content: string }[]> 
 async function fetchRecentMessages(
   limit: number,
 ): Promise<{ role: string; content: string; created_at: string }[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("messages")
     .select("role, content, created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return (data ?? []).reverse();
@@ -184,12 +203,15 @@ interface PreviousProfile {
 }
 
 async function fetchPreviousProfile(): Promise<PreviousProfile | null> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("reader_profile")
     .select("id, profile_data")
     .order("generated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw error;
   return data;
@@ -298,6 +320,17 @@ interface ActivitySnapshot {
 }
 
 async function gatherActivitySnapshot(): Promise<ActivitySnapshot> {
+  function scopeBooks() {
+    let q = supabase.from("books").select("id", { count: "exact", head: true });
+    if (userId) q = q.eq("user_id", userId);
+    return q;
+  }
+  function scopeMessages() {
+    let q = supabase.from("messages").select("id", { count: "exact", head: true });
+    if (userId) q = q.eq("user_id", userId);
+    return q;
+  }
+
   const [
     { count: totalBooks },
     { count: booksRead },
@@ -306,12 +339,12 @@ async function gatherActivitySnapshot(): Promise<ActivitySnapshot> {
     { count: booksWithNotes },
     { count: totalMessages },
   ] = await Promise.all([
-    supabase.from("books").select("id", { count: "exact", head: true }),
-    supabase.from("books").select("id", { count: "exact", head: true }).eq("status", "read"),
-    supabase.from("books").select("id", { count: "exact", head: true }).not("date_started", "is", null),
-    supabase.from("books").select("id", { count: "exact", head: true }).gt("rating", 0),
-    supabase.from("books").select("id", { count: "exact", head: true }).not("notes", "is", null),
-    supabase.from("messages").select("id", { count: "exact", head: true }),
+    scopeBooks(),
+    scopeBooks().eq("status", "read"),
+    scopeBooks().not("date_started", "is", null),
+    scopeBooks().gt("rating", 0),
+    scopeBooks().not("notes", "is", null),
+    scopeMessages(),
   ]);
 
   return {
@@ -398,7 +431,7 @@ ${conversationText}
 ${JSON.stringify(previousShiftLog, null, 2)}`;
 
   const mode = dryRun ? "dry-run" : "live";
-  console.log(`  Mode: ${mode} | Model: ${MODEL}`);
+  console.log(`  Mode: ${mode} | Model: ${MODEL}${userId ? ` | User: ${userId}` : ""}`);
   console.log(
     `  Context: ${books.length} books | ${memoryFiles.length} memory files | ${recentMessages.length} messages`,
   );
@@ -481,12 +514,15 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
     activity_snapshot: activitySnapshot,
   };
 
+  const insertRow: Record<string, unknown> = {
+    profile_data: profileData,
+    generation_context: generationContext,
+  };
+  if (userId) insertRow.user_id = userId;
+
   const { error: insertError } = await supabase
     .from("reader_profile")
-    .insert({
-      profile_data: profileData,
-      generation_context: generationContext,
-    });
+    .insert(insertRow);
 
   if (insertError) throw insertError;
 

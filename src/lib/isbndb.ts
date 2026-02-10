@@ -1,3 +1,5 @@
+import { supabase } from "@/lib/supabase";
+
 const BASE_URL = "/api/isbndb";
 const API_KEY = import.meta.env.VITE_ISBNDB_API_KEY as string;
 
@@ -59,8 +61,13 @@ function stripHtml(text: string): string {
 }
 
 async function apiFetch<T>(path: string): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { Authorization: API_KEY },
+    headers: {
+      ...(session?.access_token && {
+        Authorization: `Bearer ${session.access_token}`,
+      }),
+    },
   });
   if (!res.ok) {
     throw new Error(`ISBNdb API error: ${res.status} ${res.statusText}`);
