@@ -135,12 +135,12 @@ export function PhilosophyPage() {
           >
             Philosophy
           </Link>
-          <a
-            href="#"
+          <Link
+            to="/features"
             className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             Features
-          </a>
+          </Link>
           <a
             href="#"
             className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground"

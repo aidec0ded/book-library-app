@@ -14,6 +14,7 @@ import { SyllabiPage } from "@/pages/SyllabiPage";
 import { SyllabusDetail } from "@/pages/SyllabusDetail";
 import { ReleasesPage } from "@/pages/ReleasesPage";
 import { PhilosophyPage } from "@/pages/PhilosophyPage";
+import { FeaturesPage } from "@/pages/FeaturesPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
@@ -38,6 +39,7 @@ export function App() {
     <Routes>
       <Route index element={<LandingPage />} />
       <Route path="philosophy" element={<PhilosophyPage />} />
+      <Route path="features" element={<FeaturesPage />} />
       <Route path="login" element={<LoginPage />} />
       <Route
         element={

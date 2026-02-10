@@ -17,9 +17,9 @@ export function LandingPage() {
           <Link to="/philosophy" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
             Philosophy
           </Link>
-          <a href="#" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
+          <Link to="/features" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
             Features
-          </a>
+          </Link>
           <a href="#" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
             Contact
           </a>
