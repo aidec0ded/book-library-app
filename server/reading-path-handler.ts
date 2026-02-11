@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findBookByTitle } from "./book-lookup.js";
 
 interface SeminarContent {
   pre_reading_context: string;
@@ -37,15 +38,8 @@ async function resolveBook(
   supabase: SupabaseClient,
   title: string,
 ): Promise<ResolvedBook | null> {
-  const { data, error } = await supabase
-    .from("books")
-    .select("id, title")
-    .ilike("title", title)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? { title: data.title as string, id: data.id as string } : null;
+  const book = await findBookByTitle(supabase, title);
+  return book ? { title: book.title, id: book.id } : null;
 }
 
 

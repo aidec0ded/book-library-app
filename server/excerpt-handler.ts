@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findBookByTitle } from "./book-lookup.js";
 
 export interface ExcerptCommand {
   action: "save" | "view";
@@ -20,14 +21,7 @@ export async function executeExcerptCommand(
         throw new Error("'save' requires content");
       }
 
-      const { data: book, error: findError } = await supabase
-        .from("books")
-        .select("id, title")
-        .ilike("title", command.book_title)
-        .limit(1)
-        .maybeSingle();
-
-      if (findError) throw findError;
+      const book = await findBookByTitle(supabase, command.book_title);
 
       if (!book) {
         return `Could not find '${command.book_title}' in the library.`;
@@ -51,14 +45,7 @@ export async function executeExcerptCommand(
         throw new Error("'view' requires a book_title");
       }
 
-      const { data: book, error: findError } = await supabase
-        .from("books")
-        .select("id, title")
-        .ilike("title", command.book_title)
-        .limit(1)
-        .maybeSingle();
-
-      if (findError) throw findError;
+      const book = await findBookByTitle(supabase, command.book_title);
 
       if (!book) {
         return `Could not find '${command.book_title}' in the library.`;

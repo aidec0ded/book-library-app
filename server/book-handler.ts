@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findBookByTitle } from "./book-lookup.js";
 
 export interface BookCommand {
   action: "update_status" | "update_rating" | "toggle_favorite" | "delete";
@@ -17,15 +18,12 @@ export async function executeBookCommand(
     throw new Error("book_title is required");
   }
 
-  // Look up book by title (case-insensitive)
-  const { data: book, error: findError } = await supabase
-    .from("books")
-    .select("id, title, status, rating, is_favorite")
-    .ilike("title", command.book_title)
-    .limit(1)
-    .maybeSingle();
-
-  if (findError) throw findError;
+  // Look up book by title with fuzzy fallback
+  const book = await findBookByTitle<{ status: string | null; rating: number | null; is_favorite: boolean }>(
+    supabase,
+    command.book_title,
+    "id, title, status, rating, is_favorite",
+  );
 
   if (!book) {
     return `Could not find '${command.book_title}' in the library.`;

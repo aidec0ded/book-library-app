@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findBookByTitle } from "./book-lookup.js";
 
 export interface WishlistCommand {
   action: "add" | "view" | "remove";
@@ -17,14 +18,11 @@ export async function executeWishlistCommand(
       }
 
       // Search for existing book by title
-      const { data: existing, error: searchError } = await supabase
-        .from("books")
-        .select("id, title, status")
-        .ilike("title", command.title)
-        .limit(1)
-        .maybeSingle();
-
-      if (searchError) throw searchError;
+      const existing = await findBookByTitle<{ status: string | null }>(
+        supabase,
+        command.title,
+        "id, title, status",
+      );
 
       if (existing) {
         if (existing.status === "wishlist") {
@@ -72,14 +70,11 @@ export async function executeWishlistCommand(
         throw new Error("'remove' requires a title");
       }
 
-      const { data: book, error: findError } = await supabase
-        .from("books")
-        .select("id, title, status")
-        .ilike("title", command.title)
-        .limit(1)
-        .maybeSingle();
-
-      if (findError) throw findError;
+      const book = await findBookByTitle<{ status: string | null }>(
+        supabase,
+        command.title,
+        "id, title, status",
+      );
 
       if (!book) {
         return `Could not find '${command.title}' in your library.`;

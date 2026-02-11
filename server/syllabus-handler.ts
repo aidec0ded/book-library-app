@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findBookByTitle } from "./book-lookup.js";
 
 export interface SyllabusCommand {
   action: "create" | "view" | "add_books" | "remove_books" | "delete";
@@ -21,17 +22,10 @@ async function resolveBooks(
   const notFound: string[] = [];
 
   for (const title of titles) {
-    const { data, error } = await supabase
-      .from("books")
-      .select("id, title")
-      .ilike("title", title)
-      .limit(1)
-      .maybeSingle();
+    const book = await findBookByTitle(supabase, title);
 
-    if (error) throw error;
-
-    if (data) {
-      found.push({ title: data.title as string, id: data.id as string });
+    if (book) {
+      found.push({ title: book.title, id: book.id });
     } else {
       notFound.push(title);
     }
