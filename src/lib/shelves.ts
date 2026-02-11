@@ -57,21 +57,25 @@ async function buildAutoShelfQuery(filter: ShelfFilter) {
 }
 
 export async function fetchShelves(): Promise<ShelfWithCover[]> {
-  const { data: shelves, error: shelvesError } = await supabase
-    .from("shelves")
-    .select("*")
-    .order("created_at", { ascending: false });
+  // Fetch shelves and shelf_items in parallel
+  const [shelvesResult, itemsResult] = await Promise.all([
+    supabase
+      .from("shelves")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("shelf_items")
+      .select("shelf_id, book_id, position")
+      .order("position"),
+  ]);
 
-  if (shelvesError) throw shelvesError;
+  if (shelvesResult.error) throw shelvesResult.error;
+  if (itemsResult.error) throw itemsResult.error;
+
+  const shelves = shelvesResult.data;
+  const items = itemsResult.data;
+
   if (!shelves || shelves.length === 0) return [];
-
-  // Fetch all shelf_items for counts and cover books
-  const { data: items, error: itemsError } = await supabase
-    .from("shelf_items")
-    .select("shelf_id, book_id, position")
-    .order("position");
-
-  if (itemsError) throw itemsError;
 
   // Group items by shelf
   const shelfItemsMap = new Map<
@@ -109,41 +113,40 @@ export async function fetchShelves(): Promise<ShelfWithCover[]> {
     }
   }
 
-  const results: ShelfWithCover[] = [];
-
-  for (const shelf of shelves) {
-    if (shelf.shelf_type === "auto" && shelf.filter) {
-      // Auto shelf: execute the filter query
-      const q = await buildAutoShelfQuery(shelf.filter as ShelfFilter);
-      if (q === null) {
-        results.push({ ...shelf, book_count: 0, cover_book: null, cover_books: [] });
-        continue;
+  const results: ShelfWithCover[] = await Promise.all(
+    shelves.map(async (shelf) => {
+      if (shelf.shelf_type === "auto" && shelf.filter) {
+        // Auto shelf: execute the filter query
+        const q = await buildAutoShelfQuery(shelf.filter as ShelfFilter);
+        if (q === null) {
+          return { ...shelf, book_count: 0, cover_book: null, cover_books: [] };
+        }
+        const { data, error } = await q;
+        if (error) throw error;
+        const books = data ?? [];
+        return {
+          ...shelf,
+          book_count: books.length,
+          cover_book: books.length > 0 ? books[0] : null,
+          cover_books: books.slice(0, 3),
+        };
+      } else {
+        // Manual shelf
+        const shelfItems = shelfItemsMap.get(shelf.id) ?? [];
+        const sorted = [...shelfItems].sort((a, b) => a.position - b.position);
+        const topBooks = sorted
+          .slice(0, 3)
+          .map((item) => coverBooksMap.get(item.book_id))
+          .filter((b): b is ShelfBook => b != null);
+        return {
+          ...shelf,
+          book_count: shelfItems.length,
+          cover_book: topBooks[0] ?? null,
+          cover_books: topBooks,
+        };
       }
-      const { data, error } = await q;
-      if (error) throw error;
-      const books = data ?? [];
-      results.push({
-        ...shelf,
-        book_count: books.length,
-        cover_book: books.length > 0 ? books[0] : null,
-        cover_books: books.slice(0, 3),
-      });
-    } else {
-      // Manual shelf
-      const shelfItems = shelfItemsMap.get(shelf.id) ?? [];
-      const sorted = [...shelfItems].sort((a, b) => a.position - b.position);
-      const topBooks = sorted
-        .slice(0, 3)
-        .map((item) => coverBooksMap.get(item.book_id))
-        .filter((b): b is ShelfBook => b != null);
-      results.push({
-        ...shelf,
-        book_count: shelfItems.length,
-        cover_book: topBooks[0] ?? null,
-        cover_books: topBooks,
-      });
-    }
-  }
+    }),
+  );
 
   return results;
 }
