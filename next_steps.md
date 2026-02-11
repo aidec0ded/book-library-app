@@ -15,7 +15,7 @@
 
 - ~~Chat tone tuning~~ **[DONE]**
 - Empty states for new users — Home, Recommendations, Profile show blank if no data; guide users instead
-- Profile generation notification — toast/banner on next visit when profile generates or regenerates
+- Profile generation notification — toast/banner on next visit when profile generates or regenerates **[DONE]**
 - Filter by predicted rating on All tab **[DONE]**
 
 **Tier 3: Polish**

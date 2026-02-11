@@ -207,9 +207,13 @@ export function Profile() {
       try {
         const p = await fetchLatestProfile();
         setProfile(p);
-        if (p && p.profile_data.personal_canon.length > 0) {
-          const books = await fetchBooksByIds(p.profile_data.personal_canon);
-          setCanonBooks(books);
+        if (p) {
+          // Mark profile as seen so the Layout banner dismisses
+          localStorage.setItem("rekollekt_profile_seen_at", new Date().toISOString());
+          if (p.profile_data.personal_canon.length > 0) {
+            const books = await fetchBooksByIds(p.profile_data.personal_canon);
+            setCanonBooks(books);
+          }
         }
         if (!p) {
           const prog = await fetchProfileProgress();
