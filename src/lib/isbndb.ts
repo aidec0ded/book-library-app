@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabase";
 
 const BASE_URL = "/api/isbndb";
-const API_KEY = import.meta.env.VITE_ISBNDB_API_KEY as string;
 
 // --- Types ---
 

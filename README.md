@@ -53,7 +53,6 @@ Rekollekt's central loop is: **read, reflect, AI understanding deepens, better r
    ISBNDB_API_KEY=your-isbndb-key
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-key
-   VITE_ISBNDB_API_KEY=your-isbndb-key
    ```
 
    SUPABASE_ANON_KEY=your-anon-key
