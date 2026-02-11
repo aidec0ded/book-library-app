@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { exportLibraryCSV } from "@/lib/export";
 
 export function Settings() {
   const { user, session } = useAuth();
@@ -18,6 +19,13 @@ export function Settings() {
     message: string;
   } | null>(null);
   const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Export state
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportStatus, setExportStatus] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   // Delete account state
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -64,6 +72,26 @@ export function Settings() {
       });
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExportStatus(null);
+    setExportLoading(true);
+    try {
+      const { count } = await exportLibraryCSV();
+      setExportStatus({
+        type: "success",
+        message: `Exported ${count} book${count === 1 ? "" : "s"}.`,
+      });
+    } catch (err) {
+      setExportStatus({
+        type: "error",
+        message:
+          err instanceof Error ? err.message : "Failed to export library.",
+      });
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -173,6 +201,37 @@ export function Settings() {
               </button>
             </form>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Export */}
+      <Card className="mb-8">
+        <CardContent className="pt-6">
+          <h2 className="mb-2 text-lg font-semibold">Export library</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Download your entire library as a CSV file — titles, authors,
+            ratings, status, notes, and metadata. Your data is yours.
+          </p>
+
+          {exportStatus && (
+            <p
+              className={`mb-3 text-sm ${
+                exportStatus.type === "success"
+                  ? "text-green-600"
+                  : "text-destructive"
+              }`}
+            >
+              {exportStatus.message}
+            </p>
+          )}
+
+          <button
+            onClick={handleExport}
+            disabled={exportLoading}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
+          >
+            {exportLoading ? "Exporting..." : "Download CSV"}
+          </button>
         </CardContent>
       </Card>
 
