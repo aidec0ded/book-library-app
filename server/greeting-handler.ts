@@ -5,6 +5,18 @@ import { loadReaderProfile } from "./profile-loader.js";
 const MODEL = "claude-sonnet-4-5-20250929";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+export interface GreetingUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
+
+export interface GreetingResult {
+  greeting: string;
+  usage: GreetingUsage | null;
+}
+
 interface CacheEntry {
   data: string;
   cachedAt: number;
@@ -16,7 +28,7 @@ async function generateGreeting(
   supabase: SupabaseClient,
   anthropic: Anthropic,
   userId: string,
-): Promise<string> {
+): Promise<GreetingResult> {
   const readerProfile = await loadReaderProfile(supabase, userId);
 
   // Fetch most recent conversation's last few messages
@@ -50,7 +62,7 @@ async function generateGreeting(
   }
 
   if (!readerProfile) {
-    return "Welcome to your library.";
+    return { greeting: "Welcome to your library.", usage: null };
   }
 
   const userContent = [
@@ -71,27 +83,30 @@ async function generateGreeting(
   });
 
   const textBlock = response.content.find((b) => b.type === "text");
-  return textBlock && textBlock.type === "text"
-    ? textBlock.text.trim()
-    : "Welcome to your library.";
+  const greeting =
+    textBlock && textBlock.type === "text"
+      ? textBlock.text.trim()
+      : "Welcome to your library.";
+
+  return { greeting, usage: response.usage };
 }
 
 export async function getGreeting(
   supabase: SupabaseClient,
   anthropic: Anthropic,
   userId: string,
-): Promise<string> {
+): Promise<GreetingResult> {
   const entry = cache.get(userId);
   if (entry && Date.now() - entry.cachedAt < CACHE_TTL_MS) {
-    return entry.data;
+    return { greeting: entry.data, usage: null };
   }
 
   try {
-    const greeting = await generateGreeting(supabase, anthropic, userId);
-    cache.set(userId, { data: greeting, cachedAt: Date.now() });
-    return greeting;
+    const result = await generateGreeting(supabase, anthropic, userId);
+    cache.set(userId, { data: result.greeting, cachedAt: Date.now() });
+    return result;
   } catch (err) {
     console.error("Greeting generation failed:", err);
-    return entry?.data ?? "Welcome to your library.";
+    return { greeting: entry?.data ?? "Welcome to your library.", usage: null };
   }
 }

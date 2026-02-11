@@ -39,6 +39,35 @@ import { startReleasesScheduler } from "./releases-scheduler.js";
 config();
 
 const MODEL = "claude-sonnet-4-5-20250929";
+
+async function logTokenUsage(
+  supabase: ReturnType<typeof createUserClient>,
+  userId: string,
+  conversationId: string | null,
+  endpoint: string,
+  model: string,
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+  },
+): Promise<void> {
+  try {
+    await supabase.from("chat_token_usage").insert({
+      user_id: userId,
+      conversation_id: conversationId,
+      endpoint,
+      model,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
+      cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
+    });
+  } catch {
+    // Token logging is best-effort — never fail the request
+  }
+}
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
 // Static file serving setup
@@ -572,6 +601,9 @@ async function handleChat(
 
       const finalMessage = await stream.finalMessage();
 
+      // Log token usage (best-effort, fire-and-forget)
+      void logTokenUsage(supabase, userId, conversationId, "chat", MODEL, finalMessage.usage);
+
       // Check for tool use
       const toolUseBlocks = finalMessage.content.filter(
         (b) => b.type === "tool_use",
@@ -674,7 +706,7 @@ async function handleChat(
 
     if (count === 2) {
       // Fire-and-forget title generation
-      void generateTitle(supabase, conversationId, body.message, accumulatedText);
+      void generateTitle(supabase, userId, conversationId, body.message, accumulatedText);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -686,6 +718,7 @@ async function handleChat(
 
 async function generateTitle(
   supabase: ReturnType<typeof createUserClient>,
+  userId: string,
   conversationId: string,
   userMessage: string,
   assistantMessage: string,
@@ -711,6 +744,9 @@ async function generateTitle(
         .update({ title: textBlock.text.trim() })
         .eq("id", conversationId);
     }
+
+    // Log token usage for title generation
+    void logTokenUsage(supabase, userId, conversationId, "title", MODEL, response.usage);
   } catch {
     // Title generation is best-effort
   }
@@ -816,9 +852,14 @@ const server = http.createServer((req, res) => {
 
       void (async () => {
         try {
-          const greeting = await getGreeting(userSupabase, anthropic, userId);
+          const result = await getGreeting(userSupabase, anthropic, userId);
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ greeting }));
+          res.end(JSON.stringify({ greeting: result.greeting }));
+
+          // Log token usage if a fresh greeting was generated (not cached)
+          if (result.usage) {
+            void logTokenUsage(userSupabase, userId, null, "greeting", MODEL, result.usage);
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           res.writeHead(500, { "Content-Type": "application/json" });
