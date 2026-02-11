@@ -33,6 +33,15 @@ const RATING_OPTIONS = [
   { value: "unrated", label: "Unrated" },
 ];
 
+const PREDICTED_RATING_OPTIONS = [
+  { value: "any", label: "Any" },
+  { value: "4.5", label: "4.5+" },
+  { value: "4", label: "4+" },
+  { value: "3.5", label: "3.5+" },
+  { value: "3", label: "3+" },
+  { value: "unscored", label: "Unscored" },
+];
+
 // Type filter options
 const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "all", label: "All" },
@@ -59,6 +68,7 @@ function parseCommaSeparated(param: string | null): string[] {
 function hasActiveFilters(params: {
   status: string;
   rating: string;
+  predictedRating: string;
   genre: string;
   pagesMin: string;
   pagesMax: string;
@@ -68,6 +78,7 @@ function hasActiveFilters(params: {
   return (
     params.status !== "any" ||
     params.rating !== "any" ||
+    params.predictedRating !== "any" ||
     params.genre !== "any" ||
     params.pagesMin !== "" ||
     params.pagesMax !== "" ||
@@ -79,6 +90,7 @@ function hasActiveFilters(params: {
 function buildFilterSummary(params: {
   status: string;
   rating: string;
+  predictedRating: string;
   genre: string;
   pagesMin: string;
   pagesMax: string;
@@ -89,6 +101,8 @@ function buildFilterSummary(params: {
   if (params.status !== "any") parts.push(params.status);
   if (params.rating === "unrated") parts.push("unrated");
   else if (params.rating !== "any") parts.push(`${params.rating}+ stars`);
+  if (params.predictedRating === "unscored") parts.push("unscored predicted");
+  else if (params.predictedRating !== "any") parts.push(`predicted ${params.predictedRating}+`);
   if (params.genre !== "any") parts.push(params.genre);
   if (params.pagesMin && params.pagesMax) parts.push(`${params.pagesMin}–${params.pagesMax} pp`);
   else if (params.pagesMin) parts.push(`${params.pagesMin}+ pp`);
@@ -288,6 +302,7 @@ export function BookList() {
   const initialStatus = searchParams.get("status") ?? "any";
   const initialRating = searchParams.get("rating") ?? "any";
   const initialGenre = searchParams.get("genre") ?? "any";
+  const initialPredictedRating = searchParams.get("predicted") ?? "any";
   const initialType = searchParams.get("type") ?? "all";
   const initialPagesMin = searchParams.get("pages_min") ?? "";
   const initialPagesMax = searchParams.get("pages_max") ?? "";
@@ -307,6 +322,7 @@ export function BookList() {
   const [status, setStatus] = useState(initialStatus);
   const [rating, setRating] = useState(initialRating);
   const [genre, setGenre] = useState(initialGenre);
+  const [predictedRating, setPredictedRating] = useState(initialPredictedRating);
   const [pagesMin, setPagesMin] = useState(initialPagesMin);
   const [pagesMax, setPagesMax] = useState(initialPagesMax);
   const [yearMin, setYearMin] = useState(initialYearMin);
@@ -315,6 +331,7 @@ export function BookList() {
     hasActiveFilters({
       status: initialStatus,
       rating: initialRating,
+      predictedRating: initialPredictedRating,
       genre: initialGenre,
       pagesMin: initialPagesMin,
       pagesMax: initialPagesMax,
@@ -358,6 +375,7 @@ export function BookList() {
     if (status !== "any") params.status = status;
     if (rating !== "any") params.rating = rating;
     if (genre !== "any") params.genre = genre;
+    if (predictedRating !== "any") params.predicted = predictedRating;
     if (pagesMin) params.pages_min = pagesMin;
     if (pagesMax) params.pages_max = pagesMax;
     if (yearMin) params.year_min = yearMin;
@@ -370,6 +388,7 @@ export function BookList() {
     bookType,
     status,
     rating,
+    predictedRating,
     genre,
     pagesMin,
     pagesMax,
@@ -410,6 +429,14 @@ export function BookList() {
 
     if (genre !== "any") {
       q = q.eq("genre", genre);
+    }
+
+    if (predictedRating !== "any") {
+      if (predictedRating === "unscored") {
+        q = q.is("predicted_rating", null);
+      } else {
+        q = q.gte("predicted_rating", Number(predictedRating));
+      }
     }
 
     if (pagesMin) {
@@ -459,6 +486,7 @@ export function BookList() {
     bookType,
     status,
     rating,
+    predictedRating,
     genre,
     pagesMin,
     pagesMax,
@@ -482,6 +510,7 @@ export function BookList() {
   function clearFilters() {
     setStatus("any");
     setRating("any");
+    setPredictedRating("any");
     setGenre("any");
     setPagesMin("");
     setPagesMax("");
@@ -493,6 +522,7 @@ export function BookList() {
   const filterState = {
     status,
     rating,
+    predictedRating,
     genre,
     pagesMin,
     pagesMax,
@@ -511,6 +541,7 @@ export function BookList() {
   const activeFilterCount = [
     status !== "any",
     rating !== "any",
+    predictedRating !== "any",
     genre !== "any",
     pagesMin !== "",
     pagesMax !== "",
@@ -633,6 +664,25 @@ export function BookList() {
                       </SelectTrigger>
                       <SelectContent>
                         {RATING_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Predicted Rating */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Predicted
+                    </label>
+                    <Select value={predictedRating} onValueChange={(v) => { setPredictedRating(v); setPage(1); }}>
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PREDICTED_RATING_OPTIONS.map((opt) => (
                           <SelectItem key={opt.value} value={opt.value}>
                             {opt.label}
                           </SelectItem>
