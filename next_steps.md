@@ -1,3 +1,34 @@
+### 🚀 Alpha Launch
+
+**Tier 1: Launch Blockers**
+
+- ~~Early profile generation after N books/ratings~~ **[DONE]**
+- Account settings page — password reset + delete account (table stakes for real users)
+- Custom domain + deployment finalization — live URL, DNS, SSL
+- CORS restriction — lock `Access-Control-Allow-Origin` to app domain (currently `*`; auth tokens in flight)
+- Goodreads/CSV import — onboarding accelerator; empty library → value in minutes instead of hours
+- Contact form backend — `ContactPage.tsx` shows success but never sends data; broken form on a public page is a bad look
+
+**Tier 2: High-Value Alpha Experience**
+
+- ~~Chat tone tuning~~ **[DONE]**
+- Empty states for new users — Home, Recommendations, Profile show blank if no data; guide users instead
+- Profile generation notification — toast/banner on next visit when profile generates or regenerates
+- Filter by predicted rating on All tab
+
+**Tier 3: Polish**
+
+- Shelves page performance — profile bottleneck, optimize if simple
+- ISBNdb API key cleanup — `VITE_ISBNDB_API_KEY` still in browser bundle; make server-only
+- Code splitting — 760KB bundle; lazy-load lower-priority routes
+
+**Code Hygiene**
+
+- BookDetail.tsx navigation hack — `to={-1 as unknown as string}` type cast; fragile
+- Silent error swallowing on Home page — `.catch(() => [])` hides failures from users
+
+---
+
 ### 🐛 Bugs
 
 - Need to be able to remove a book from library **[DONE]**
