@@ -497,12 +497,12 @@ export function ReleasesPage() {
       <div className="-mx-4 -mt-6">
         <div className="w-screen ml-[calc(-50vw+50%)] lg:w-[calc(100vw-15rem)] lg:ml-[calc(-50vw+50%+7.5rem)] px-6 sm:px-10 lg:px-14 xl:px-20 pb-16 pt-8 lg:pt-12">
           <h1 className="font-serif text-3xl font-bold tracking-tight">New Releases</h1>
-          <p className="mt-4 text-muted-foreground">
-            No release data yet. Run the ingestion script to get started.
-          </p>
-          <pre className="mt-2 rounded-md bg-secondary px-4 py-3 text-sm">
-            npx tsx scripts/ingest-releases.ts
-          </pre>
+          <div className="mt-8 rounded-xl border-2 border-dashed px-8 py-12 text-center">
+            <p className="font-serif text-lg font-bold">No releases yet</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              New releases will appear here as they become available.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -587,7 +587,7 @@ export function ReleasesPage() {
         <div className="flex items-center gap-3">
           {!loading && !anyScored && (
             <p className="text-xs text-muted-foreground">
-              Not scored yet. Run: <code className="rounded bg-secondary px-1 py-0.5">npx tsx scripts/score-releases.ts --month {year}-{String(month).padStart(2, "0")}</code>
+              Releases not yet scored for this month.
             </p>
           )}
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">

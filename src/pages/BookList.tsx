@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Pagination } from "@/components/Pagination";
@@ -792,8 +792,25 @@ export function BookList() {
               </div>
             ) : (
               !loading && (
-                <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                  No books found.
+                <div className="rounded-xl border-2 border-dashed px-8 py-12 text-center">
+                  <p className="font-serif text-lg font-bold">
+                    {debouncedQuery || active ? "No books match your filters." : "Your library is empty"}
+                  </p>
+                  {!debouncedQuery && !active && (
+                    <>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Add books to start building your personal library.
+                      </p>
+                      <div className="mt-4 flex flex-col items-center gap-1">
+                        <Link to="/add" className="text-sm font-medium text-accent hover:underline">
+                          Add a book →
+                        </Link>
+                        <Link to="/import" className="text-sm font-medium text-accent hover:underline">
+                          Import from Goodreads →
+                        </Link>
+                      </div>
+                    </>
+                  )}
                 </div>
               )
             )}

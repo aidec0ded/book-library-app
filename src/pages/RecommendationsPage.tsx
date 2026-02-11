@@ -39,9 +39,14 @@ export function RecommendationsPage() {
               No recommendations yet
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              Recommendations require predicted ratings — run the prediction
-              script to get started.
+              Add and rate more books to unlock personalized recommendations.
             </p>
+            <Link
+              to="/library"
+              className="mt-4 inline-block text-sm font-medium text-accent hover:underline"
+            >
+              Go to Library →
+            </Link>
           </div>
         ) : (
           <div className="mt-8 grid grid-cols-2 gap-6 gap-y-10 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
