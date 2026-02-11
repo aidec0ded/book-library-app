@@ -33,6 +33,7 @@ import {
 import { buildSyllabusIndex } from "./syllabus-index.js";
 import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
+import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
 
 config();
 
@@ -921,4 +922,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`Rekollekt chat server listening on http://localhost:${PORT}`);
   startProfileScheduler(serviceSupabase);
+  startEnrichmentScheduler(serviceSupabase);
 });

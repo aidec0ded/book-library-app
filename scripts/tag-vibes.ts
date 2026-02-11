@@ -152,7 +152,7 @@ async function main() {
     .select(
       "id, title, author, summary, notes, genre, category, timing_raw"
     )
-    .not("timing_raw", "is", null)
+    .eq("book_type", "fiction")
     .order("title");
 
   const { data: books, error: fetchError } = await query;

@@ -11,7 +11,7 @@
 
 **Tier 2: High-Value Alpha Experience**
 
-- Post-add enrichment pipeline — when books enter the library (import, manual add, or AI tool), automatically run ISBNdb enrichment, predicted ratings, vibe tagging, and classification tagging. Needs thoughtful design: rate limiting (ISBNdb 1 req/sec), prioritization (covers first for visual impact), batching strategy, and a unified trigger regardless of entry point
+- Post-add enrichment pipeline — when books enter the library (import, manual add, or AI tool), automatically run ISBNdb enrichment, predicted ratings, vibe tagging, and classification tagging. Needs thoughtful design: rate limiting (ISBNdb 1 req/sec), prioritization (covers first for visual impact), batching strategy, and a unified trigger regardless of entry point **[DONE]**
 
 - ~~Chat tone tuning~~ **[DONE]**
 - Empty states for new users — Home, Recommendations, Profile show blank if no data; guide users instead **[DONE]**
@@ -83,6 +83,7 @@
 
 - Reading paths — interest-driven explorations (author catalogs, literary movements, award lists) with progress tracking and AI-assisted creation/check-ins. Stretch: AI-generated "seminar" layer — structured syllabi with deliberate sequencing, historical/cultural context before each work, guided reading focus, post-book discussion, and adaptation based on the reader's reactions throughout the path **[DONE]**
 - Reading Life narrative — AI-identified eras/chapters in the reader's journey (not a chronological timeline but a thematic story), with key books, transition points, vibe/genre composition, and conversation insights per era. **First step:** add `date_read` column to books (set automatically when status changes to "read") so temporal data accumulates over time
+- Onboarding flow — multi-step guided experience for new users to accelerate profile generation and personalization. Collect preferences (vibe selection from canonical vibes, book type preferences, initial ratings of well-known books), seed the reader profile faster than waiting for organic activity. Could also include genre/topic interests, reading pace, and "what are you reading now?"
 - Social features strategy — determine which social interactions serve meaningful reading vs. social performance. Candidates: editorial public lists with write-ups, sharing reader insights/profiles (not metrics), seminar cohorts on reading paths, taste-based discovery. Requires auth/multi-user first
 
 **Chat experience**
