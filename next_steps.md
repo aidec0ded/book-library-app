@@ -11,6 +11,8 @@
 
 **Tier 2: High-Value Alpha Experience**
 
+- Post-add enrichment pipeline — when books enter the library (import, manual add, or AI tool), automatically run ISBNdb enrichment, predicted ratings, vibe tagging, and classification tagging. Needs thoughtful design: rate limiting (ISBNdb 1 req/sec), prioritization (covers first for visual impact), batching strategy, and a unified trigger regardless of entry point
+
 - ~~Chat tone tuning~~ **[DONE]**
 - Empty states for new users — Home, Recommendations, Profile show blank if no data; guide users instead
 - Profile generation notification — toast/banner on next visit when profile generates or regenerates
