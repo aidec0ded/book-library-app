@@ -6,7 +6,10 @@ export function ContactPage() {
   const { session } = useAuth();
   const entryLink = session ? "/home" : "/login";
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleTextareaInput = () => {
     const el = textareaRef.current;
@@ -15,9 +18,29 @@ export function ContactPage() {
     el.style.height = el.scrollHeight + "px";
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setError(null);
+    setSubmitting(true);
+    try {
+      const form = formRef.current!;
+      const data = new FormData(form);
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.get("name"),
+          email: data.get("email"),
+          message: data.get("message"),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to send message");
+      setSubmitted(true);
+    } catch {
+      setError("Something went wrong. Please try again or email directly.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const inputClass =
@@ -72,10 +95,10 @@ export function ContactPage() {
                 </span>
               </div>
               <a
-                href="mailto:hello@rekollekt.com"
+                href="mailto:robert@aidecoded.ai"
                 className="text-2xl transition-colors hover:text-accent lg:text-3xl"
               >
-                hello@rekollekt.com
+                robert@aidecoded.ai
               </a>
             </div>
           </div>
@@ -100,6 +123,7 @@ export function ContactPage() {
               </div>
             ) : (
               <form
+                ref={formRef}
                 onSubmit={handleSubmit}
                 className="flex max-w-2xl flex-col gap-10"
               >
@@ -161,12 +185,17 @@ export function ContactPage() {
                   I can.
                 </p>
 
+                {error && (
+                  <p className="text-sm text-destructive">{error}</p>
+                )}
+
                 <div className="mt-4">
                   <button
                     type="submit"
-                    className="group inline-flex items-center gap-4 rounded-full bg-foreground px-8 py-3.5 text-base font-medium text-background transition-all hover:opacity-90"
+                    disabled={submitting}
+                    className="group inline-flex items-center gap-4 rounded-full bg-foreground px-8 py-3.5 text-base font-medium text-background transition-all hover:opacity-90 disabled:opacity-50"
                   >
-                    <span>Send</span>
+                    <span>{submitting ? "Sending..." : "Send"}</span>
                     <span className="h-px w-6 bg-current opacity-50 transition-all group-hover:w-10" />
                     <span className="font-serif italic">Message</span>
                   </button>

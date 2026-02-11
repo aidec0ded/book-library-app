@@ -826,6 +826,38 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (req.method === "POST" && url === "/api/contact") {
+      void (async () => {
+        try {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          const body = JSON.parse(Buffer.concat(chunks).toString());
+
+          const { name, email, message } = body;
+          if (!name || !email || !message) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "name, email, and message are required" }));
+            return;
+          }
+
+          const { error } = await serviceSupabase
+            .from("contact_submissions")
+            .insert({ name, email, message });
+
+          if (error) throw error;
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[contact] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to send message" }));
+        }
+      })();
+      return;
+    }
+
     if (req.method === "GET" && url.startsWith("/api/isbndb/")) {
       void handleIsbndbProxy(req, res);
       return;
