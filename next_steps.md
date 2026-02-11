@@ -22,7 +22,7 @@
 
 - Shelves page performance — profile bottleneck, optimize if simple
 - ISBNdb API key cleanup — `VITE_ISBNDB_API_KEY` still in browser bundle; make server-only **[DONE]**
-- Code splitting — 760KB bundle; lazy-load lower-priority routes
+- Code splitting — 760KB bundle; lazy-load lower-priority routes **[DONE]**
 
 **Code Hygiene**
 
