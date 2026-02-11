@@ -25,6 +25,7 @@ const anthropic = new Anthropic({
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
+const batchMode = args.includes("--batch");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
 const monthIdx = args.indexOf("--month");
@@ -40,6 +41,7 @@ const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
 const SYNOPSIS_MAX_CHARS = 400;
 const SUBJECTS_CAP = 6;
+const BATCH_POLL_INTERVAL_MS = 30_000; // 30s between batch status polls
 
 // --- Types ---
 
@@ -67,6 +69,13 @@ interface ScoreResult {
   general_signal: number;
   personal_match?: number;
   rationale: string;
+}
+
+interface BatchRequestEntry {
+  customId: string;
+  batchIndex: number;
+  releases: ReleaseForScoring[];
+  batchIsbns: Set<string>;
 }
 
 // --- Profile formatting (mirrors predict-ratings.ts) ---
@@ -507,6 +516,292 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+// --- DB Write Helpers ---
+
+async function writeScoreResults(
+  results: ScoreResult[],
+  label: string,
+): Promise<{ scored: number; errors: number; scores: number[] }> {
+  let scored = 0;
+  let errors = 0;
+  const scores: number[] = [];
+
+  for (const result of results) {
+    const aiScore = computeAiScore(result.general_signal, result.personal_match);
+
+    // Always update general_signal_score on new_releases (shared)
+    const { error: generalError } = await supabase
+      .from("new_releases")
+      .update({
+        general_signal_score: result.general_signal,
+      })
+      .eq("isbn13", result.isbn);
+
+    if (generalError) {
+      console.log(
+        `  ${label} \u2717 DB error for ${result.isbn}: ${generalError.message}`,
+      );
+      errors++;
+      continue;
+    }
+
+    // Write personal scores to user_release_scores if --user-id provided
+    if (userId && result.personal_match != null) {
+      const { data: releaseRow } = await supabase
+        .from("new_releases")
+        .select("id")
+        .eq("isbn13", result.isbn)
+        .single();
+
+      if (releaseRow) {
+        const { error: userScoreError } = await supabase
+          .from("user_release_scores")
+          .upsert(
+            {
+              user_id: userId,
+              release_id: releaseRow.id,
+              personal_score: result.personal_match,
+              ai_score: aiScore,
+              ai_rationale: result.rationale,
+              scored_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id,release_id" },
+          );
+
+        if (userScoreError) {
+          console.log(
+            `  ${label} \u2717 User score error for ${result.isbn}: ${userScoreError.message}`,
+          );
+          errors++;
+          continue;
+        }
+      }
+    }
+
+    scored++;
+    scores.push(aiScore);
+  }
+
+  return { scored, errors, scores };
+}
+
+// --- Summary ---
+
+function printSummary(
+  total: number,
+  scored: number,
+  errors: number,
+  allScores: number[],
+): void {
+  const dist = {
+    high: allScores.filter((s) => s >= 8).length,
+    midHigh: allScores.filter((s) => s >= 6 && s < 8).length,
+    mid: allScores.filter((s) => s >= 4 && s < 6).length,
+    low: allScores.filter((s) => s < 4).length,
+  };
+
+  console.log(
+    `\nDone: ${total} releases, ${scored} scored, ${errors} error${errors !== 1 ? "s" : ""}`,
+  );
+  console.log(
+    `Distribution: 8-10: ${dist.high} | 6-7: ${dist.midHigh} | 4-5: ${dist.mid} | 1-3: ${dist.low}`,
+  );
+}
+
+// --- Batch Mode ---
+
+async function runBatchMode(
+  releases: ReleaseForScoring[],
+  systemPrompt: string,
+): Promise<void> {
+  // Build all batch request entries upfront
+  const entries: BatchRequestEntry[] = [];
+
+  for (let i = 0; i < releases.length; i += BATCH_SIZE) {
+    const batch = releases.slice(i, i + BATCH_SIZE);
+    const batchIndex = Math.floor(i / BATCH_SIZE);
+    entries.push({
+      customId: `score-${batchIndex}`,
+      batchIndex,
+      releases: batch,
+      batchIsbns: new Set(batch.map((r) => r.isbn13)),
+    });
+  }
+
+  console.log(`Submitting ${entries.length} requests to Batch API...`);
+
+  const batch = await anthropic.messages.batches.create({
+    requests: entries.map((entry) => ({
+      custom_id: entry.customId,
+      params: {
+        model: MODEL,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: "user" as const, content: buildUserPrompt(entry.releases) }],
+      },
+    })),
+  });
+
+  console.log(`Batch ${batch.id} submitted (${entries.length} requests). Polling...`);
+
+  // Poll for completion
+  let status = batch;
+  while (status.processing_status !== "ended") {
+    await sleep(BATCH_POLL_INTERVAL_MS);
+    status = await anthropic.messages.batches.retrieve(batch.id);
+    const completed = status.request_counts.succeeded + status.request_counts.errored +
+      status.request_counts.canceled + status.request_counts.expired;
+    const pct = Math.round((completed / entries.length) * 100);
+    console.log(
+      `  ${pct}% complete (${status.request_counts.succeeded} succeeded, ` +
+      `${status.request_counts.errored} errored, ${status.request_counts.processing} processing)`,
+    );
+  }
+
+  console.log(`\nBatch complete. Processing results...`);
+
+  // Build a lookup from custom_id to entry
+  const entryMap = new Map<string, BatchRequestEntry>();
+  for (const entry of entries) {
+    entryMap.set(entry.customId, entry);
+  }
+
+  // Process results
+  let totalScored = 0;
+  let totalErrors = 0;
+  const allScores: number[] = [];
+
+  for await (const response of await anthropic.messages.batches.results(batch.id)) {
+    const entry = entryMap.get(response.custom_id);
+    if (!entry) {
+      console.log(`  Unknown custom_id: ${response.custom_id}, skipping`);
+      totalErrors++;
+      continue;
+    }
+
+    const batchLabel = `[${String(entry.batchIndex + 1).padStart(3)}/${entries.length}]`;
+
+    if (response.result.type !== "succeeded") {
+      console.log(`  ${batchLabel} \u2717 ${response.result.type}`);
+      totalErrors++;
+      continue;
+    }
+
+    const textBlock = response.result.message.content.find((b) => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") {
+      console.log(`  ${batchLabel} \u2717 No text block in response`);
+      totalErrors++;
+      continue;
+    }
+
+    let results: ScoreResult[];
+    try {
+      results = parseResponse(textBlock.text, entry.batchIsbns);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.log(`  ${batchLabel} \u2717 Parse error: ${errMsg}`);
+      totalErrors++;
+      continue;
+    }
+
+    if (results.length === 0) {
+      console.log(`  ${batchLabel} \u2717 No valid scores in response`);
+      totalErrors++;
+      continue;
+    }
+
+    const { scored, errors, scores } = await writeScoreResults(results, batchLabel);
+    totalScored += scored;
+    totalErrors += errors;
+    allScores.push(...scores);
+
+    const avg = scored > 0 ? (scores.reduce((a, b) => a + b, 0) / scored).toFixed(1) : "0";
+    console.log(`  ${batchLabel} \u2713 ${scored} scored (avg ${avg})`);
+  }
+
+  // Distribution summary
+  printSummary(releases.length, totalScored, totalErrors, allScores);
+}
+
+// --- Sequential Mode ---
+
+async function runSequentialMode(
+  releases: ReleaseForScoring[],
+  systemPrompt: string,
+): Promise<void> {
+  const totalBatches = Math.ceil(releases.length / BATCH_SIZE);
+
+  console.log("Processing...");
+  let totalScored = 0;
+  let totalErrors = 0;
+  const allScores: number[] = [];
+
+  for (let i = 0; i < releases.length; i += BATCH_SIZE) {
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const batch = releases.slice(i, i + BATCH_SIZE);
+    const batchIsbns = new Set(batch.map((r) => r.isbn13));
+    const userPrompt = buildUserPrompt(batch);
+    const batchLabel = `[${String(batchNum).padStart(3)}/${totalBatches}]`;
+
+    let results: ScoreResult[] | null = null;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await anthropic.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        });
+
+        const textBlock = response.content.find((b) => b.type === "text");
+        if (!textBlock || textBlock.type !== "text") {
+          throw new Error("No text block in response");
+        }
+
+        results = parseResponse(textBlock.text, batchIsbns);
+        break;
+      } catch (err) {
+        const isRetryable =
+          err instanceof Anthropic.APIError &&
+          (err.status === 429 || err.status >= 500);
+
+        if (isRetryable && attempt < MAX_RETRIES) {
+          const backoff = 1000 * Math.pow(2, attempt - 1);
+          console.log(
+            `  ${batchLabel} Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`,
+          );
+          await sleep(backoff);
+          continue;
+        }
+
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.log(`  ${batchLabel} \u2717 ${errMsg}`);
+        totalErrors++;
+        break;
+      }
+    }
+
+    if (results && results.length > 0) {
+      const { scored, errors, scores } = await writeScoreResults(results, batchLabel);
+      totalScored += scored;
+      totalErrors += errors;
+      allScores.push(...scores);
+
+      const avg = scored > 0 ? (scores.reduce((a, b) => a + b, 0) / scored).toFixed(1) : "0";
+      console.log(`  ${batchLabel} \u2713 ${scored} scored (avg ${avg})`);
+    }
+
+    // Rate limiting between batches
+    if (i + BATCH_SIZE < releases.length) {
+      await sleep(RATE_LIMIT_MS);
+    }
+  }
+
+  // Distribution summary
+  printSummary(releases.length, totalScored, totalErrors, allScores);
+}
+
 // --- Main ---
 
 async function main() {
@@ -553,8 +848,9 @@ async function main() {
   }
 
   const totalBatches = Math.ceil(releases.length / BATCH_SIZE);
+  const modeLabel = dryRun ? "dry-run" : batchMode ? "batch" : "sequential";
 
-  console.log(`  Mode: ${dryRun ? "dry-run" : "live"} | Model: ${MODEL}`);
+  console.log(`  Mode: ${modeLabel} | Model: ${MODEL}`);
   console.log(`  Month: ${monthLabel} | Releases: ${releases.length} (${insufficientData} skipped, insufficient data)`);
   console.log(`  Scoring: ${hasProfile ? "general + personal" : "general signal only (no reader profile)"}`);
   console.log(`  Batches: ${totalBatches} (${BATCH_SIZE} per batch)`);
@@ -562,6 +858,7 @@ async function main() {
     console.log(`  Profile: generated ${new Date(profileResult.generatedAt).toLocaleDateString()} | Canon: ${canonBooks.length} | Calibration: ${calibration.length}`);
   }
   if (force) console.log("  --force: will re-score already-scored releases");
+  if (batchMode && !dryRun) console.log("  --batch: using Batch API (50% cost savings, async processing)");
   console.log();
 
   if (releases.length === 0) {
@@ -581,151 +878,18 @@ async function main() {
     console.log(
       `Estimated input: ~${Math.ceil((systemPrompt.length + userPrompt.length) / 4)} tokens`,
     );
+    if (batchMode) {
+      console.log(`Would submit ${totalBatches} requests to Batch API.`);
+    }
     console.log("Dry run complete.");
     return;
   }
 
-  // Process batches
-  console.log("Processing...");
-  let totalScored = 0;
-  let totalErrors = 0;
-  const allScores: number[] = [];
-
-  for (let i = 0; i < releases.length; i += BATCH_SIZE) {
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const batch = releases.slice(i, i + BATCH_SIZE);
-    const batchIsbns = new Set(batch.map((r) => r.isbn13));
-    const userPrompt = buildUserPrompt(batch);
-
-    let results: ScoreResult[] | null = null;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        const response = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
-        });
-
-        const textBlock = response.content.find((b) => b.type === "text");
-        if (!textBlock || textBlock.type !== "text") {
-          throw new Error("No text block in response");
-        }
-
-        results = parseResponse(textBlock.text, batchIsbns);
-        break;
-      } catch (err) {
-        const isRetryable =
-          err instanceof Anthropic.APIError &&
-          (err.status === 429 || err.status >= 500);
-
-        if (isRetryable && attempt < MAX_RETRIES) {
-          const backoff = 1000 * Math.pow(2, attempt - 1);
-          console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`,
-          );
-          await sleep(backoff);
-          continue;
-        }
-
-        const errMsg = err instanceof Error ? err.message : String(err);
-        console.log(
-          `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 ${errMsg}`,
-        );
-        totalErrors++;
-        break;
-      }
-    }
-
-    if (results && results.length > 0) {
-      let batchScored = 0;
-      let batchSum = 0;
-
-      for (const result of results) {
-        const aiScore = computeAiScore(result.general_signal, result.personal_match);
-
-        // Always update general_signal_score on new_releases (shared)
-        const { error: generalError } = await supabase
-          .from("new_releases")
-          .update({
-            general_signal_score: result.general_signal,
-          })
-          .eq("isbn13", result.isbn);
-
-        if (generalError) {
-          console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 DB error for ${result.isbn}: ${generalError.message}`,
-          );
-          totalErrors++;
-          continue;
-        }
-
-        // Write personal scores to user_release_scores if --user-id provided
-        if (userId && result.personal_match != null) {
-          const { data: releaseRow } = await supabase
-            .from("new_releases")
-            .select("id")
-            .eq("isbn13", result.isbn)
-            .single();
-
-          if (releaseRow) {
-            const { error: userScoreError } = await supabase
-              .from("user_release_scores")
-              .upsert(
-                {
-                  user_id: userId,
-                  release_id: releaseRow.id,
-                  personal_score: result.personal_match,
-                  ai_score: aiScore,
-                  ai_rationale: result.rationale,
-                  scored_at: new Date().toISOString(),
-                },
-                { onConflict: "user_id,release_id" },
-              );
-
-            if (userScoreError) {
-              console.log(
-                `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 User score error for ${result.isbn}: ${userScoreError.message}`,
-              );
-              totalErrors++;
-              continue;
-            }
-          }
-        }
-
-        batchScored++;
-        batchSum += aiScore;
-        allScores.push(aiScore);
-      }
-
-      const avg = batchScored > 0 ? (batchSum / batchScored).toFixed(1) : "0";
-      console.log(
-        `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2713 ${batchScored} scored (avg ${avg})`,
-      );
-      totalScored += batchScored;
-    }
-
-    // Rate limiting between batches
-    if (i + BATCH_SIZE < releases.length) {
-      await sleep(RATE_LIMIT_MS);
-    }
+  if (batchMode) {
+    await runBatchMode(releases, systemPrompt);
+  } else {
+    await runSequentialMode(releases, systemPrompt);
   }
-
-  // Distribution summary
-  const dist = {
-    high: allScores.filter((s) => s >= 8).length,
-    midHigh: allScores.filter((s) => s >= 6 && s < 8).length,
-    mid: allScores.filter((s) => s >= 4 && s < 6).length,
-    low: allScores.filter((s) => s < 4).length,
-  };
-
-  console.log(
-    `\nDone: ${releases.length} releases, ${totalScored} scored, ${totalErrors} error${totalErrors !== 1 ? "s" : ""}`,
-  );
-  console.log(
-    `Distribution: 8-10: ${dist.high} | 6-7: ${dist.midHigh} | 4-5: ${dist.mid} | 1-3: ${dist.low}`,
-  );
 }
 
 main().catch((err) => {

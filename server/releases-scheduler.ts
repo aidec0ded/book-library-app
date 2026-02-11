@@ -95,7 +95,7 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
         if ((unscoredCount ?? 0) > 0) {
           spawn(
             `Scoring for ${label} (${unscoredCount} unscored)`,
-            `npx tsx scripts/score-releases.ts --month ${label}`,
+            `npx tsx scripts/score-releases.ts --month ${label} --batch`,
             "scoring",
           );
           // Only score one month at a time to avoid overlapping Claude API load
