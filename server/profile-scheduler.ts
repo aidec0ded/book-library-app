@@ -1,9 +1,14 @@
 import { exec } from "node:child_process";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const STARTUP_DELAY_MS = 30 * 1000; // 30 seconds after server start
 const MIN_AGE_DAYS = 30;
+const NEW_USER_MIN_BOOKS = 8;
+const NEW_USER_MIN_RATED = 5;
+
+// Prevent duplicate spawns if a check fires while generation is still running
+const inFlightUsers = new Set<string>();
 
 interface ActivitySnapshot {
   total_books: number;
@@ -82,12 +87,77 @@ async function fetchLatestProfilePerUser(supabase: SupabaseClient): Promise<User
   return latest;
 }
 
+async function checkNewUsers(supabase: SupabaseClient): Promise<void> {
+  // Find distinct user_ids that have books but no reader_profile
+  const { data: bookUsers, error: bookErr } = await supabase
+    .from("books")
+    .select("user_id")
+    .limit(1000);
+
+  if (bookErr) throw bookErr;
+  if (!bookUsers || bookUsers.length === 0) return;
+
+  const distinctBookUsers = [...new Set(bookUsers.map((r) => r.user_id))];
+
+  const { data: profileUsers, error: profileErr } = await supabase
+    .from("reader_profile")
+    .select("user_id");
+
+  if (profileErr) throw profileErr;
+
+  const usersWithProfiles = new Set((profileUsers ?? []).map((r) => r.user_id));
+  const newUsers = distinctBookUsers.filter((uid) => !usersWithProfiles.has(uid));
+
+  if (newUsers.length === 0) return;
+
+  console.log(`[profile-scheduler] Found ${newUsers.length} user(s) without profiles.`);
+
+  for (const uid of newUsers) {
+    if (inFlightUsers.has(uid)) continue;
+    const counts = await gatherCurrentCounts(supabase, uid);
+    const tag = `[profile-scheduler:${uid.slice(0, 8)}]`;
+
+    if (counts.total_books >= NEW_USER_MIN_BOOKS && counts.books_rated >= NEW_USER_MIN_RATED) {
+      console.log(
+        `${tag} New user meets thresholds (${counts.total_books} books, ${counts.books_rated} rated). Generating first profile.`,
+      );
+      spawnFirstProfile(uid);
+    } else {
+      console.log(
+        `${tag} New user below thresholds (${counts.total_books}/${NEW_USER_MIN_BOOKS} books, ${counts.books_rated}/${NEW_USER_MIN_RATED} rated).`,
+      );
+    }
+  }
+}
+
+function spawnFirstProfile(userId: string): void {
+  if (inFlightUsers.has(userId)) return;
+  inFlightUsers.add(userId);
+  console.log(`[profile-scheduler] Spawning generate-profile.ts --force --bootstrap --user-id ${userId} ...`);
+  exec(
+    `npx tsx scripts/generate-profile.ts --force --bootstrap --user-id ${userId}`,
+    { cwd: process.cwd() },
+    (error, stdout, stderr) => {
+      inFlightUsers.delete(userId);
+      if (error) {
+        console.error(`[profile-scheduler:${userId.slice(0, 8)}] First profile generation failed:`, error.message);
+        if (stderr) console.error(`[profile-scheduler:${userId.slice(0, 8)}] stderr:`, stderr);
+        return;
+      }
+      console.log(`[profile-scheduler:${userId.slice(0, 8)}] First profile output:\n` + stdout);
+    },
+  );
+}
+
 async function checkAndRegenerateAll(supabase: SupabaseClient): Promise<void> {
   try {
+    // Check for new users without any profile first
+    await checkNewUsers(supabase);
+
     const profiles = await fetchLatestProfilePerUser(supabase);
 
     if (profiles.length === 0) {
-      console.log("[profile-scheduler] No user profiles exist yet, skipping.");
+      console.log("[profile-scheduler] No existing profiles to check for regeneration.");
       return;
     }
 
@@ -157,11 +227,14 @@ async function checkUserProfile(
 }
 
 function spawnRegeneration(userId: string): void {
+  if (inFlightUsers.has(userId)) return;
+  inFlightUsers.add(userId);
   console.log(`[profile-scheduler] Spawning generate-profile.ts --force --user-id ${userId} ...`);
   exec(
     `npx tsx scripts/generate-profile.ts --force --user-id ${userId}`,
     { cwd: process.cwd() },
     (error, stdout, stderr) => {
+      inFlightUsers.delete(userId);
       if (error) {
         console.error(`[profile-scheduler:${userId.slice(0, 8)}] Generation failed:`, error.message);
         if (stderr) console.error(`[profile-scheduler:${userId.slice(0, 8)}] stderr:`, stderr);
@@ -182,7 +255,7 @@ export function startProfileScheduler(supabase: SupabaseClient): void {
     void checkAndRegenerateAll(supabase);
   }, STARTUP_DELAY_MS);
 
-  // Recurring daily check
+  // Recurring check
   setInterval(() => {
     void checkAndRegenerateAll(supabase);
   }, CHECK_INTERVAL_MS);

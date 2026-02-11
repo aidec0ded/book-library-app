@@ -28,6 +28,27 @@ export async function fetchBooksByIds(bookIds: string[]): Promise<Book[]> {
   return bookIds.map((id) => bookMap.get(id)).filter(Boolean) as Book[];
 }
 
+export interface ProfileProgress {
+  totalBooks: number;
+  ratedBooks: number;
+  booksNeeded: number;
+  ratedNeeded: number;
+}
+
+export async function fetchProfileProgress(): Promise<ProfileProgress> {
+  const [{ count: totalBooks }, { count: ratedBooks }] = await Promise.all([
+    supabase.from("books").select("id", { count: "exact", head: true }),
+    supabase.from("books").select("id", { count: "exact", head: true }).gt("rating", 0),
+  ]);
+
+  return {
+    totalBooks: totalBooks ?? 0,
+    ratedBooks: ratedBooks ?? 0,
+    booksNeeded: 8,
+    ratedNeeded: 5,
+  };
+}
+
 export async function updatePersonalCanon(
   profileId: string,
   bookIds: string[],

@@ -9,7 +9,9 @@ import {
   fetchLatestProfile,
   fetchBooksByIds,
   updatePersonalCanon,
+  fetchProfileProgress,
 } from "@/lib/profile";
+import type { ProfileProgress } from "@/lib/profile";
 import { useActiveSlide } from "@/hooks/useActiveSlide";
 import type { Book, ReaderProfile as ReaderProfileType } from "@/lib/types";
 
@@ -170,12 +172,35 @@ function Anim({
   );
 }
 
+// ── ProgressBar (inline, for empty state only) ──
+function ProgressBar({ label, current, target }: { label: string; current: number; target: number }) {
+  const pct = Math.min(100, Math.round((current / target) * 100));
+  const met = current >= target;
+  return (
+    <div className="text-left">
+      <div className="mb-1.5 flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={met ? "font-medium text-accent" : "text-muted-foreground"}>
+          {current}/{target}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${met ? "bg-accent" : "bg-foreground/25"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────
 export function Profile() {
   const [profile, setProfile] = useState<ReaderProfileType | null>(null);
   const [canonBooks, setCanonBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProfileProgress | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -185,6 +210,10 @@ export function Profile() {
         if (p && p.profile_data.personal_canon.length > 0) {
           const books = await fetchBooksByIds(p.profile_data.personal_canon);
           setCanonBooks(books);
+        }
+        if (!p) {
+          const prog = await fetchProfileProgress();
+          setProgress(prog);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load profile");
@@ -246,23 +275,53 @@ export function Profile() {
   if (loading) return <div className="text-muted-foreground">Loading...</div>;
   if (error) return <div className="text-destructive">{error}</div>;
   if (!profile) {
+    const booksReady = (progress?.totalBooks ?? 0) >= (progress?.booksNeeded ?? 8);
+    const ratedReady = (progress?.ratedBooks ?? 0) >= (progress?.ratedNeeded ?? 5);
+    const allReady = booksReady && ratedReady;
+
     return (
-      <div className="space-y-6">
-        <h1 className="font-serif text-2xl font-bold">Reader Profile</h1>
-        <Card>
-          <CardContent className="py-8 text-center">
-            <p className="text-muted-foreground">
-              No profile generated yet. Generate one by running:
+      <div className="flex min-h-[60vh] items-center justify-center px-6">
+        <div className="w-full max-w-md space-y-8 text-center">
+          <div>
+            <h1 className="font-serif text-3xl font-light italic tracking-tight sm:text-4xl">
+              Reader Profile
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Your reader profile is an AI-generated portrait of your reading
+              taste — thematic pillars, emotional patterns, and evolving
+              interests, built from your library.
             </p>
-            <code className="mt-2 block rounded bg-muted px-3 py-2 text-sm">
-              npx tsx scripts/generate-profile.ts --bootstrap
-            </code>
-            <p className="mt-3 text-sm text-muted-foreground">
-              After using the chat for a while, run without --bootstrap to
-              include conversation context.
+          </div>
+
+          {progress && (
+            <div className="space-y-5">
+              <ProgressBar
+                label="Books in library"
+                current={progress.totalBooks}
+                target={progress.booksNeeded}
+              />
+              <ProgressBar
+                label="Books rated"
+                current={progress.ratedBooks}
+                target={progress.ratedNeeded}
+              />
+            </div>
+          )}
+
+          {allReady ? (
+            <p className="text-sm text-muted-foreground">
+              You've met the thresholds. Your profile will be generated
+              automatically within the next few hours.
             </p>
-          </CardContent>
-        </Card>
+          ) : (
+            <a
+              href="/add"
+              className="inline-flex items-center gap-2 rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+            >
+              Add books to get started
+            </a>
+          )}
+        </div>
       </div>
     );
   }
