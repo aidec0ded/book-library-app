@@ -3,7 +3,7 @@
 **Tier 1: Launch Blockers**
 
 - ~~Early profile generation after N books/ratings~~ **[DONE]**
-- Account settings page — password reset + delete account (table stakes for real users)
+- Account settings page — password reset + delete account (table stakes for real users) **[DONE]**
 - Custom domain + deployment finalization — live URL, DNS, SSL **[DONE]**
 - CORS restriction — lock `Access-Control-Allow-Origin` to app domain (currently `*`; auth tokens in flight) **[DONE]**
 - Goodreads/CSV import — onboarding accelerator; empty library → value in minutes instead of hours

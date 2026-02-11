@@ -9,6 +9,7 @@ import {
   Newspaper,
   MessageCircle,
   User,
+  Settings,
   PlusCircle,
   X,
   LogOut,
@@ -51,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Chat", path: "/chat", icon: MessageCircle },
       { label: "Profile", path: "/profile", icon: User },
+      { label: "Settings", path: "/settings", icon: Settings },
     ],
   },
 ];

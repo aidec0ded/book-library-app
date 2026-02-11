@@ -858,6 +858,33 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (req.method === "POST" && url === "/api/account/delete") {
+      void (async () => {
+        let userId: string;
+        try {
+          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
+          userId = getUserIdFromToken(token);
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        try {
+          const { error } = await serviceSupabase.auth.admin.deleteUser(userId);
+          if (error) throw error;
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[account/delete] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to delete account" }));
+        }
+      })();
+      return;
+    }
+
     if (req.method === "GET" && url.startsWith("/api/isbndb/")) {
       void handleIsbndbProxy(req, res);
       return;

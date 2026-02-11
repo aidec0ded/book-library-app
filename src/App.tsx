@@ -10,6 +10,7 @@ import { RecommendationsPage } from "@/pages/RecommendationsPage";
 import { AddBook } from "@/pages/AddBook";
 import { Chat } from "@/pages/Chat";
 import { Profile } from "@/pages/Profile";
+import { Settings } from "@/pages/Settings";
 import { SyllabiPage } from "@/pages/SyllabiPage";
 import { SyllabusDetail } from "@/pages/SyllabusDetail";
 import { ReleasesPage } from "@/pages/ReleasesPage";
@@ -58,6 +59,7 @@ export function App() {
         <Route path="releases" element={<ReleasesPage />} />
         <Route path="chat" element={<Chat />} />
         <Route path="profile" element={<Profile />} />
+        <Route path="settings" element={<Settings />} />
         <Route path="add" element={<AddBook />} />
         <Route path="books/:id" element={<BookDetail />} />
       </Route>
