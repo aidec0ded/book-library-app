@@ -106,23 +106,45 @@ export async function buildLibraryIndex(
     }
   }
 
+  const STATUS_ABBR: Record<string, string> = {
+    read: "r",
+    unread: "u",
+    reading: "rg",
+    unfinished: "uf",
+    wishlist: "w",
+  };
+
+  const TYPE_ABBR: Record<string, string> = {
+    nonfiction: "nf",
+    poetry: "p",
+  };
+
   // Build index lines
+  const legend =
+    "[Format: title / author; [nf|p] status [★rating]; genre; tags. Status: r=read u=unread rg=reading uf=unfinished w=wishlist. Type omitted=fiction, nf=nonfiction, p=poetry]";
+
   const lines = books.map((book) => {
     const bookType = book.book_type ?? "fiction";
-    const parts = [`${book.title} by ${book.author}`];
-    parts.push(bookType);
-    if (book.status) parts.push(book.status);
-    if (book.rating != null) parts.push(`★${book.rating}`);
+    const parts = [`${book.title} / ${book.author}`];
+
+    // Type (omit fiction as default) + status + rating
+    const meta: string[] = [];
+    const typeCode = TYPE_ABBR[bookType];
+    if (typeCode) meta.push(typeCode);
+    if (book.status) meta.push(STATUS_ABBR[book.status] ?? book.status);
+    if (book.rating != null) meta.push(`★${book.rating}`);
+    if (meta.length > 0) parts.push(meta.join(" "));
+
     if (book.genre) parts.push(book.genre);
     const tags = tagMap.get(book.id);
     if (tags) {
       const formatted = formatTagsForType(tags, bookType);
       if (formatted) parts.push(formatted);
     }
-    return parts.join(" | ");
+    return parts.join("; ");
   });
 
-  const index = lines.join("\n");
+  const index = `${legend}\n${lines.join("\n")}`;
   cache.set(userId, { data: index, cachedAt: Date.now() });
   return index;
 }
