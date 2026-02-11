@@ -10,7 +10,7 @@ The app's central loop is: **read → reflect → AI understanding deepens → b
 
 Everything should feel personal. The app should celebrate the reader's own library and make them excited to "step into" it — not replicate a public review site or bookstore.
 
-**Product direction:** Rekollekt is being built as a public web application (and eventually mobile). The current development phase uses a single library to get the experience right before adding authentication, multi-user data isolation, and hosting. Features should be evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
+**Product direction:** Rekollekt is a public web application (and eventually mobile). Authentication and multi-user data isolation are in place via Supabase Auth with Row Level Security. The current phase focuses on alpha launch preparation — polishing the experience, onboarding flow, and deployment infrastructure. Features should be evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
 
 ## Commands
 
@@ -69,7 +69,7 @@ npx tsx scripts/ingest-awards.ts --force       # re-fetch all from Wikidata (def
 npx tsx scripts/ingest-awards.ts --limit 5     # process only first N awards
 ```
 
-Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat` to the chat server.
+Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat`, `/api/greeting`, and `/api/isbndb` to the chat server.
 
 SQL migrations (`supabase/migrations/`) are run manually in the Supabase SQL Editor, not via CLI.
 
@@ -99,9 +99,16 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (LandingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile)
+- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/contact` (ContactPage). Protected routes require auth; public pages standalone.
 - `src/pages/LandingPage.tsx` — Public landing page (standalone, no sidebar/Layout wrapper)
-- `src/components/Layout.tsx` — App shell with header + `<Outlet />`, wraps all routes in ChatProvider
+- `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth
+- `src/pages/PhilosophyPage.tsx` — Public editorial essay on Rekollekt's reading philosophy
+- `src/pages/FeaturesPage.tsx` — Public features page with sticky-scroll layout
+- `src/pages/ContactPage.tsx` — Public contact form page
+- `src/contexts/AuthContext.tsx` — Supabase Auth context with session state, wraps entire app
+- `server/auth.ts` — Server-side auth utilities (JWT verification, per-user Supabase client creation)
+- `src/components/Layout.tsx` — App shell with sidebar + `<Outlet />`, wraps protected routes in ChatProvider
+- `src/components/Sidebar.tsx` — Collapsible navigation sidebar (Library, Syllabi, Shelves, Recommendations, Releases, Chat, Profile)
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
@@ -144,7 +151,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/SyllabiPage.tsx` — Syllabi course catalog index with editorial card layout
 - `src/pages/SyllabusDetail.tsx` — Numbered editorial syllabus detail with inline rationale editing, external book support
 - `src/components/SyllabusSearchModal.tsx` — Dual-search modal (library + ISBNdb) for adding items to syllabi
-- `src/lib/lists.ts` — Syllabus CRUD operations (create, update, delete, add/remove/reorder items, rationale, external items)
+- `src/lib/lists.ts` — Syllabus/reading path CRUD operations (create, update, delete, add/remove/reorder items, rationale, external items, seminar content, progress tracking, auto-link external items to library books)
 - `src/pages/Home.tsx` — Personalized home page with greeting, currently reading, suggestions, recent additions, library stats
 - `src/lib/home.ts` — Home page data queries (currently reading, AI suggestions, recent additions, library stats, greeting)
 - `src/components/BookCover.tsx` — Cover image with styled placeholder fallback (sm/lg sizes)
@@ -176,13 +183,13 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Public Presence** — Public landing page at `/` with editorial design, brand tagline, value proposition, and feature highlights. Personalized home at `/home`.
 
+**Auth & Multi-User** — Supabase Auth with email+password and Google OAuth, RLS policies on all tables, user-scoped queries throughout, JWT-verified server endpoints, login/signup UI
+
 ### Active & Upcoming
 
-**UI Polish** — Reader profile page redesign, vibes page visual refresh, list view styling, general polish across existing features
+**Alpha Launch Prep** — Early profile generation for new users, account settings page (password reset, delete account), Goodreads/CSV import for onboarding, empty states for new users, chat tone refinement, domain setup
 
-**Infrastructure** — User authentication + multi-user data isolation, deployment (Vercel/Cloudflare Pages + serverless), public signup
-
-**Future** — Reviews integration (blocked on viable API sources), social features (shared lists/shelves/profiles), mobile application
+**Future** — Reading Life narrative (AI-identified eras in the reader's journey), social features (shared lists/shelves/profiles), chat web access tool, mobile application
 
 ## Data Model
 
@@ -308,12 +315,12 @@ The import script (`scripts/import-books.ts`) handles several non-obvious data i
 
 Requires `.env` (not committed) with:
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` (service role, not anon — bypasses RLS for bulk import)
-- `ANTHROPIC_API_KEY` — for AI vibe tagging script
-- `ISBNDB_API_KEY` — for ISBNdb enrichment, new releases ingestion, and Add Book search
+- `SUPABASE_SERVICE_ROLE_KEY` (service role, not anon — bypasses RLS for bulk import and scripts)
+- `SUPABASE_ANON_KEY` — anon key used by the chat server to create per-user Supabase clients (with RLS)
+- `ANTHROPIC_API_KEY` — for AI vibe tagging script + chat server
+- `ISBNDB_API_KEY` — for ISBNdb enrichment, new releases ingestion, and Add Book search (server-side only)
 - `VITE_SUPABASE_URL` — same Supabase URL (exposed to browser via Vite)
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
-- `VITE_ISBNDB_API_KEY` — ISBNdb key for frontend Add Book search (proxied via Vite dev server)
 
 ## Design Prototyping (Stitch)
 

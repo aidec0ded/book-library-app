@@ -63,6 +63,7 @@ The companion has access to the reader's complete library (title, author, type, 
 |------|---------|-------------|
 | Memory | read, write, list, delete | Persistent memory files that survive across conversations. The AI records preferences, emotional reactions, connections between books, and evolving tastes. Organized by topic, not chronology. |
 | Syllabi | create, view, add_books, remove_books, delete | Creates and manages curated reading collections with rationale for each book selection. |
+| Reading Paths | create_path, view_path, add_path_books, update_progress, get_seminar_content | Creates structured reading paths with thesis, seminar content (pre-reading context, focus questions, post-reading prompts), and progress tracking. Books not yet in the library are stored as external items with seminar content preserved; they auto-link when later added. |
 | Wishlist | add, view, remove | Manages books the reader wants but doesn't own. |
 | Excerpts | save, view | Saves polished 1-3 sentence insights from conversations to specific book detail pages. |
 | Book Management | update_status, update_rating, toggle_favorite, delete | Modifies library data based on conversational cues ("I just finished The Road"). |
@@ -124,7 +125,29 @@ The companion has access to the reader's complete library (title, author, type, 
 - AI-generated syllabi marked with "Rekollekt Generated" badge
 - Editable titles and descriptions
 
-### 6. Visual Shelves
+### 6. Reading Paths
+
+**Purpose:** Structured intellectual journeys through a topic or literary movement, with seminar-style scaffolding that guides the reader through a deliberate sequence of books.
+
+**Requirements:**
+- Created exclusively via the AI reading companion (not manually via UI); editable in the UI after creation
+- Distinguished from syllabi by `list_type = 'reading_path'` — both stored in the same `lists`/`list_items` tables
+- **Thesis** — A framing statement that describes the path's intellectual arc
+- **Seminar content per item** (jsonb):
+  - `pre_reading_context` — Why this book is here and what it builds on
+  - `focus_questions[]` — 2-4 questions to consider while reading
+  - `post_reading_prompts[]` — Discussion starters after finishing
+- **Progress tracking** — Each item has `path_progress`: not_started → reading → completed
+  - Marking a book completed auto-syncs its library status to "read"
+  - Click-to-cycle progress badge in the UI
+- **External items** — Books not in the library are stored as external items with full seminar content preserved; they auto-link when later added to the library via `linkExternalItemsToBook()`
+- **Path-aware chat** — The companion sees the path's thesis and current book's focus questions in its context, enabling natural discussion of the reading journey
+- **UI display:**
+  - Index page shows reading paths alongside syllabi with filter tabs
+  - Path cards show progress bar, thesis, and "Reading Path" badge
+  - Detail page shows thesis, progress summary, per-item seminar sections (expandable), and "Discuss this book" button that opens chat with path context
+
+### 7. Visual Shelves
 
 **Purpose:** Make the library feel like a physical space you want to browse, not just a database table.
 
@@ -215,8 +238,8 @@ AI is woven throughout Rekollekt at multiple levels:
 | books | Core library | 1,711 rows, `book_type` (fiction/nonfiction/poetry), status, rating, predicted_rating, cover images, ISBNdb metadata |
 | book_vibes | Classification tags | 7 tag categories with AI/user provenance tracking |
 | canonical_tags | Tag vocabulary | 57 tags across 7 categories |
-| lists | Syllabi containers | Name, description, `ai_generated` flag |
-| list_items | Syllabus entries | Ordered items with nullable `book_id`, rationale, external book metadata |
+| lists | Syllabi and reading path containers | Name, description, `list_type` (syllabus/reading_path), `thesis`, `ai_generated` flag |
+| list_items | Syllabus/path entries | Ordered items with nullable `book_id`, rationale, `seminar_content` (jsonb), `path_progress`, external book metadata |
 | shelves | Shelf containers | Manual or auto type, JSON filter rules |
 | shelf_items | Shelf entries | Ordered book references (library books only) |
 | conversations | Chat sessions | Auto-titled after first exchange |
@@ -239,23 +262,25 @@ AI is woven throughout Rekollekt at multiple levels:
 - Page redesigns (home, profile, shelves, recommendations, releases)
 - Shelf and discovery polish (type-aware auto shelf filters)
 - Lists-to-Syllabi redesign with rationale and external book support
-
-### Current Phase: Documentation & Deployment
 - Product documentation (README, user guide, PRD)
-- Deployment architecture decisions
-- Cloud deployment (frontend + server + environment config)
+- Cloud deployment on Render (frontend + server + ISBNdb proxy)
+- User authentication and multi-user data isolation (Supabase Auth, RLS, login/signup UI, Google OAuth)
+- Public landing page, philosophy page, features page, contact page
+- Reading paths with seminar-style scaffolding (thesis, seminar content, progress tracking, auto-linking)
 
-### Next: Authentication & Multi-User
-- Supabase Auth integration with RLS policies
-- User-scoped queries throughout
-- Login/signup UI
-- Public landing page for unauthenticated users
+### Current Phase: Alpha Launch Preparation
+- Early reader profile generation for new users (trigger after N books/ratings, not monthly)
+- Account settings page (password reset, delete account)
+- Goodreads/CSV import for onboarding
+- Chat tone refinement (literature professor voice)
+- Empty states and onboarding flow for new users
+- Domain setup and production configuration
 
 ### Future
 - Chat web access tool (search for books, look up author info, check reviews)
-- Reading paths and seminar layer (structured syllabi with sequencing, context, guided reading, post-book discussion)
 - Reading Life narrative (AI-identified eras and chapters in the reader's journey)
 - Social features (shared lists/shelves/profiles, seminar cohorts, taste-based discovery)
+- Notifications system
 - Mobile application
 
 ---

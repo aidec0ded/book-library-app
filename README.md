@@ -9,10 +9,10 @@ Rekollekt's central loop is: **read, reflect, AI understanding deepens, better r
 ### Key Features
 
 - **Personal Library** — Searchable, filterable catalog with inline editing, cover images, and type-aware browsing (fiction/nonfiction/poetry)
-- **AI Reading Companion** — Streaming chat with Claude that remembers your preferences, manages your library, and creates curated syllabi
+- **AI Reading Companion** — Streaming chat with Claude that remembers your preferences, manages your library, creates curated syllabi, and builds reading paths
 - **Reader Profile** — AI-generated portrait of your reading identity, thematic pillars, taste evolution, and emotional patterns
 - **Predicted Ratings** — AI scores for unread books based on your profile and reading history
-- **Syllabi** — Curated reading collections with per-item rationale, supporting both library and non-library books
+- **Syllabi & Reading Paths** — Curated reading collections with per-item rationale, plus AI-generated reading paths with seminar-style scaffolding (thesis, pre-reading context, focus questions, post-reading prompts, progress tracking)
 - **Visual Shelves** — Manual and auto-filtered bookshelves with an immersive coverflow carousel
 - **New Releases** — AI-scored upcoming books with personal relevance matching
 - **Personalized Home** — AI greeting, currently reading, daily suggestions, and reading stats
@@ -56,7 +56,11 @@ Rekollekt's central loop is: **read, reflect, AI understanding deepens, better r
    VITE_ISBNDB_API_KEY=your-isbndb-key
    ```
 
-   - `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS; used by scripts and the chat server
+   SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+   - `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS; used by scripts
+   - `SUPABASE_ANON_KEY` used by the chat server to create per-user Supabase clients with RLS
    - `VITE_*` variables are exposed to the browser via Vite
 
 3. Apply database migrations. All SQL files in `supabase/migrations/` should be run in order in the Supabase SQL Editor (CLI migrations are not used).
@@ -70,7 +74,7 @@ Rekollekt's central loop is: **read, reflect, AI understanding deepens, better r
    npm run dev:server
    ```
 
-   Vite proxies `/api/chat` and `/api/greeting` to the chat server. ISBNdb API calls are proxied via `/api/isbndb`.
+   Vite proxies `/api/chat`, `/api/greeting`, and `/api/isbndb` to the chat server.
 
 ## Project Structure
 
@@ -79,21 +83,27 @@ src/
   App.tsx                     # React Router configuration
   pages/
     LandingPage.tsx           # Public landing page (standalone, no sidebar)
+    LoginPage.tsx             # Login/signup with email+password and Google OAuth
+    PhilosophyPage.tsx        # Public editorial essay on reading philosophy
+    FeaturesPage.tsx          # Public features page with sticky-scroll layout
+    ContactPage.tsx           # Public contact form page
     Home.tsx                  # Personalized home with greeting, reading, suggestions, stats
     BookList.tsx              # Library with search, filters, gallery tabs, shelves view
     BookDetail.tsx            # Full book metadata with inline editing and AI insights
-    AddBook.tsx               # ISBNdb search → preview → add flow
-    SyllabiPage.tsx           # Course catalog index (editorial card layout)
-    SyllabusDetail.tsx        # Numbered editorial detail with rationale editing
+    AddBook.tsx               # ISBNdb search → preview → add flow (auto-links reading paths)
+    SyllabiPage.tsx           # Course catalog index with filter tabs (syllabi + reading paths)
+    SyllabusDetail.tsx        # Detail view with conditional rendering for syllabi vs reading paths
     RecommendationsPage.tsx   # AI-predicted top picks grid
     ReleasesPage.tsx          # Monthly new releases with AI scoring
     Chat.tsx                  # Full-page AI reading companion
     Profile.tsx               # Snap-scroll reader profile slide deck
   components/
     Layout.tsx                # App shell (sidebar + content + chat panel)
-    Sidebar.tsx               # Navigation with Library/Syllabi/Shelves/Discover/Chat/Profile
+    Sidebar.tsx               # Collapsible navigation sidebar
     ChatPanel.tsx             # Floating chat FAB + slide-up panel
     BookCover.tsx             # Cover image with styled placeholder fallback
+    ProgressBadge.tsx         # Reading path progress badge (not_started/reading/completed)
+    SeminarSection.tsx        # Expandable seminar content with inline editing
     ShelvesView.tsx           # Shelf index with cards + create form
     ShelfCarousel.tsx         # Full-screen immersive coverflow browser
     ShelfFilterBuilder.tsx    # Auto shelf filter rule editor
@@ -104,7 +114,7 @@ src/
   lib/
     supabase.ts               # Supabase client
     books.ts                  # Book update helpers
-    lists.ts                  # Syllabus CRUD + external items + rationale
+    lists.ts                  # Syllabus/reading path CRUD + external items + auto-linking
     shelves.ts                # Shelf CRUD + auto filter query builder
     vibes.ts                  # Vibe/tag CRUD
     releases.ts               # Release queries + dismiss/undismiss
@@ -117,13 +127,16 @@ src/
   hooks/
     useChatSession.ts         # Chat state machine (shared context)
   contexts/
+    AuthContext.tsx            # Supabase Auth session state
     ChatContext.tsx            # Chat session + panel open/close state
 
 server/
-  index.ts                    # HTTP server: chat streaming + greeting endpoint
+  index.ts                    # HTTP server: chat streaming + greeting + ISBNdb proxy
+  auth.ts                     # JWT verification + per-user Supabase client creation
   library-index.ts            # Compact library index for system prompt (cached 10min)
   syllabus-handler.ts         # Syllabus tool command executor
-  syllabus-index.ts           # Syllabi context for system prompt (cached 10min)
+  reading-path-handler.ts     # Reading path tool command executor (seminar content, progress)
+  syllabus-index.ts           # Syllabi + reading paths context for system prompt (cached 10min)
   wishlist-handler.ts         # Wishlist tool command executor
   excerpt-handler.ts          # Excerpt save/view command executor
   book-handler.ts             # Book status/rating/favorite/delete executor
@@ -170,7 +183,7 @@ Fourteen tables in Supabase. Key tables:
 - **books** — 1,711 rows with `book_type` (fiction/nonfiction/poetry), `status`, `rating`, `predicted_rating`, cover images, and ISBNdb metadata
 - **book_vibes** — Classification tags with `tag_category` (vibe, topic, form, depth, movement, formal_feel, accessibility) and AI/user provenance tracking
 - **canonical_tags** — 57 tags across 7 categories defining the classification vocabulary
-- **lists** / **list_items** — Syllabi with ordered items supporting both library books and external entries (rationale, external metadata)
+- **lists** / **list_items** — Syllabi and reading paths (`list_type` discriminator) with ordered items supporting library books, external entries, seminar content (jsonb), and progress tracking
 - **shelves** / **shelf_items** — Manual and auto-filtered bookshelves with JSON filter rules
 - **conversations** / **messages** — Chat history
 - **memory_files** — Persistent AI memory (Claude memory tool)
@@ -185,7 +198,7 @@ The chat server (`server/index.ts`) is a standalone Node.js HTTP server that:
 
 1. Receives user messages via POST `/api/chat` (SSE streaming response)
 2. Builds a system prompt from the library index, reader profile, and syllabi context (all cached 10min)
-3. Streams Claude responses with a tool-use loop supporting 6 tools: memory, syllabi management, wishlist, excerpts, book management, and releases search
+3. Streams Claude responses with a tool-use loop supporting 7 tools: memory, syllabi management, reading paths, wishlist, excerpts, book management, and releases search
 4. Generates conversation titles after the first exchange
 5. Runs a daily profile scheduler that checks activity deltas against the last generation snapshot
 

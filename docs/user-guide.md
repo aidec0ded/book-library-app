@@ -4,6 +4,14 @@ Rekollekt is a personal book library app designed for readers who want more than
 
 ---
 
+## Getting Started
+
+Rekollekt requires an account. Visit the landing page and sign up with your email and password, or use Google OAuth. Once signed in, you'll land on your personalized home page.
+
+If you're new, start by adding books to your library — the more books and ratings you provide, the better Rekollekt's AI features become. After you've added and rated enough books, Rekollekt will generate your first reader profile automatically.
+
+---
+
 ## Home
 
 The home page is your personalized landing space. It adapts to the time of day and what you're reading.
@@ -144,6 +152,39 @@ Each syllabus shows its items in a numbered editorial layout. For each item:
 
 ---
 
+## Reading Paths
+
+Reading paths are structured intellectual journeys — thematic deep-dive explorations with seminar-style scaffolding. Where syllabi are flat curated lists, reading paths add deliberate sequencing, pre-reading context, focus questions, and post-reading reflection prompts.
+
+### Creating a Reading Path
+
+Reading paths are created exclusively through the AI reading companion. Ask the companion to build a path around a topic, literary movement, or theme (e.g., "Create a reading path exploring the New Sincerity movement"). The AI will:
+
+- Set a **thesis** framing the path's intellectual arc
+- Sequence books in a deliberate order
+- Generate **seminar content** for each book: pre-reading context, focus questions, and post-reading prompts
+- Add books from your library or as external items (if you don't own them yet)
+
+### Viewing Reading Paths
+
+Reading paths appear alongside syllabi on the Syllabi page, with a "Reading Path" badge and filter tabs to switch between types. Each path card shows a progress bar and the thesis.
+
+### Path Detail Page
+
+The detail page shows the path's thesis prominently, followed by a progress summary ("2 of 6 books completed"). Each item includes:
+
+- **Progress badge** — Click to cycle through not_started → reading → completed. Marking a book completed automatically updates its library status to "read."
+- **Pre-reading context** — Why this book is positioned where it is and what to watch for
+- **Focus questions** — 2-4 questions to consider while reading (expandable)
+- **Post-reading prompts** — Reflection starters after finishing (expandable, visually gated until the book is completed)
+- **Discuss this book** — Opens a chat conversation with the path's context, so the companion can reference focus questions and themes
+
+### External Items and Auto-Linking
+
+When the AI creates a reading path, books not in your library are stored as external items with all their seminar content preserved. When you later add one of these books to your library through the Add Book page, it automatically links to the existing path item — no manual reconnection needed.
+
+---
+
 ## AI Reading Companion
 
 The reading companion is an AI chat interface powered by Claude. It's designed to be an empathetic, knowledgeable reading partner — not a search engine.
@@ -163,6 +204,8 @@ The reading companion has access to your entire library and can take actions on 
 **Manage your library** — Tell the companion you started, finished, or gave up on a book, and it will update the status. It can also set ratings, mark favorites, and remove books.
 
 **Create syllabi** — Ask the companion to build a themed reading list. It will create a syllabus, add books from your library, and provide rationale for each selection. It always confirms before creating.
+
+**Build reading paths** — Ask the companion to create a structured reading path around a topic or literary movement. It will design a deliberate sequence with seminar content for each book.
 
 **Manage your wishlist** — Mention a book you want to read, and the companion can add it to your wishlist.
 
