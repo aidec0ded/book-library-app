@@ -346,12 +346,20 @@ export function Home() {
               <p className="mt-2 text-sm text-muted-foreground">
                 Add some books to get personalized recommendations.
               </p>
-              <Link
-                to="/add"
-                className="mt-4 inline-block text-sm font-medium text-accent hover:underline"
-              >
-                Add a book →
-              </Link>
+              <div className="mt-4 flex flex-col items-center gap-1">
+                <Link
+                  to="/add"
+                  className="text-sm font-medium text-accent hover:underline"
+                >
+                  Add a book →
+                </Link>
+                <Link
+                  to="/import"
+                  className="text-sm font-medium text-accent hover:underline"
+                >
+                  Import from Goodreads →
+                </Link>
+              </div>
             </div>
           </section>
         )}

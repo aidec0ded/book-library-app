@@ -471,9 +471,20 @@ export function AddBook() {
 
         {/* Hint before first search */}
         {!searching && !hasSearched && !searchError && (
-          <p className="text-sm text-muted-foreground">
-            Press Enter to search
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Press Enter to search
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Have a Goodreads library?{" "}
+              <Link
+                to="/import"
+                className="font-medium text-accent hover:underline"
+              >
+                Import from CSV →
+              </Link>
+            </p>
+          </div>
         )}
 
         {/* Empty state — only after an actual search returns nothing */}
