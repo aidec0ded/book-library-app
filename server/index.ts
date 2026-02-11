@@ -185,8 +185,18 @@ function writeSSE(
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-function setCorsHeaders(res: http.ServerResponse): void {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+const ALLOWED_ORIGINS = new Set([
+  "https://www.rekollekt.io",
+  "https://rekollekt.io",
+  "https://rekollekt.onrender.com",
+  ...(process.env.NODE_ENV !== "production" ? ["http://localhost:5173"] : []),
+]);
+
+function setCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const origin = req.headers.origin ?? "";
+  if (ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
@@ -225,7 +235,7 @@ async function handleChat(
   }
 
   // SSE headers
-  setCorsHeaders(res);
+  setCorsHeaders(req, res);
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -775,7 +785,7 @@ const server = http.createServer((req, res) => {
 
   // API routes get CORS headers
   if (url.startsWith("/api/")) {
-    setCorsHeaders(res);
+    setCorsHeaders(req, res);
 
     if (req.method === "OPTIONS") {
       res.writeHead(204);
