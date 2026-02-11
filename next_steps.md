@@ -26,7 +26,7 @@
 
 **Code Hygiene**
 
-- BookDetail.tsx navigation hack — `to={-1 as unknown as string}` type cast; fragile
+- BookDetail.tsx navigation hack — `to={-1 as unknown as string}` type cast; fragile **[DONE]**
 - Silent error swallowing on Home page — `.catch(() => [])` hides failures from users
 
 ---

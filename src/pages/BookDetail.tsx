@@ -165,16 +165,12 @@ export function BookDetail() {
   return (
     <div className="space-y-6">
       {/* Back link */}
-      <Link
-        to={-1 as unknown as string}
-        onClick={(e) => {
-          e.preventDefault();
-          window.history.back();
-        }}
+      <button
+        onClick={() => navigate(-1)}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
         ← Back
-      </Link>
+      </button>
 
       {/* Save error banner */}
       {saveError && (
