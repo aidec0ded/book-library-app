@@ -51,21 +51,25 @@ export function Home() {
   const [stats, setStats] = useState<LibraryStats | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     async function load() {
+      let hadError = false;
+
       const [readingResult, suggestionsResult, recentResult, statsResult] =
         await Promise.all([
-          fetchCurrentlyReading().catch(() => []),
-          fetchRecommendations(5).catch(() => []),
-          fetchRecentAdditions().catch(() => []),
-          fetchLibraryStats().catch(() => null),
+          fetchCurrentlyReading().catch(() => { hadError = true; return []; }),
+          fetchRecommendations(5).catch(() => { hadError = true; return []; }),
+          fetchRecentAdditions().catch(() => { hadError = true; return []; }),
+          fetchLibraryStats().catch(() => { hadError = true; return null; }),
         ]);
 
       setCurrentlyReading(readingResult);
       setSuggestions(suggestionsResult);
       setRecentAdditions(recentResult);
       setStats(statsResult);
+      setLoadError(hadError);
       setLoading(false);
     }
 
@@ -88,6 +92,12 @@ export function Home() {
 
   return (
     <div className="-mx-4 -mt-6">
+      {loadError && (
+        <div className="mx-4 mt-4 rounded-lg bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+          Some sections couldn't be loaded. Try refreshing the page.
+        </div>
+      )}
+
       {/* ── Hero Section (full-bleed) ── */}
       <section className="relative w-screen ml-[calc(-50vw+50%)] lg:w-[calc(100vw-15rem)] lg:ml-[calc(-50vw+50%+7.5rem)] px-6 sm:px-10 lg:px-14 xl:px-20 pb-10 pt-8 lg:pb-14 lg:pt-12">
         {currentlyReading.length > 0 && currentBook ? (
