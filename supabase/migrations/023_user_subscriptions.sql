@@ -38,9 +38,17 @@ CREATE INDEX idx_user_subscriptions_stripe_subscription
   ON user_subscriptions(stripe_subscription_id);
 
 -- 4. Auto-update updated_at
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TRIGGER set_user_subscriptions_updated_at
   BEFORE UPDATE ON user_subscriptions
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- 5. Auto-create free subscription for new users
 CREATE OR REPLACE FUNCTION create_default_subscription()
