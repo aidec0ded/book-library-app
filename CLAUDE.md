@@ -91,6 +91,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - Supabase (PostgreSQL + auth + Row Level Security)
 - Tailwind + shadcn/ui for styling
 - Claude API (`@anthropic-ai/sdk`) for AI vibe tagging + reading companion chat
+- Stripe (`stripe`) for subscription billing + webhooks (server-side only)
 - ESM throughout (`"type": "module"` in package.json)
 
 ## Architecture
@@ -99,12 +100,14 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/contact` (ContactPage). Protected routes require auth; public pages standalone.
+- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth; public pages standalone.
 - `src/pages/LandingPage.tsx` — Public landing page (standalone, no sidebar/Layout wrapper)
 - `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth
 - `src/pages/PhilosophyPage.tsx` — Public editorial essay on Rekollekt's reading philosophy
 - `src/pages/FeaturesPage.tsx` — Public features page with sticky-scroll layout
 - `src/pages/ContactPage.tsx` — Public contact form page
+- `src/pages/PricingPage.tsx` — Public pricing comparison page (Free vs Companion, Stripe checkout integration)
+- `src/pages/FAQPage.tsx` — Public FAQ with accordion sections
 - `src/contexts/AuthContext.tsx` — Supabase Auth context with session state, wraps entire app
 - `server/auth.ts` — Server-side auth utilities (JWT verification, per-user Supabase client creation)
 - `src/components/Layout.tsx` — App shell with sidebar + `<Outlet />`, wraps protected routes in ChatProvider
@@ -120,6 +123,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Select, Separator, Textarea)
 - `src/hooks/useChatSession.ts` — Chat state machine (shared between full page and floating panel)
 - `src/contexts/ChatContext.tsx` — React context: chat session + panel open/close state
+- `src/contexts/SubscriptionContext.tsx` — Subscription state (plan, limits, isPaid), fetches from /api/subscription
 - `src/pages/Chat.tsx` — Full-page AI reading companion chat (consumes shared ChatContext)
 - `src/components/ChatPanel.tsx` — Floating chat panel + FAB button (accessible from every page, auto-hides on /chat)
 - `src/lib/chat.ts` — Conversation CRUD + SSE streaming client
@@ -136,6 +140,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete)
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
+- `server/stripe-handler.ts` — Stripe webhook event processing, checkout/portal session creation
 - `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 fiction vibes, batches of 5, retries, --dry-run/--limit/--force flags)
 - `scripts/tag-classifications.ts` — AI classification tagging for nonfiction (topics/form/depth) and poetry (movement/formal_feel/accessibility), same batch architecture
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
@@ -185,6 +190,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Auth & Multi-User** — Supabase Auth with email+password and Google OAuth, RLS policies on all tables, user-scoped queries throughout, JWT-verified server endpoints, login/signup UI
 
+**Monetization** — Stripe-based subscription (free tier: 5 chat messages/month + full library; paid: $7/month or $60/year for unlimited chat + syllabi + reading paths + excerpts). Stripe Checkout + Customer Portal, webhook handler for subscription lifecycle, chat message gating, tool filtering for free users, subscription context + UI (message counters, lock icons, upgrade CTAs), public pricing + FAQ pages, subscription management in Settings
+
 ### Active & Upcoming
 
 **Alpha Launch Prep** — Early profile generation for new users, account settings page (password reset, delete account), Goodreads/CSV import for onboarding, empty states for new users, chat tone refinement, domain setup
@@ -193,7 +200,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Fourteen tables in Supabase:
+Fifteen tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -302,6 +309,17 @@ Fourteen tables in Supabase:
 - `status` — `winner`, `shortlist`, `longlist`, or `nominee`
 - `wikidata_work_id` — Wikidata entity ID for deduplication
 
+**user_subscriptions** — Stripe subscription tracking, one row per user. Key fields:
+- `user_id` (UNIQUE) — FK to auth.users, CASCADE delete
+- `stripe_customer_id`, `stripe_subscription_id` — Stripe identifiers (null for free users)
+- `plan` — `free`, `monthly`, or `annual` (check-constrained, default `'free'`)
+- `status` — `active`, `trialing`, `past_due`, `canceled`, or `expired`
+- `current_period_start`, `current_period_end` — billing period boundaries
+- `cancel_at_period_end` — true if user has scheduled cancellation
+- `chat_messages_used` — monthly counter, reset on period renewal
+- `chat_messages_period_start` — tracks when the counter was last reset
+- Auto-created for new users via trigger on `auth.users` insert
+
 ## Data Import Quirks
 
 The import script (`scripts/import-books.ts`) handles several non-obvious data issues:
@@ -319,6 +337,10 @@ Requires `.env` (not committed) with:
 - `SUPABASE_ANON_KEY` — anon key used by the chat server to create per-user Supabase clients (with RLS)
 - `ANTHROPIC_API_KEY` — for AI vibe tagging script + chat server
 - `ISBNDB_API_KEY` — for ISBNdb enrichment, new releases ingestion, and Add Book search (server-side only)
+- `STRIPE_SECRET_KEY` — Stripe API secret key (server-side only)
+- `STRIPE_WEBHOOK_SECRET` — Stripe webhook signing secret
+- `STRIPE_MONTHLY_PRICE_ID` — Stripe Price ID for $7/month plan
+- `STRIPE_ANNUAL_PRICE_ID` — Stripe Price ID for $60/year plan
 - `VITE_SUPABASE_URL` — same Supabase URL (exposed to browser via Vite)
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
 

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 import { MessageCircle, X, Maximize2, Send, Loader2, AlertCircle } from "lucide-react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { useChatContext } from "@/contexts/ChatContext";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 export function ChatPanel() {
   const { pathname } = useLocation();
@@ -14,6 +15,7 @@ export function ChatPanel() {
     streaming,
     streamingContent,
     error,
+    messageLimitReached,
     setInput,
     send,
     panelOpen,
@@ -21,6 +23,7 @@ export function ChatPanel() {
     closePanel,
     togglePanel,
   } = useChatContext();
+  const { isPaid, chatMessagesUsed, chatMessagesLimit, chatMessagesRemaining } = useSubscription();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -182,24 +185,45 @@ export function ChatPanel() {
 
         {/* Input area */}
         <div className="border-t px-3 py-2">
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Say something..."
-              rows={1}
-              className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none ring-ring focus-visible:ring-2"
-            />
-            <button
-              onClick={() => send()}
-              disabled={!canSend}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Send className="h-4 w-4" />
-            </button>
-          </div>
+          {messageLimitReached ? (
+            <div className="py-2 text-center">
+              <p className="text-sm text-muted-foreground">
+                You've used all {chatMessagesLimit} free messages this month.
+              </p>
+              <Link
+                to="/pricing"
+                className="mt-1.5 inline-block text-sm font-medium text-accent hover:underline"
+              >
+                Upgrade for unlimited chat →
+              </Link>
+            </div>
+          ) : (
+            <>
+              {!isPaid && chatMessagesLimit !== null && (
+                <p className="mb-1.5 text-center text-xs text-muted-foreground">
+                  {chatMessagesUsed} of {chatMessagesLimit} messages used
+                </p>
+              )}
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Say something..."
+                  rows={1}
+                  className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none ring-ring focus-visible:ring-2"
+                />
+                <button
+                  onClick={() => send()}
+                  disabled={!canSend}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </>

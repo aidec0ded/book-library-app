@@ -21,6 +21,8 @@ const ReleasesPage = lazy(() => import("@/pages/ReleasesPage").then((m) => ({ de
 const PhilosophyPage = lazy(() => import("@/pages/PhilosophyPage").then((m) => ({ default: m.PhilosophyPage })));
 const FeaturesPage = lazy(() => import("@/pages/FeaturesPage").then((m) => ({ default: m.FeaturesPage })));
 const ContactPage = lazy(() => import("@/pages/ContactPage").then((m) => ({ default: m.ContactPage })));
+const PricingPage = lazy(() => import("@/pages/PricingPage").then((m) => ({ default: m.PricingPage })));
+const FAQPage = lazy(() => import("@/pages/FAQPage").then((m) => ({ default: m.FAQPage })));
 
 function Spinner() {
   return (
@@ -52,6 +54,8 @@ export function App() {
         <Route path="philosophy" element={<PhilosophyPage />} />
         <Route path="features" element={<FeaturesPage />} />
         <Route path="contact" element={<ContactPage />} />
+        <Route path="pricing" element={<PricingPage />} />
+        <Route path="faq" element={<FAQPage />} />
         <Route path="login" element={<LoginPage />} />
         <Route
           element={

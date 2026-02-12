@@ -59,6 +59,17 @@ export function sendMessage(
       });
 
       if (!response.ok || !response.body) {
+        if (response.status === 403) {
+          try {
+            const errData = await response.json();
+            if (errData.error === "message_limit_reached") {
+              callbacks.onError({ message: "message_limit_reached" });
+              return;
+            }
+          } catch {
+            // Fall through to generic error
+          }
+        }
         callbacks.onError({
           message: `Server error: ${response.status}`,
         });

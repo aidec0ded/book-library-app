@@ -17,6 +17,7 @@ export interface UseChatSessionReturn {
   streaming: boolean;
   streamingContent: string;
   error: string | null;
+  messageLimitReached: boolean;
   setInput: (text: string) => void;
   send: (text?: string) => void;
   selectConversation: (id: string) => void;
@@ -32,6 +33,7 @@ export function useChatSession(): UseChatSessionReturn {
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [messageLimitReached, setMessageLimitReached] = useState(false);
 
   const streamingContentRef = useRef("");
   const abortRef = useRef<AbortController | null>(null);
@@ -135,7 +137,13 @@ export function useChatSession(): UseChatSessionReturn {
           void fetchConversations().then(setConversations).catch(() => {});
         },
         onError: ({ message }) => {
-          setError(message);
+          if (message === "message_limit_reached") {
+            setMessageLimitReached(true);
+            // Remove the optimistic user message
+            setMessages((prev) => prev.filter((m) => !m.id.startsWith("temp-")));
+          } else {
+            setError(message);
+          }
           setStreaming(false);
         },
       });
@@ -154,6 +162,7 @@ export function useChatSession(): UseChatSessionReturn {
     streaming,
     streamingContent,
     error,
+    messageLimitReached,
     setInput,
     send,
     selectConversation,

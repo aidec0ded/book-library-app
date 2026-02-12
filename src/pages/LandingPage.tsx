@@ -20,6 +20,9 @@ export function LandingPage() {
           <Link to="/features" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
             Features
           </Link>
+          <Link to="/pricing" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
+            Pricing
+          </Link>
           <Link to="/contact" className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground">
             Contact
           </Link>

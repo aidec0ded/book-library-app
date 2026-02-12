@@ -32,6 +32,14 @@ export default defineConfig({
         target: "http://localhost:3001",
         changeOrigin: true,
       },
+      "/api/stripe": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
+      "/api/subscription": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
     },
   },
 });

@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatProvider } from "@/contexts/ChatContext";
+import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { ChatPanel } from "@/components/ChatPanel";
 import { supabase } from "@/lib/supabase";
 
@@ -42,6 +43,7 @@ export function Layout() {
   }
 
   return (
+    <SubscriptionProvider>
     <ChatProvider>
       <div className="min-h-screen lg:pl-60">
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -90,5 +92,6 @@ export function Layout() {
         <ChatPanel />
       </div>
     </ChatProvider>
+    </SubscriptionProvider>
   );
 }

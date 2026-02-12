@@ -1,15 +1,26 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 import { supabase } from "@/lib/supabase";
 import { exportLibraryCSV } from "@/lib/export";
 
 export function Settings() {
   const { user, session } = useAuth();
   const navigate = useNavigate();
+  const {
+    plan,
+    isPaid,
+    currentPeriodEnd,
+    cancelAtPeriodEnd,
+    isLoading: subLoading,
+    refreshSubscription,
+  } = useSubscription();
 
   const isGoogleUser = user?.app_metadata?.provider === "google";
+
+  const [portalLoading, setPortalLoading] = useState(false);
 
   // Password change state
   const [newPassword, setNewPassword] = useState("");
@@ -127,11 +138,131 @@ export function Settings() {
     }
   };
 
+  const handleManageSubscription = async () => {
+    setPortalLoading(true);
+    try {
+      const token = session?.access_token;
+      if (!token) return;
+      const res = await fetch("/api/stripe/portal", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      // Fall through
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const handleUpgrade = async (billing: "monthly" | "annual") => {
+    const token = session?.access_token;
+    if (!token) return;
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ plan: billing }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      // Fall through
+    }
+  };
+
+  // Refetch subscription after checkout redirect
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("checkout") === "success") {
+    void refreshSubscription();
+  }
+
+  const planLabel =
+    plan === "annual"
+      ? "Reading Companion (Annual)"
+      : plan === "monthly"
+        ? "Reading Companion (Monthly)"
+        : "Free";
+
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
       <h1 className="mb-8 font-serif text-2xl font-bold tracking-tight">
         Settings
       </h1>
+
+      {/* Subscription */}
+      <Card className="mb-8">
+        <CardContent className="pt-6">
+          <h2 className="mb-4 text-lg font-semibold">Subscription</h2>
+
+          {subLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : isPaid ? (
+            <div className="space-y-3">
+              <p className="text-sm">
+                <span className="font-medium">{planLabel}</span>
+                {plan === "monthly" && (
+                  <span className="text-muted-foreground"> — $7/month</span>
+                )}
+                {plan === "annual" && (
+                  <span className="text-muted-foreground"> — $60/year</span>
+                )}
+              </p>
+              {currentPeriodEnd && (
+                <p className="text-sm text-muted-foreground">
+                  {cancelAtPeriodEnd
+                    ? `Your subscription ends on ${new Date(currentPeriodEnd).toLocaleDateString()}`
+                    : `Next billing date: ${new Date(currentPeriodEnd).toLocaleDateString()}`}
+                </p>
+              )}
+              <button
+                onClick={handleManageSubscription}
+                disabled={portalLoading}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
+              >
+                {portalLoading ? "Loading..." : "Manage subscription"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                You're on the <span className="font-medium text-foreground">Free</span> plan — 5 chat messages per month, full library management.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleUpgrade("monthly")}
+                  className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground shadow-sm hover:bg-accent/90"
+                >
+                  Upgrade — $7/mo
+                </button>
+                <button
+                  onClick={() => handleUpgrade("annual")}
+                  className="rounded-md border border-accent/30 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/5"
+                >
+                  $60/year (save $24)
+                </button>
+              </div>
+              <Link
+                to="/pricing"
+                className="inline-block text-sm text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Compare plans →
+              </Link>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Password Section */}
       <Card className="mb-8">

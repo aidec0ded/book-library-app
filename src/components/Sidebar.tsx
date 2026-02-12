@@ -13,9 +13,11 @@ import {
   PlusCircle,
   X,
   LogOut,
+  Lock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 interface NavItem {
   label: string;
@@ -79,9 +81,12 @@ function isActive(pathname: string, search: string, path: string) {
   return pathname.startsWith(path);
 }
 
+const PAID_PATHS = new Set(["/syllabi"]);
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname, search } = useLocation();
   const { signOut, user } = useAuth();
+  const { isPaid, chatMessagesUsed, chatMessagesLimit } = useSubscription();
 
   return (
     <div className="flex h-full flex-col">
@@ -109,6 +114,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               {group.items.map((item) => {
                 const active = isActive(pathname, search, item.path);
                 const Icon = item.icon;
+                const locked = !isPaid && PAID_PATHS.has(item.path);
+                const isChat = item.path === "/chat";
                 return (
                   <li key={item.path}>
                     <Link
@@ -122,6 +129,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                     >
                       <Icon className={`h-4 w-4 shrink-0 ${active ? "text-accent" : ""}`} />
                       {item.label}
+                      {locked && (
+                        <Lock className="ml-auto h-3 w-3 text-sidebar-foreground/40" />
+                      )}
+                      {isChat && !isPaid && chatMessagesLimit !== null && (
+                        <span className="ml-auto text-xs text-sidebar-foreground/40">
+                          {chatMessagesUsed}/{chatMessagesLimit}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 );

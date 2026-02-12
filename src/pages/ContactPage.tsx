@@ -67,6 +67,12 @@ export function ContactPage() {
             Features
           </Link>
           <Link
+            to="/pricing"
+            className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Pricing
+          </Link>
+          <Link
             to="/contact"
             className="text-base font-semibold text-foreground transition-colors"
           >

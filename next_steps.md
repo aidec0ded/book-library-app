@@ -92,6 +92,11 @@
 - Expand chat tool use — can it access the web (check new releases), remove a book from the library, change book status (e.g. remove from "Reading"), and take other site actions beyond list management? **[DONE]**
 - Add web access tool to chat (e.g. search for books, look up author info, check reviews)
 - Full data export (JSON) — books, syllabi, reading paths, conversations, excerpts, memory, reader profile. Richer complement to the CSV library export for users who want a complete backup
+- Smoother reading path creation for books not in library — when chat creates a reading path, it should be able to add books the user doesn't own yet (auto-add to library or use external items more seamlessly)
+- Future cost optimization strategies to evaluate when we have usage data:
+  - Alternative model providers (e.g. DeepSeek) for chat to reduce per-message cost
+  - Intelligent model routing — Sonnet for complex messages, Haiku for simple ones (or Sonnet for first N messages, Haiku after)
+  - Generous first-month free tier (unlimited messages month 1, then drop to 5/month) to accelerate onboarding
 
 ---
 
@@ -120,3 +125,19 @@
 - Redesign star rating input — replace dropdown with interactive star widget (Letterboxd-style hover/tap with quarter-star precision). Current dropdown is bulky and unattractive **[DONE]**
 - Add accent color — find strategic places for splashes of a warm color (e.g. LitHub-style red hue) to break up the neutral palette **[DONE]**
 - Rename "Freeform Vibes" to "Tags" on BookDetail — the old label is confusing now that AI freeform vibes are gone, and users will tag with more than just vibes **[DONE]**
+
+---
+
+### 💰 Business Track
+
+- Monetization implementation — usage-gated free tier + paid subscription. See pricing strategy at `.claude/design/pricing-strategy.md` and implementation plan at `.claude/plans/monetization-plan.md` **[DONE]**
+- AI cost optimization — token tracking implemented; batch API for releases scoring implemented; system prompt compression implemented. Monitor usage data before further optimization
+- Verify all documentation is current — README, CLAUDE.md, any user-facing docs. Ensure they reflect current features, architecture, and pricing model
+
+---
+
+### 📋 Backlog (Deferred)
+
+- Account settings page design refinement — revisit when we think of what else to add to settings
+- Add Book search noise — hard to find the right book for famous authors (Rushdie, etc.); consider result filtering, ranking by relevance, or alternative search strategies
+- Reduce reading path creation friction — books not in library can't be smoothly added during path creation via chat

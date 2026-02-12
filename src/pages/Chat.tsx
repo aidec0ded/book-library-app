@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { Send, Loader2, AlertCircle } from "lucide-react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ConversationList } from "@/components/ConversationList";
 import { useChatContext } from "@/contexts/ChatContext";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 
 export function Chat() {
   const {
@@ -14,12 +16,14 @@ export function Chat() {
     streaming,
     streamingContent,
     error,
+    messageLimitReached,
     setInput,
     send,
     selectConversation,
     newChat,
     closePanel,
   } = useChatContext();
+  const { isPaid, chatMessagesUsed, chatMessagesLimit } = useSubscription();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -108,23 +112,46 @@ export function Chat() {
 
       {/* Input area */}
       <div className="border-t px-4 py-3">
-        <div className="mx-auto flex max-w-2xl items-end gap-2">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Say something..."
-            rows={2}
-            className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none ring-ring focus-visible:ring-2"
-          />
-          <button
-            onClick={() => send()}
-            disabled={!canSend}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+        <div className="mx-auto max-w-2xl">
+          {messageLimitReached ? (
+            <div className="py-3 text-center">
+              <p className="text-sm text-muted-foreground">
+                You've used all {chatMessagesLimit} free messages this month.
+              </p>
+              <Link
+                to="/pricing"
+                className="mt-2 inline-block text-sm font-medium text-accent hover:underline"
+              >
+                Upgrade for unlimited chat →
+              </Link>
+            </div>
+          ) : (
+            <>
+              {!isPaid && chatMessagesLimit !== null && (
+                <p className="mb-2 text-center text-xs text-muted-foreground">
+                  {chatMessagesUsed} of {chatMessagesLimit} messages used this month
+                </p>
+              )}
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Say something..."
+                  rows={2}
+                  className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none ring-ring focus-visible:ring-2"
+                />
+                <button
+                  onClick={() => send()}
+                  disabled={!canSend}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

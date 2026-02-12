@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { MessageSquare, Plus } from "lucide-react";
+import { MessageSquare, Plus, Lock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BookCover } from "@/components/BookCover";
 import { fetchSyllabi, createSyllabus } from "@/lib/lists";
 import { useChatContext } from "@/contexts/ChatContext";
+import { useSubscription } from "@/contexts/SubscriptionContext";
 import type { ListWithCount } from "@/lib/types";
 
 type FilterTab = "all" | "syllabus" | "reading_path";
@@ -34,6 +35,7 @@ export function SyllabiPage() {
   const [newDescription, setNewDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const { openPanel } = useChatContext();
+  const { isPaid } = useSubscription();
 
   useEffect(() => {
     async function load() {
@@ -95,7 +97,7 @@ export function SyllabiPage() {
             illuminate a theme; reading paths guide you through one.
           </p>
         </div>
-        {!showCreateForm && (
+        {isPaid && !showCreateForm && (
           <button
             onClick={() => setShowCreateForm(true)}
             className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-bold text-accent-foreground shadow-md transition-all hover:bg-accent/90 hover:-translate-y-0.5"
@@ -103,6 +105,15 @@ export function SyllabiPage() {
             <Plus className="h-4 w-4" />
             Create Syllabus
           </button>
+        )}
+        {!isPaid && (
+          <Link
+            to="/pricing"
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-5 py-2.5 text-sm font-medium text-accent transition-all hover:bg-accent/10"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Upgrade to Create
+          </Link>
         )}
       </div>
 
@@ -138,7 +149,7 @@ export function SyllabiPage() {
       )}
 
       {/* Create form */}
-      {showCreateForm && (
+      {isPaid && showCreateForm && (
         <div className="rounded-xl border bg-card p-6 shadow-sm">
           <h3 className="mb-4 font-serif text-lg font-semibold">New Syllabus</h3>
           <div className="space-y-3">

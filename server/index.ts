@@ -35,6 +35,11 @@ import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
 import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
 import { startReleasesScheduler } from "./releases-scheduler.js";
+import {
+  handleStripeWebhook,
+  createCheckoutSession,
+  createPortalSession,
+} from "./stripe-handler.js";
 
 config();
 
@@ -223,6 +228,8 @@ const ALLOWED_ORIGINS = new Set([
   ...(process.env.NODE_ENV !== "production" ? ["http://localhost:5173"] : []),
 ]);
 
+const FREE_MESSAGE_LIMIT = 5;
+
 function setCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): void {
   const origin = req.headers.origin ?? "";
   if (ALLOWED_ORIGINS.has(origin)) {
@@ -233,6 +240,62 @@ function setCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): vo
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization",
   );
+}
+
+interface SubscriptionRow {
+  plan: string;
+  status: string;
+  chat_messages_used: number;
+  chat_messages_period_start: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  stripe_customer_id: string | null;
+}
+
+/**
+ * Get or create a user's subscription row.
+ * Uses service role to ensure write access regardless of RLS.
+ */
+async function getOrCreateSubscription(userId: string): Promise<SubscriptionRow> {
+  const { data } = await serviceSupabase
+    .from("user_subscriptions")
+    .select("plan, status, chat_messages_used, chat_messages_period_start, current_period_end, cancel_at_period_end, stripe_customer_id")
+    .eq("user_id", userId)
+    .single();
+
+  if (data) {
+    // Reset stale monthly counters
+    const periodStart = new Date(data.chat_messages_period_start);
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    if (periodStart < monthStart) {
+      await serviceSupabase
+        .from("user_subscriptions")
+        .update({
+          chat_messages_used: 0,
+          chat_messages_period_start: monthStart.toISOString(),
+        })
+        .eq("user_id", userId);
+      data.chat_messages_used = 0;
+      data.chat_messages_period_start = monthStart.toISOString();
+    }
+    return data as SubscriptionRow;
+  }
+
+  // Create default free subscription
+  const { data: created } = await serviceSupabase
+    .from("user_subscriptions")
+    .insert({ user_id: userId, plan: "free", status: "active" })
+    .select("plan, status, chat_messages_used, chat_messages_period_start, current_period_end, cancel_at_period_end, stripe_customer_id")
+    .single();
+
+  return created as SubscriptionRow;
+}
+
+function isPaidAndActive(sub: SubscriptionRow): boolean {
+  return sub.plan !== "free" && (sub.status === "active" || sub.status === "trialing");
 }
 
 async function handleChat(
@@ -263,6 +326,21 @@ async function handleChat(
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "message is required" }));
     return;
+  }
+
+  // Chat message gating for free users
+  const subscription = await getOrCreateSubscription(userId);
+  if (!isPaidAndActive(subscription)) {
+    if (subscription.chat_messages_used >= FREE_MESSAGE_LIMIT) {
+      setCorsHeaders(req, res);
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        error: "message_limit_reached",
+        messages_used: subscription.chat_messages_used,
+        messages_limit: FREE_MESSAGE_LIMIT,
+      }));
+      return;
+    }
   }
 
   // SSE headers
@@ -321,23 +399,11 @@ async function handleChat(
         content: m.content as string,
       }));
 
-    // Streaming tool loop
-    let accumulatedText = "";
-
-    while (true) {
-      const stream = anthropic.beta.messages.stream({
-        model: MODEL,
-        system: [
-          {
-            type: "text",
-            text: systemPrompt,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        messages: apiMessages,
-        tools: [
-          { type: "memory_20250818" as const, name: "memory" },
-          {
+    // Build tool list — free users get a subset
+    const isPaid = isPaidAndActive(subscription);
+    const chatTools: Anthropic.Beta.Messages.BetaToolUnion[] = [
+      { type: "memory_20250818" as const, name: "memory" },
+      {
             name: "manage_syllabi",
             description:
               "Create and manage curated syllabi (themed reading collections) from the reader's library. Use this to build themed syllabi, reading recommendations, or collections based on conversation context. Books are referenced by their exact title as shown in the library index.",
@@ -588,7 +654,29 @@ async function handleChat(
               required: ["action"],
             },
           },
+    ];
+
+    // Paid-only tools: syllabi, reading paths, excerpts
+    const PAID_TOOL_NAMES = new Set(["manage_syllabi", "manage_reading_paths", "save_excerpt"]);
+    const tools = isPaid
+      ? chatTools
+      : chatTools.filter((t) => !("name" in t && PAID_TOOL_NAMES.has(t.name)));
+
+    // Streaming tool loop
+    let accumulatedText = "";
+
+    while (true) {
+      const stream = anthropic.beta.messages.stream({
+        model: MODEL,
+        system: [
+          {
+            type: "text",
+            text: systemPrompt,
+            cache_control: { type: "ephemeral" },
+          },
         ],
+        messages: apiMessages,
+        tools,
         betas: ["context-management-2025-06-27"],
         max_tokens: 4096,
       });
@@ -697,6 +785,14 @@ async function handleChat(
     if (saveError) throw saveError;
 
     writeSSE(res, "done", { message_id: savedMsg.id });
+
+    // Increment chat message counter for free users
+    if (!isPaidAndActive(subscription)) {
+      void serviceSupabase
+        .from("user_subscriptions")
+        .update({ chat_messages_used: subscription.chat_messages_used + 1 })
+        .eq("user_id", userId);
+    }
 
     // Title generation: if this is the first exchange (2 messages)
     const { count } = await supabase
@@ -930,6 +1026,149 @@ const server = http.createServer((req, res) => {
 
     if (req.method === "GET" && url.startsWith("/api/isbndb/")) {
       void handleIsbndbProxy(req, res);
+      return;
+    }
+
+    // Stripe endpoints
+    if (req.method === "POST" && url === "/api/stripe/webhook") {
+      void (async () => {
+        try {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          const rawBody = Buffer.concat(chunks);
+          const signature = req.headers["stripe-signature"] as string;
+
+          if (!signature) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Missing stripe-signature header" }));
+            return;
+          }
+
+          const result = await handleStripeWebhook(rawBody, signature, serviceSupabase);
+          res.writeHead(result.status, { "Content-Type": "application/json" });
+          res.end(result.body);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[stripe/webhook] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Webhook processing failed" }));
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && url === "/api/stripe/checkout") {
+      void (async () => {
+        let userId: string;
+        let supabase;
+        try {
+          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
+          userId = getUserIdFromToken(token);
+          supabase = createUserClient(req.headers.authorization);
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        try {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          const body = JSON.parse(Buffer.concat(chunks).toString());
+
+          const plan = body.plan as "monthly" | "annual";
+          if (plan !== "monthly" && plan !== "annual") {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "plan must be 'monthly' or 'annual'" }));
+            return;
+          }
+
+          // Get user email from Supabase auth
+          const { data: { user } } = await supabase.auth.getUser();
+          const email = user?.email ?? "";
+
+          const origin = req.headers.origin || "https://rekollekt.io";
+          const checkoutUrl = await createCheckoutSession(userId, email, plan, origin);
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ url: checkoutUrl }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[stripe/checkout] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to create checkout session" }));
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && url === "/api/stripe/portal") {
+      void (async () => {
+        let userId: string;
+        try {
+          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
+          userId = getUserIdFromToken(token);
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        try {
+          const sub = await getOrCreateSubscription(userId);
+          if (!sub.stripe_customer_id) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "No active subscription to manage" }));
+            return;
+          }
+
+          const origin = req.headers.origin || "https://rekollekt.io";
+          const portalUrl = await createPortalSession(sub.stripe_customer_id, origin);
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ url: portalUrl }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[stripe/portal] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to create portal session" }));
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "GET" && url === "/api/subscription") {
+      void (async () => {
+        let userId: string;
+        try {
+          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
+          userId = getUserIdFromToken(token);
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        try {
+          const sub = await getOrCreateSubscription(userId);
+          const isPaid = isPaidAndActive(sub);
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            plan: sub.plan,
+            status: sub.status,
+            chat_messages_used: sub.chat_messages_used,
+            chat_messages_limit: isPaid ? null : FREE_MESSAGE_LIMIT,
+            current_period_end: sub.current_period_end,
+            cancel_at_period_end: sub.cancel_at_period_end,
+          }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[subscription] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to fetch subscription" }));
+        }
+      })();
       return;
     }
 
