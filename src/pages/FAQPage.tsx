@@ -27,7 +27,7 @@ const SECTIONS: FAQSection[] = [
       },
       {
         q: "Is my data private?",
-        a: "Yes. Your library, conversations, and profile are private to your account. We don't share your data with other users or third parties. AI conversations are processed through Anthropic's Claude API with no training on your data.",
+        a: "Yes. Your library, conversations, and profile are private to your account. We don't share your data with other users or third parties. AI conversations are processed through a secure API and your data is never used for model training.",
       },
     ],
   },
@@ -152,6 +152,12 @@ export function FAQPage() {
             className="text-base font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             Pricing
+          </Link>
+          <Link
+            to="/faq"
+            className="text-base font-semibold text-foreground transition-colors"
+          >
+            FAQ
           </Link>
           <Link
             to="/contact"
