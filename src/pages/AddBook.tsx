@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Loader2, Plus, AlertTriangle, ArrowLeft, Bookmark } from "lucide-react";
+import { Loader2, Plus, AlertTriangle, ArrowLeft, Bookmark, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { linkExternalItemsToBook } from "@/lib/lists";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,11 @@ export function AddBook() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
+  // Advanced search state
+  const [advancedMode, setAdvancedMode] = useState(false);
+  const [titleQuery, setTitleQuery] = useState("");
+  const [authorQuery, setAuthorQuery] = useState("");
+
   // Preview state
   const [selected, setSelected] = useState<ISBNdbBook | null>(null);
   const [view, setView] = useState<"search" | "preview">("search");
@@ -68,7 +73,24 @@ export function AddBook() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
+  function toggleAdvancedMode() {
+    setAdvancedMode((prev) => !prev);
+    // Clear all search state when switching modes
+    setQuery("");
+    setTitleQuery("");
+    setAuthorQuery("");
+    setResults([]);
+    setResultTotal(0);
+    setResultPage(1);
+    setSearchError(null);
+    setHasSearched(false);
+  }
+
   async function handleSearch(page = 1) {
+    if (advancedMode) {
+      return handleAdvancedSearch(page);
+    }
+
     const trimmed = query.trim();
     if (!trimmed) return;
 
@@ -108,6 +130,46 @@ export function AddBook() {
 
         setResults(merged);
         setResultTotal(general.total);
+        setResultPage(page);
+      }
+    } catch {
+      setSearchError("Search failed. Check your connection and API key.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function handleAdvancedSearch(page = 1) {
+    const title = titleQuery.trim();
+    const author = authorQuery.trim();
+    if (!title && !author) return;
+
+    setSearching(true);
+    setSearchError(null);
+    setHasSearched(true);
+
+    try {
+      if (title && !author) {
+        // Title-only search
+        const result = await searchBooks(title, page, PAGE_SIZE, "title");
+        setResults(result.books);
+        setResultTotal(result.total);
+        setResultPage(page);
+      } else if (author && !title) {
+        // Author-only search
+        const result = await searchBooks(author, page, PAGE_SIZE, "author");
+        setResults(result.books);
+        setResultTotal(result.total);
+        setResultPage(page);
+      } else {
+        // Both fields: search by title, then filter by author client-side
+        const result = await searchBooks(title, page, PAGE_SIZE, "title");
+        const authorLower = author.toLowerCase();
+        const filtered = result.books.filter((book) =>
+          book.authors?.some((a) => a.toLowerCase().includes(authorLower)),
+        );
+        setResults(filtered);
+        setResultTotal(result.total);
         setResultPage(page);
       }
     } catch {
@@ -177,9 +239,10 @@ export function AddBook() {
     navigate(`/books/${data.id}`);
   }
 
+  const groupQuery = advancedMode ? titleQuery || authorQuery : query;
   const groupedResults = useMemo(
-    () => groupEditions(results, query),
-    [results, query],
+    () => groupEditions(results, groupQuery),
+    [results, groupQuery],
   );
 
   const totalPages = Math.ceil(resultTotal / PAGE_SIZE);
@@ -373,18 +436,72 @@ export function AddBook() {
       <h1 className="font-serif text-2xl font-bold">Add Book</h1>
 
       <div className="space-y-4">
-        <Input
-          type="search"
-          placeholder="Search by title, author, or ISBN..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void handleSearch(1);
-            }
-          }}
-        />
+        {!advancedMode ? (
+          <Input
+            type="search"
+            placeholder="Search by title, author, or ISBN..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleSearch(1);
+              }
+            }}
+          />
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Title
+              </label>
+              <Input
+                type="search"
+                placeholder="Book title..."
+                value={titleQuery}
+                onChange={(e) => setTitleQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleSearch(1);
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Author
+              </label>
+              <Input
+                type="search"
+                placeholder="Author name..."
+                value={authorQuery}
+                onChange={(e) => setAuthorQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleSearch(1);
+                  }
+                }}
+              />
+            </div>
+            <button
+              onClick={() => void handleSearch(1)}
+              disabled={searching || (!titleQuery.trim() && !authorQuery.trim())}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Search className="h-4 w-4" />
+              Search
+            </button>
+          </div>
+        )}
+
+        <button
+          onClick={toggleAdvancedMode}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          {advancedMode ? "Simple search" : "Advanced search"}
+        </button>
 
         {searching && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -472,9 +589,11 @@ export function AddBook() {
         {/* Hint before first search */}
         {!searching && !hasSearched && !searchError && (
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Press Enter to search
-            </p>
+            {!advancedMode && (
+              <p className="text-sm text-muted-foreground">
+                Press Enter to search
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               Have a Goodreads library?{" "}
               <Link
