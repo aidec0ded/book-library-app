@@ -58,3 +58,40 @@ export async function findBookByTitle<T extends Record<string, unknown>>(
 
   return null;
 }
+
+/**
+ * Find a book by title, or create a minimal wishlist entry if not found.
+ * Returns the book id/title and whether it was newly created.
+ * After creating, auto-links any existing external list items that match.
+ */
+export async function findOrCreateBook(
+  supabase: SupabaseClient,
+  title: string,
+  author?: string,
+): Promise<{ id: string; title: string; created: boolean }> {
+  const existing = await findBookByTitle(supabase, title);
+  if (existing) return { id: existing.id, title: existing.title, created: false };
+
+  const { data, error } = await supabase
+    .from("books")
+    .insert({
+      title,
+      author: author ?? "Unknown",
+      status: "wishlist",
+      is_favorite: false,
+      is_up_next: false,
+    })
+    .select("id, title")
+    .single();
+
+  if (error) throw error;
+
+  // Auto-link any existing external list items matching this title
+  await supabase
+    .from("list_items")
+    .update({ book_id: data.id, external_title: null, external_author: null })
+    .is("book_id", null)
+    .ilike("external_title", title);
+
+  return { id: data.id, title: data.title, created: true };
+}

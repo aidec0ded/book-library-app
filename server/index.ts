@@ -148,7 +148,9 @@ You can create and manage curated syllabi using your manage_syllabi tool.
 Create syllabi when the reader asks, or suggest them when you notice patterns
 (e.g. "You've mentioned several cold, atmospheric novels — want me to
 make a syllabus?"). Always confirm before creating proactively.
-Reference books by their exact title as shown in the library.
+For library books, reference them by their exact title. You can also include
+books not in the library — they'll be automatically added as wishlist items.
+Always provide the author when recommending books not in the library.
 
 You can manage the reader's wishlist using your manage_wishlist tool.
 When the reader mentions a book they want to read that isn't in their
@@ -176,7 +178,9 @@ Reading paths are structured intellectual journeys — deeper than syllabi, with
 sequencing logic, pre-reading context, focus questions, and post-reading
 reflection prompts. Create paths when the reader wants to explore a theme,
 movement, or idea across multiple books. Each path has a thesis that frames
-the journey. When discussing a book that belongs to an active reading path,
+the journey. You can include books not in the library — they'll be automatically
+added as wishlist items. Always provide the author when recommending books not
+in the library. When discussing a book that belongs to an active reading path,
 reference the path's thesis and the book's focus questions naturally. After
 the reader finishes a book, offer to discuss using its post-reading prompts
 and connect themes across books in the path. When starting a new book in the
@@ -406,7 +410,7 @@ async function handleChat(
       {
             name: "manage_syllabi",
             description:
-              "Create and manage curated syllabi (themed reading collections) from the reader's library. Use this to build themed syllabi, reading recommendations, or collections based on conversation context. Books are referenced by their exact title as shown in the library index.",
+              "Create and manage curated syllabi (themed reading collections). Books don't need to be in the library already — any book not found will be automatically added as a wishlist item. Use this to build themed syllabi, reading recommendations, or collections based on conversation context.",
             input_schema: {
               type: "object" as const,
               properties: {
@@ -432,9 +436,24 @@ async function handleChat(
                 },
                 books: {
                   type: "array",
-                  items: { type: "string" },
+                  items: {
+                    type: "object",
+                    properties: {
+                      title: {
+                        type: "string",
+                        description:
+                          "Book title (use exact library title if the book is in the library)",
+                      },
+                      author: {
+                        type: "string",
+                        description:
+                          "Book author (important for books not yet in the library)",
+                      },
+                    },
+                    required: ["title"],
+                  },
                   description:
-                    "Book titles exactly as they appear in the library (e.g. 'The Road')",
+                    "Books to include. For library books, use the exact title. For any book, include the author.",
                 },
                 rationale: {
                   type: "string",
@@ -576,7 +595,7 @@ async function handleChat(
           {
             name: "manage_reading_paths",
             description:
-              "Create and manage reading paths — structured intellectual journeys through books with seminar-style scaffolding. Each path has a thesis, and each book has pre-reading context, focus questions, and post-reading prompts. Reading paths are deeper than syllabi and designed for thematic exploration.",
+              "Create and manage reading paths — structured intellectual journeys through books with seminar-style scaffolding. Each path has a thesis, and each book has pre-reading context, focus questions, and post-reading prompts. Books don't need to be in the library already — any book not found will be automatically added as a wishlist item. Reading paths are deeper than syllabi and designed for thematic exploration.",
             input_schema: {
               type: "object" as const,
               properties: {
@@ -614,7 +633,12 @@ async function handleChat(
                       title: {
                         type: "string",
                         description:
-                          "Book title exactly as it appears in the library",
+                          "Book title (use exact library title if in library)",
+                      },
+                      author: {
+                        type: "string",
+                        description:
+                          "Book author (important for books not yet in the library)",
                       },
                       pre_reading_context: {
                         type: "string",

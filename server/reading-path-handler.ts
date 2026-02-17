@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findBookByTitle } from "./book-lookup.js";
+import { findOrCreateBook } from "./book-lookup.js";
 
 interface SeminarContent {
   pre_reading_context: string;
@@ -9,6 +9,7 @@ interface SeminarContent {
 
 interface PathBook {
   title: string;
+  author?: string;
   pre_reading_context?: string;
   focus_questions?: string[];
   post_reading_prompts?: string[];
@@ -27,19 +28,6 @@ export interface ReadingPathCommand {
   books?: PathBook[];
   book_title?: string;
   progress?: "not_started" | "reading" | "completed";
-}
-
-interface ResolvedBook {
-  title: string;
-  id: string;
-}
-
-async function resolveBook(
-  supabase: SupabaseClient,
-  title: string,
-): Promise<ResolvedBook | null> {
-  const book = await findBookByTitle(supabase, title);
-  return book ? { title: book.title, id: book.id } : null;
 }
 
 
@@ -91,19 +79,15 @@ export async function executeReadingPathCommand(
       if (createError) throw createError;
 
       if (command.books && command.books.length > 0) {
-        // Resolve each book, preserving original order
-        const resolvedMap = new Map<string, ResolvedBook>();
+        // Resolve each book — creates wishlist entries for books not in library
+        const resolved: { id: string; title: string; created: boolean }[] = [];
         for (const book of command.books) {
-          const result = await resolveBook(supabase, book.title);
-          if (result) {
-            resolvedMap.set(book.title.toLowerCase(), result);
-          }
+          const result = await findOrCreateBook(supabase, book.title, book.author);
+          resolved.push(result);
         }
 
-        // Build items in original command order — library books get book_id,
-        // unfound books become external items. All preserve seminar content.
+        // Build items in original command order — every book gets a real book_id
         const items = command.books.map((book, i) => {
-          const resolved = resolvedMap.get(book.title.toLowerCase());
           const seminar =
             book.pre_reading_context || book.focus_questions || book.post_reading_prompts
               ? {
@@ -113,25 +97,13 @@ export async function executeReadingPathCommand(
                 }
               : null;
 
-          if (resolved) {
-            return {
-              list_id: list.id,
-              book_id: resolved.id,
-              position: i + 1,
-              path_progress: "not_started",
-              seminar_content: seminar,
-            };
-          } else {
-            return {
-              list_id: list.id,
-              book_id: null,
-              position: i + 1,
-              path_progress: "not_started",
-              seminar_content: seminar,
-              external_title: book.title,
-              external_author: null,
-            };
-          }
+          return {
+            list_id: list.id,
+            book_id: resolved[i].id,
+            position: i + 1,
+            path_progress: "not_started",
+            seminar_content: seminar,
+          };
         });
 
         const { error: insertError } = await supabase
@@ -140,16 +112,15 @@ export async function executeReadingPathCommand(
 
         if (insertError) throw insertError;
 
-        const inLibrary = resolvedMap.size;
-        const external = command.books.length - inLibrary;
+        const created = resolved.filter((b) => b.created).length;
 
         let msg = `Created reading path '${command.path_name}'`;
         if (command.thesis) {
           msg += ` with thesis: "${command.thesis}"`;
         }
         msg += ` — ${command.books.length} book${command.books.length === 1 ? "" : "s"} added`;
-        if (external > 0) {
-          msg += ` (${external} not yet in your library — they'll link automatically when you add them)`;
+        if (created > 0) {
+          msg += ` (${created} added to your library as wishlist item${created === 1 ? "" : "s"})`;
         }
         msg += ".";
         return msg;
@@ -290,13 +261,11 @@ export async function executeReadingPathCommand(
         );
       }
 
-      // Resolve each book
-      const resolvedMap = new Map<string, ResolvedBook>();
+      // Resolve each book — creates wishlist entries for books not in library
+      const resolved: { id: string; title: string; created: boolean }[] = [];
       for (const book of command.books) {
-        const result = await resolveBook(supabase, book.title);
-        if (result) {
-          resolvedMap.set(book.title.toLowerCase(), result);
-        }
+        const result = await findOrCreateBook(supabase, book.title, book.author);
+        resolved.push(result);
       }
 
       // Get current max position
@@ -313,7 +282,6 @@ export async function executeReadingPathCommand(
       let added = 0;
       for (let i = 0; i < command.books.length; i++) {
         const book = command.books[i];
-        const resolved = resolvedMap.get(book.title.toLowerCase());
         const seminar =
           book.pre_reading_context || book.focus_questions || book.post_reading_prompts
             ? {
@@ -323,22 +291,13 @@ export async function executeReadingPathCommand(
               }
             : null;
 
-        const item: Record<string, unknown> = {
+        const { error } = await supabase.from("list_items").insert({
           list_id: path.id,
+          book_id: resolved[i].id,
           position: startPosition + i,
           path_progress: "not_started",
           seminar_content: seminar,
-        };
-
-        if (resolved) {
-          item.book_id = resolved.id;
-        } else {
-          item.book_id = null;
-          item.external_title = book.title;
-          item.external_author = null;
-        }
-
-        const { error } = await supabase.from("list_items").insert(item);
+        });
 
         if (error) {
           if (error.code === "23505") continue; // duplicate
@@ -347,10 +306,10 @@ export async function executeReadingPathCommand(
         added++;
       }
 
-      const external = command.books.length - resolvedMap.size;
+      const created = resolved.filter((b) => b.created).length;
       let msg = `Added ${added} book${added === 1 ? "" : "s"} to '${path.name}'.`;
-      if (external > 0) {
-        msg += ` ${external} not yet in your library — they'll link automatically when you add them.`;
+      if (created > 0) {
+        msg += ` ${created} added to your library as wishlist item${created === 1 ? "" : "s"}.`;
       }
       return msg;
     }

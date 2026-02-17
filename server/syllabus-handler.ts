@@ -1,37 +1,41 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findBookByTitle } from "./book-lookup.js";
+import { findBookByTitle, findOrCreateBook } from "./book-lookup.js";
+
+interface SyllabusBook {
+  title: string;
+  author?: string;
+}
 
 export interface SyllabusCommand {
   action: "create" | "view" | "add_books" | "remove_books" | "delete";
   list_name?: string;
   description?: string;
-  books?: string[];
+  books?: SyllabusBook[] | string[];
   rationale?: string;
 }
 
 interface ResolvedBooks {
-  found: { title: string; id: string }[];
-  notFound: string[];
+  found: { title: string; id: string; created: boolean }[];
+}
+
+/** Normalize mixed input — tool may send strings or objects */
+function normalizeBooksInput(books: SyllabusBook[] | string[]): SyllabusBook[] {
+  return books.map((b) => (typeof b === "string" ? { title: b } : b));
 }
 
 async function resolveBooks(
   supabase: SupabaseClient,
-  titles: string[],
+  rawBooks: SyllabusBook[] | string[],
 ): Promise<ResolvedBooks> {
-  const found: { title: string; id: string }[] = [];
-  const notFound: string[] = [];
+  const books = normalizeBooksInput(rawBooks);
+  const found: { title: string; id: string; created: boolean }[] = [];
 
-  for (const title of titles) {
-    const book = await findBookByTitle(supabase, title);
-
-    if (book) {
-      found.push({ title: book.title, id: book.id });
-    } else {
-      notFound.push(title);
-    }
+  for (const book of books) {
+    const result = await findOrCreateBook(supabase, book.title, book.author);
+    found.push(result);
   }
 
-  return { found, notFound };
+  return { found };
 }
 
 async function findSyllabusByName(
@@ -84,7 +88,7 @@ export async function executeSyllabusCommand(
 
       // Add books if provided
       if (command.books && command.books.length > 0) {
-        const { found, notFound } = await resolveBooks(supabase, command.books);
+        const { found } = await resolveBooks(supabase, command.books);
 
         if (found.length > 0) {
           const items = found.map((book, i) => ({
@@ -101,14 +105,10 @@ export async function executeSyllabusCommand(
           if (insertError) throw insertError;
         }
 
-        let msg = `Created syllabus '${command.list_name}'`;
-        if (found.length > 0) {
-          msg += ` with ${found.length} book${found.length === 1 ? "" : "s"}.`;
-        } else {
-          msg += ".";
-        }
-        if (notFound.length > 0) {
-          msg += ` Could not find: ${notFound.map((t) => `'${t}'`).join(", ")}.`;
+        const created = found.filter((b) => b.created).length;
+        let msg = `Created syllabus '${command.list_name}' with ${found.length} book${found.length === 1 ? "" : "s"}.`;
+        if (created > 0) {
+          msg += ` ${created} added to your library as wishlist item${created === 1 ? "" : "s"}.`;
         }
         return msg;
       }
@@ -200,7 +200,7 @@ export async function executeSyllabusCommand(
         throw new Error(`No syllabus found matching '${command.list_name}'.`);
       }
 
-      const { found, notFound } = await resolveBooks(supabase, command.books);
+      const { found } = await resolveBooks(supabase, command.books);
 
       // Get current max position
       const { data: existing, error: fetchError } = await supabase
@@ -231,9 +231,10 @@ export async function executeSyllabusCommand(
         added++;
       }
 
+      const created = found.filter((b) => b.created).length;
       let msg = `Added ${added} book${added === 1 ? "" : "s"} to '${list.name}'.`;
-      if (notFound.length > 0) {
-        msg += ` Could not find: ${notFound.map((t) => `'${t}'`).join(", ")}.`;
+      if (created > 0) {
+        msg += ` ${created} added to your library as wishlist item${created === 1 ? "" : "s"}.`;
       }
       const skipped = found.length - added;
       if (skipped > 0) {
@@ -255,10 +256,21 @@ export async function executeSyllabusCommand(
         throw new Error(`No syllabus found matching '${command.list_name}'.`);
       }
 
-      const { found, notFound } = await resolveBooks(supabase, command.books);
+      // For removal, only look up existing books — don't create new ones
+      const titles = normalizeBooksInput(command.books).map((b) => b.title);
+      const foundBooks: { title: string; id: string }[] = [];
+      const notFoundTitles: string[] = [];
+      for (const title of titles) {
+        const book = await findBookByTitle(supabase, title);
+        if (book) {
+          foundBooks.push({ title: book.title, id: book.id });
+        } else {
+          notFoundTitles.push(title);
+        }
+      }
 
       let removed = 0;
-      for (const book of found) {
+      for (const book of foundBooks) {
         const { error, count } = await supabase
           .from("list_items")
           .delete({ count: "exact" })
@@ -290,8 +302,8 @@ export async function executeSyllabusCommand(
       }
 
       let msg = `Removed ${removed} book${removed === 1 ? "" : "s"} from '${list.name}'.`;
-      if (notFound.length > 0) {
-        msg += ` Could not find: ${notFound.map((t) => `'${t}'`).join(", ")}.`;
+      if (notFoundTitles.length > 0) {
+        msg += ` Could not find: ${notFoundTitles.map((t) => `'${t}'`).join(", ")}.`;
       }
       return msg;
     }
