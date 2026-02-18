@@ -4,7 +4,7 @@ import { config } from "dotenv";
 import {
   CANONICAL_VIBES,
   CANONICAL_VIBE_SET,
-} from "../src/lib/canonical-vibes.js";
+} from "../src/lib/canonical-vibes-data.js";
 
 config();
 
