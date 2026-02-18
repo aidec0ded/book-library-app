@@ -142,3 +142,4 @@
 - Add Book search noise — hard to find the right book for famous authors (Rushdie, etc.); consider result filtering, ranking by relevance, or alternative search strategies
 - ~~Reduce reading path creation friction~~ — books not in library are now auto-added as wishlist items during syllabus/reading path creation **[DONE]**
 - Custom SMTP provider for auth emails — Supabase default emails are generic and unbranded; evaluate Resend, SendGrid, or Postmark for branded transactional emails (confirmation, password reset)
+- Chat onboarding refinements — opening prompt still too vague (needs to lead with a concrete question, not "tell me about a book"), AI not reliably adding all mentioned books to library (only added 1 of 6+ in testing), books the user says they own/have aren't being added as unread. Prompt instructions were strengthened but model compliance needs further tuning — may need few-shot examples or tool_choice forcing
