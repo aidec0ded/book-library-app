@@ -17,6 +17,7 @@ const FEATURES = [
       "Add books by title, author, or ISBN from ISBNdb's comprehensive database",
     ],
     caption: "Your Library",
+    image: "/screenshot_1.png",
   },
   {
     num: "02",
@@ -31,6 +32,7 @@ const FEATURES = [
       "Persistent memory that builds understanding across every conversation",
     ],
     caption: "AI Reading Companion",
+    image: "/screenshot_2.png",
   },
   {
     num: "03",
@@ -45,6 +47,7 @@ const FEATURES = [
       "Activity-gated regeneration ensures the profile stays current",
     ],
     caption: "Understanding You",
+    image: "/screenshot_3.png",
   },
   {
     num: "04",
@@ -59,6 +62,7 @@ const FEATURES = [
       "Wishlist integration and Bookshop.org purchase links",
     ],
     caption: "Discovery",
+    image: "/screenshot_4.png",
   },
   {
     num: "05",
@@ -73,6 +77,7 @@ const FEATURES = [
       "A personalized home page with context-aware greeting, currently reading, and reading DNA stats",
     ],
     caption: "Your Space",
+    image: "/screenshot_5.png",
   },
 ];
 
@@ -211,19 +216,16 @@ export function FeaturesPage() {
             <div className="sticky top-[10vh] h-[80vh] w-full flex flex-col justify-center">
               {/* Image frame */}
               <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-card shadow-lg">
-                {/* Placeholder content */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="mx-auto mb-4 h-16 w-16 rounded-full border border-border bg-secondary flex items-center justify-center">
-                      <span className="font-serif text-2xl text-muted-foreground">
-                        {FEATURES[activeIndex].num}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Screenshot coming soon
-                    </p>
-                  </div>
-                </div>
+                {FEATURES.map((feature, i) => (
+                  <img
+                    key={feature.num}
+                    src={feature.image}
+                    alt={feature.caption}
+                    className={`absolute inset-0 h-full w-full object-cover object-left-top transition-opacity duration-500 ${
+                      i === activeIndex ? "opacity-100" : "opacity-0"
+                    }`}
+                  />
+                ))}
               </div>
 
               {/* Caption */}
