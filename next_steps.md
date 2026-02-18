@@ -44,7 +44,7 @@
 
 **Core functionality**
 
-- Document the app / create a GitHub readme
+- Document the app / create a GitHub readme **[DONE]**
 - User signup and profile creation
 - Deploy to cloud (Vercel/Cloudflare Pages + serverless)
 - Bulk canonical tagging script + two-tier tagging flow in `tag-vibes.ts` **[DONE]**
@@ -76,27 +76,28 @@
 
 **Non-fiction & poetry**
 
-- Design first-class experience for non-fiction and poetry — adaptive hybrid architecture chosen. Design docs at `.claude/design/`. Data foundation complete: `book_type` column on books (backfilled: 1088 fiction, 595 nonfiction, 18 poetry), `tag_category` on book_vibes, `canonical_tags` table seeded with 57 tags across 7 categories. Implementation plan at `.claude/plans/implementation-plan.md` — Phase A complete, continuing with Phase B (classification UI) **[Phase A DONE]**
+- Design first-class experience for non-fiction and poetry — adaptive hybrid architecture chosen. Design docs at `.claude/design/`. Data foundation complete: `book_type` column on books (backfilled: 1088 fiction, 595 nonfiction, 18 poetry), `tag_category` on book_vibes, `canonical_tags` table seeded with 57 tags across 7 categories. **[DONE]**
 
 
 **Social & engagement**
 
 - Reading paths — interest-driven explorations (author catalogs, literary movements, award lists) with progress tracking and AI-assisted creation/check-ins. Stretch: AI-generated "seminar" layer — structured syllabi with deliberate sequencing, historical/cultural context before each work, guided reading focus, post-book discussion, and adaptation based on the reader's reactions throughout the path **[DONE]**
-- Reading Life narrative — AI-identified eras/chapters in the reader's journey (not a chronological timeline but a thematic story), with key books, transition points, vibe/genre composition, and conversation insights per era. **First step:** add `date_read` column to books (set automatically when status changes to "read") so temporal data accumulates over time
-- Onboarding flow — multi-step guided experience for new users to accelerate profile generation and personalization. Collect preferences (vibe selection from canonical vibes, book type preferences, initial ratings of well-known books), seed the reader profile faster than waiting for organic activity. Could also include genre/topic interests, reading pace, and "what are you reading now?"
-- Social features strategy — determine which social interactions serve meaningful reading vs. social performance. Candidates: editorial public lists with write-ups, sharing reader insights/profiles (not metrics), seminar cohorts on reading paths, taste-based discovery. Requires auth/multi-user first
+- ~~Reading Life narrative~~ — moved to Deferred Backlog
+- Onboarding flow — multi-step guided experience for new users to accelerate profile generation and personalization. Collect preferences (vibe selection from canonical vibes, book type preferences, initial ratings of well-known books), seed the reader profile faster than waiting for organic activity. Could also include genre/topic interests, reading pace, and "what are you reading now?" **[DONE]**
+- ~~Social features strategy~~ — moved to Deferred Backlog
 
 **Chat experience**
 
 - Persistent, minimizable chat window that can be triggered from any page and uses that page's context **[DONE]**
 - Expand chat tool use — can it access the web (check new releases), remove a book from the library, change book status (e.g. remove from "Reading"), and take other site actions beyond list management? **[DONE]**
-- Add web access tool to chat (e.g. search for books, look up author info, check reviews)
-- Full data export (JSON) — books, syllabi, reading paths, conversations, excerpts, memory, reader profile. Richer complement to the CSV library export for users who want a complete backup
+- Add web access tool to chat (e.g. search for books, look up author info, check reviews) **[DONE]**
+- Full data export (JSON) — books, syllabi, reading paths, conversations, excerpts, memory, reader profile. Richer complement to the CSV library export for users who want a complete backup **[DONE]**
 - ~~Smoother reading path creation for books not in library~~ — when chat creates a syllabus or reading path, books not in the library are now auto-added as wishlist items **[DONE]**
 - Future cost optimization strategies to evaluate when we have usage data:
   - Alternative model providers (e.g. DeepSeek) for chat to reduce per-message cost
   - Intelligent model routing — Sonnet for complex messages, Haiku for simple ones (or Sonnet for first N messages, Haiku after)
   - Generous first-month free tier (unlimited messages month 1, then drop to 5/month) to accelerate onboarding
+  **[DONE for now — revisit when usage data available]**
 
 ---
 
@@ -104,7 +105,7 @@
 
 **Layout & navigation**
 
-- Create a public-facing home page for all users
+- Create a public-facing home page for all users **[DONE]**
 - Move navigation to collapsible sidebar **[DONE]**
 - Make home page closer to screenshot reference **[DONE]**
 - No direct pagination — need a way to jump to a specific page in Library (currently 46 pages) **[DONE]**
@@ -115,12 +116,12 @@
 
 - **Book Detail page** — Cover + status/rating/favorite/up next on left; predicted rating, notes, metadata, vibes, summary on right; Notes section below both **[DONE]**
 - **Shelf page** — Reference Cosmos screenshot; consider unified cover-based view for entire library with dynamic filtering **[DONE]**
-- **Vibes page** — Current box layout needs visual refresh
+- **Vibes page** — Current box layout needs visual refresh **[DONE]**
 - **Reader Profile page** — More attractive layout, better visuals **[DONE]**
 
 **Polish**
 
-- List view styling refinements
+- List view styling refinements **[DONE]**
 - Clean up genres — map to broader Amazon-style categories **[DONE]**
 - Redesign star rating input — replace dropdown with interactive star widget (Letterboxd-style hover/tap with quarter-star precision). Current dropdown is bulky and unattractive **[DONE]**
 - Add accent color — find strategic places for splashes of a warm color (e.g. LitHub-style red hue) to break up the neutral palette **[DONE]**
@@ -131,15 +132,17 @@
 ### 💰 Business Track
 
 - Monetization implementation — usage-gated free tier + paid subscription. See pricing strategy at `.claude/design/pricing-strategy.md` and implementation plan at `.claude/plans/monetization-plan.md` **[DONE]**
-- AI cost optimization — token tracking implemented; batch API for releases scoring implemented; system prompt compression implemented. Monitor usage data before further optimization
+- AI cost optimization — token tracking implemented; batch API for releases scoring implemented; system prompt compression implemented. Monitor usage data before further optimization **[DONE]**
 - Verify all documentation is current — README, CLAUDE.md, any user-facing docs. Ensure they reflect current features, architecture, and pricing model
+- Alpha launch plan — define launch strategy: target audience, distribution channels, feedback collection, success metrics, and timeline. See `.claude/design/launch-plan.md` **[DONE]**
 
 ---
 
 ### 📋 Backlog (Deferred)
 
 - Account settings page design refinement — revisit when we think of what else to add to settings
-- Add Book search noise — hard to find the right book for famous authors (Rushdie, etc.); consider result filtering, ranking by relevance, or alternative search strategies
+- Add Book search noise — hard to find the right book for famous authors (Rushdie, etc.); consider result filtering, ranking by relevance, or alternative search strategies **[DONE]**
 - ~~Reduce reading path creation friction~~ — books not in library are now auto-added as wishlist items during syllabus/reading path creation **[DONE]**
 - Custom SMTP provider for auth emails — Supabase default emails are generic and unbranded; evaluate Resend, SendGrid, or Postmark for branded transactional emails (confirmation, password reset)
-- Chat onboarding refinements — opening prompt still too vague (needs to lead with a concrete question, not "tell me about a book"), AI not reliably adding all mentioned books to library (only added 1 of 6+ in testing), books the user says they own/have aren't being added as unread. Prompt instructions were strengthened but model compliance needs further tuning — may need few-shot examples or tool_choice forcing
+- Reading Life narrative — AI-identified eras/chapters in the reader's journey (not a chronological timeline but a thematic story), with key books, transition points, vibe/genre composition, and conversation insights per era. First step: add `date_read` column to books (set automatically when status changes to "read") so temporal data accumulates over time
+- Social features strategy — determine which social interactions serve meaningful reading vs. social performance. Candidates: editorial public lists with write-ups, sharing reader insights/profiles (not metrics), seminar cohorts on reading paths, taste-based discovery
