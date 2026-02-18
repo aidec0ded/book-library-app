@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import { linkExternalItemsToBook } from "@/lib/lists";
+import { capture } from "@/lib/posthog";
 import {
   parseGoodreadsCSV,
   getShelfCounts,
@@ -190,6 +191,9 @@ export function ImportBooks() {
       setImportedCount(inserted);
     }
 
+    if (inserted > 0) {
+      capture("books_imported", { count: inserted, source: "csv" });
+    }
     setImportErrors(errors);
     setStep("summary");
   }

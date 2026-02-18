@@ -4,6 +4,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { useChatSession } from "@/hooks/useChatSession";
 import { completeOnboarding } from "@/lib/onboarding";
+import { capture } from "@/lib/posthog";
 
 type Phase = "welcome" | "chat";
 
@@ -38,9 +39,12 @@ export function OnboardingPage() {
     }
   }, [phase]);
 
+  const userMessageCount = messages.filter((m) => m.role === "user").length;
+
   async function handleComplete() {
     setCompleting(true);
     try {
+      capture("onboarding_completed", { messages_sent: userMessageCount });
       await completeOnboarding();
       navigate("/home", { replace: true });
     } catch {
@@ -76,7 +80,10 @@ export function OnboardingPage() {
 
             <div className="mt-10 flex flex-col gap-4">
               <button
-                onClick={() => setPhase("chat")}
+                onClick={() => {
+                  capture("onboarding_started");
+                  setPhase("chat");
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-8 py-3.5 text-sm font-semibold text-background transition-all hover:opacity-90"
               >
                 Let's get started
@@ -84,7 +91,10 @@ export function OnboardingPage() {
               </button>
 
               <button
-                onClick={() => navigate("/import?from=onboarding")}
+                onClick={() => {
+                  capture("onboarding_import_chosen");
+                  navigate("/import?from=onboarding");
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-border px-8 py-3.5 text-sm font-semibold transition-colors hover:bg-accent"
               >
                 I have a Goodreads export
@@ -92,7 +102,10 @@ export function OnboardingPage() {
             </div>
 
             <button
-              onClick={handleComplete}
+              onClick={() => {
+                capture("onboarding_skipped");
+                handleComplete();
+              }}
               disabled={completing}
               className="mt-8 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >

@@ -25,6 +25,7 @@
     "csv-parse": "^5.6.0",
     "dotenv": "^16.4.7",
     "lucide-react": "^0.563.0",
+    "posthog-js": "^1.351.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.0",

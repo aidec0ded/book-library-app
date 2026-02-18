@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { identifyUser } from "@/lib/posthog";
 
 interface SubscriptionState {
   plan: "free" | "monthly" | "annual";
@@ -43,6 +44,10 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setChatMessagesLimit(data.chat_messages_limit);
       setCurrentPeriodEnd(data.current_period_end);
       setCancelAtPeriodEnd(data.cancel_at_period_end);
+
+      if (session.user?.id) {
+        identifyUser(session.user.id, { plan: data.plan });
+      }
     } catch {
       // Best-effort — default to free tier
     } finally {

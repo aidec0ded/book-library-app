@@ -5,6 +5,7 @@ import {
   sendMessage,
 } from "@/lib/chat";
 import type { Conversation, Message } from "@/lib/types";
+import { capture } from "@/lib/posthog";
 
 const SESSION_KEY = "moodlib_conversation_id";
 
@@ -45,6 +46,8 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
 
   const streamingContentRef = useRef("");
   const abortRef = useRef<AbortController | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  conversationIdRef.current = conversationId;
 
   // Load conversations on mount (skip for onboarding)
   useEffect(() => {
@@ -108,6 +111,7 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
       const content = (text ?? input).trim();
       if (!content || streaming) return;
 
+      capture("chat_message_sent");
       setError(null);
 
       const tempMessage: Message = {
@@ -128,6 +132,9 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
         content,
         {
           onMeta: ({ conversation_id }) => {
+            if (!conversationIdRef.current) {
+              capture("chat_conversation_started", { is_onboarding: isOnboarding });
+            }
             setConversationId(conversation_id);
             if (!isOnboarding) {
               sessionStorage.setItem(SESSION_KEY, conversation_id);

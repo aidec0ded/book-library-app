@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { capture } from "@/lib/posthog";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -34,6 +35,7 @@ export function LoginPage() {
           password,
         });
         if (signInError) throw signInError;
+        capture("user_logged_in", { method: "email" });
         navigate("/home");
       } else {
         const { error: signUpError } = await supabase.auth.signUp({
@@ -44,6 +46,7 @@ export function LoginPage() {
           },
         });
         if (signUpError) throw signUpError;
+        capture("user_signed_up", { method: "email" });
         setConfirmationSent(true);
       }
     } catch (err) {
@@ -55,6 +58,7 @@ export function LoginPage() {
 
   const handleGoogleOAuth = async () => {
     setError(null);
+    capture("user_logged_in", { method: "google" });
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {

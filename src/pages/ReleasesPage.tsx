@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Pagination } from "@/components/Pagination";
 import type { NewRelease } from "@/lib/types";
+import { capture } from "@/lib/posthog";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -479,6 +480,7 @@ export function ReleasesPage() {
   async function handleWishlist(release: NewRelease) {
     try {
       await addReleaseToWishlist(release);
+      capture("release_wishlisted");
       setLibraryIsbns((prev) => new Set(prev).add(release.isbn13));
       setAddedIsbns((prev) => new Set(prev).add(release.isbn13));
     } catch (err) {

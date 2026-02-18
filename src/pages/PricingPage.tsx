@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { capture } from "@/lib/posthog";
 
 const FREE_FEATURES = [
   "Full library management",
@@ -32,6 +33,7 @@ export function PricingPage() {
 
   async function handleUpgrade() {
     if (!session) return;
+    capture("checkout_started", { plan: billing });
     setLoading(true);
     try {
       const response = await fetch("/api/stripe/checkout", {

@@ -344,6 +344,8 @@ Requires `.env` (not committed) with:
 - `STRIPE_ANNUAL_PRICE_ID` — Stripe Price ID for $60/year plan
 - `VITE_SUPABASE_URL` — same Supabase URL (exposed to browser via Vite)
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
+- `VITE_POSTHOG_KEY` — PostHog project API key (optional — analytics disabled when unset)
+- `VITE_POSTHOG_HOST` — PostHog ingest URL (optional, defaults to `https://us.i.posthog.com`)
 
 ## Design Prototyping (Stitch)
 

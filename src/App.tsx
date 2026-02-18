@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePostHogPageview } from "@/lib/posthog";
 import { Layout } from "@/components/Layout";
 import { LandingPage } from "@/pages/LandingPage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -87,6 +88,8 @@ function OnboardingGate({ children }: { children: React.ReactNode }) {
 }
 
 export function App() {
+  usePostHogPageview();
+
   return (
     <Suspense fallback={<Spinner />}>
       <Routes>

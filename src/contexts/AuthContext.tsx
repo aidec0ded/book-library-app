@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { identifyUser, resetUser } from "@/lib/posthog";
 
 interface AuthState {
   user: User | null;
@@ -30,10 +31,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
       setLoading(false);
+
+      if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && s?.user) {
+        identifyUser(s.user.id, {
+          email: s.user.email,
+          provider: s.user.app_metadata.provider,
+        });
+      } else if (event === "SIGNED_OUT") {
+        resetUser();
+      }
     });
 
     return () => subscription.unsubscribe();

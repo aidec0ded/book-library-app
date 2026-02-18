@@ -6,6 +6,7 @@ import { ShelfFilterBuilder } from "@/components/ShelfFilterBuilder";
 import { ShelfCarousel } from "@/components/ShelfCarousel";
 import { fetchShelves, createShelf } from "@/lib/shelves";
 import type { Shelf, ShelfFilter, ShelfType, ShelfWithCover } from "@/lib/types";
+import { capture } from "@/lib/posthog";
 
 // ── Cover fan positions ──
 // 3 covers: left (-6deg), center (0deg), right (+6deg)
@@ -215,6 +216,7 @@ function CreateShelfForm({
         shelfType,
         shelfType === "auto" ? filter : null,
       );
+      capture("shelf_created", { type: shelfType });
       onCreated();
     } catch (err) {
       console.error("Error creating shelf:", err);

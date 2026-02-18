@@ -25,6 +25,7 @@ import {
 import type { ISBNdbBook } from "@/lib/isbndb";
 import type { BookType } from "@/lib/types";
 import { Pagination } from "@/components/Pagination";
+import { capture } from "@/lib/posthog";
 
 const PAGE_SIZE = 20;
 
@@ -228,6 +229,8 @@ export function AddBook() {
       setAdding(false);
       return;
     }
+
+    capture("book_added", { source: "search" });
 
     // Auto-link any external list items (e.g. from AI-created reading paths)
     try {
