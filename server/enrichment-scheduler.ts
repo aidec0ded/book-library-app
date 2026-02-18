@@ -6,6 +6,7 @@ const STARTUP_DELAY_MS = 60 * 1000; // 1 minute after server start
 
 // In-flight guards — one per enrichment stage
 const inFlight = {
+  discovery: false,
   isbndb: false,
   vibes: false,
   classifications: false,
@@ -32,7 +33,8 @@ function spawn(label: string, command: string, guard: keyof typeof inFlight): vo
         !trimmed.endsWith("No books to tag.") &&
         !trimmed.endsWith("No books to predict.") &&
         !trimmed.endsWith("No nonfiction books to tag.") &&
-        !trimmed.endsWith("No poetry books to tag.")) {
+        !trimmed.endsWith("No poetry books to tag.") &&
+        !trimmed.endsWith("No books without ISBNs found.")) {
       console.log(`[enrichment] ${label} output:\n${trimmed}`);
     }
   });
@@ -40,6 +42,24 @@ function spawn(label: string, command: string, guard: keyof typeof inFlight): vo
 
 async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
   try {
+    // Stage 0: ISBN discovery — books without ISBN that haven't been searched yet
+    // (e.g. books added via chat's manage_book tool)
+    if (!inFlight.discovery) {
+      const { count: discoveryPending } = await supabase
+        .from("books")
+        .select("id", { count: "exact", head: true })
+        .is("isbn", null)
+        .is("isbndb_enriched_at", null);
+
+      if ((discoveryPending ?? 0) > 0) {
+        spawn(
+          `ISBN discovery (${discoveryPending} pending)`,
+          "npx tsx scripts/discover-isbns.ts --auto --limit 10",
+          "discovery",
+        );
+      }
+    }
+
     // Stage 1: ISBNdb enrichment — books with ISBN but not yet enriched
     const { count: isbndbPending } = await supabase
       .from("books")

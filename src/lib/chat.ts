@@ -30,6 +30,7 @@ export async function fetchMessages(
 export interface ChatCallbacks {
   onMeta: (data: { conversation_id: string }) => void;
   onText: (data: { content: string }) => void;
+  onThinking: () => void;
   onDone: (data: { message_id: string }) => void;
   onError: (data: { message: string }) => void;
 }
@@ -129,6 +130,9 @@ export function sendMessage(
                 break;
               case "text":
                 callbacks.onText(parsed as { content: string });
+                break;
+              case "thinking":
+                callbacks.onThinking();
                 break;
               case "done":
                 callbacks.onDone(parsed as { message_id: string });

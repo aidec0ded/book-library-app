@@ -15,6 +15,7 @@ export interface UseChatSessionReturn {
   conversationsLoading: boolean;
   input: string;
   streaming: boolean;
+  thinking: boolean;
   streamingContent: string;
   error: string | null;
   messageLimitReached: boolean;
@@ -37,6 +38,7 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
   const [conversationsLoading, setConversationsLoading] = useState(!isOnboarding);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [messageLimitReached, setMessageLimitReached] = useState(false);
@@ -132,8 +134,16 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
             }
           },
           onText: ({ content: chunk }) => {
+            setThinking(false);
             streamingContentRef.current += chunk;
             setStreamingContent(streamingContentRef.current);
+          },
+          onThinking: () => {
+            // Server is processing tool calls — clear any leaked internal
+            // reasoning text and show thinking indicator.
+            streamingContentRef.current = "";
+            setStreamingContent("");
+            setThinking(true);
           },
           onDone: ({ message_id }) => {
             const finalContent = streamingContentRef.current;
@@ -150,6 +160,7 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
             setStreamingContent("");
             streamingContentRef.current = "";
             setStreaming(false);
+            setThinking(false);
 
             if (!isOnboarding) {
               void fetchConversations().then(setConversations).catch(() => {});
@@ -164,6 +175,7 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
               setError(message);
             }
             setStreaming(false);
+            setThinking(false);
           },
         },
         isOnboarding ? { isOnboarding: true } : undefined,
@@ -181,6 +193,7 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
     conversationsLoading,
     input,
     streaming,
+    thinking,
     streamingContent,
     error,
     messageLimitReached,

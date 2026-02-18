@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { ChatMessage } from "@/components/ChatMessage";
 import { useChatSession } from "@/hooks/useChatSession";
 import { completeOnboarding } from "@/lib/onboarding";
@@ -128,7 +128,7 @@ export function OnboardingPage() {
           {messages.length === 0 && !streaming && (
             <div className="py-12 text-center">
               <p className="text-sm text-muted-foreground">
-                Tell me about a book you love to get started.
+                Send a message to start chatting about books.
               </p>
             </div>
           )}
@@ -147,6 +147,14 @@ export function OnboardingPage() {
               content={streamingContent}
               isStreaming
             />
+          )}
+
+          {streaming && !streamingContent && (
+            <div className="flex justify-start">
+              <div className="rounded-2xl bg-muted px-4 py-2.5">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            </div>
           )}
 
           {error && (

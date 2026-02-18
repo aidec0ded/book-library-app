@@ -137,6 +137,9 @@ Voice and register:
   striking, your real engagement will land harder because it's earned.
 - You can be warm — dry humor, genuine curiosity, the pleasure of a good
   literary argument — but never sycophantic.
+- Do NOT narrate your tool use. Never say "Let me save that," "Let me add
+  that to your library," "Let me record this," or "Let me check my memory."
+  Just use your tools silently and continue the conversation naturally.
 
 When you learn something meaningful — preferences, emotional reactions,
 connections between books, evolving tastes — record it in your memory.
@@ -737,6 +740,7 @@ async function handleChat(
     let accumulatedText = "";
 
     while (true) {
+      let roundText = "";
       const stream = anthropic.beta.messages.stream({
         model: MODEL,
         system: [
@@ -754,6 +758,7 @@ async function handleChat(
 
       // Forward text deltas to client
       stream.on("text", (text) => {
+        roundText += text;
         accumulatedText += text;
         writeSSE(res, "text", { content: text });
       });
@@ -772,6 +777,14 @@ async function handleChat(
         // No tool calls — done
         break;
       }
+
+      // Tool round — any text Claude produced before tool calls is internal
+      // reasoning (e.g. "Let me try a different approach"). Tell the client
+      // to discard it and show a thinking indicator.
+      if (roundText.length > 0) {
+        accumulatedText = accumulatedText.slice(0, accumulatedText.length - roundText.length);
+      }
+      writeSSE(res, "thinking", {});
 
       // Execute tool calls and build continuation messages
       apiMessages.push({

@@ -49,6 +49,7 @@ interface ReviewEntry {
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
+const autoMode = args.includes("--auto");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
 
@@ -189,6 +190,11 @@ async function main() {
     .is("isbn", null)
     .order("title");
 
+  // In auto mode, only search books that haven't been through discovery yet
+  if (autoMode) {
+    query = query.is("isbndb_enriched_at", null);
+  }
+
   const { data: books, error: fetchError } = await query;
 
   if (fetchError) {
@@ -229,12 +235,18 @@ async function main() {
       if (!response || !response.books || response.books.length === 0) {
         console.log(`  ${progress} ? ${book.title} — ${book.author} (no results)`);
         skipped++;
-        reviewEntries.push({
-          id: book.id,
-          title: book.title,
-          author: book.author,
-          results: [],
-        });
+        if (autoMode && !dryRun) {
+          // Mark as searched so scheduler doesn't retry
+          await supabase.from("books").update({ isbndb_enriched_at: new Date().toISOString() }).eq("id", book.id);
+        }
+        if (!autoMode) {
+          reviewEntries.push({
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            results: [],
+          });
+        }
       } else {
         // Step 3: Score results for match confidence
         const normalizedBookTitle = normalizeTitle(book.title);
@@ -264,17 +276,22 @@ async function main() {
               `  ${progress} ? ${book.title} — ${book.author} (match found but no ISBN)`
             );
             skipped++;
-            reviewEntries.push({
-              id: book.id,
-              title: book.title,
-              author: book.author,
-              results: response.books.slice(0, 3).map((b) => ({
-                title: b.title,
-                authors: b.authors ?? [],
-                isbn13: b.isbn13,
-                isbn: b.isbn,
-              })),
-            });
+            if (autoMode && !dryRun) {
+              await supabase.from("books").update({ isbndb_enriched_at: new Date().toISOString() }).eq("id", book.id);
+            }
+            if (!autoMode) {
+              reviewEntries.push({
+                id: book.id,
+                title: book.title,
+                author: book.author,
+                results: response.books.slice(0, 3).map((b) => ({
+                  title: b.title,
+                  authors: b.authors ?? [],
+                  isbn13: b.isbn13,
+                  isbn: b.isbn,
+                })),
+              });
+            }
           } else {
             // Step 4: Update Supabase
             if (!dryRun) {
@@ -306,17 +323,22 @@ async function main() {
             `  ${progress} ? ${book.title} — ${book.author} (no confident match)`
           );
           skipped++;
-          reviewEntries.push({
-            id: book.id,
-            title: book.title,
-            author: book.author,
-            results: response.books.slice(0, 3).map((b) => ({
-              title: b.title,
-              authors: b.authors ?? [],
-              isbn13: b.isbn13,
-              isbn: b.isbn,
-            })),
-          });
+          if (autoMode && !dryRun) {
+            await supabase.from("books").update({ isbndb_enriched_at: new Date().toISOString() }).eq("id", book.id);
+          }
+          if (!autoMode) {
+            reviewEntries.push({
+              id: book.id,
+              title: book.title,
+              author: book.author,
+              results: response.books.slice(0, 3).map((b) => ({
+                title: b.title,
+                authors: b.authors ?? [],
+                isbn13: b.isbn13,
+                isbn: b.isbn,
+              })),
+            });
+          }
         }
       }
     } catch (err) {
@@ -331,13 +353,16 @@ async function main() {
     }
   }
 
-  // Step 5: Write review file
-  const reviewPath = path.resolve(
-    import.meta.dirname,
-    "..",
-    "isbn-discovery-review.json"
-  );
-  writeFileSync(reviewPath, JSON.stringify(reviewEntries, null, 2));
+  // Step 5: Write review file (manual mode only)
+  if (!autoMode) {
+    const reviewPath = path.resolve(
+      import.meta.dirname,
+      "..",
+      "isbn-discovery-review.json"
+    );
+    writeFileSync(reviewPath, JSON.stringify(reviewEntries, null, 2));
+    console.log(`\n  Review file: ${reviewPath}`);
+  }
 
   // Summary
   console.log("\n--- Summary ---");
@@ -345,7 +370,6 @@ async function main() {
   console.log(`  Auto-matched:    ${matched}`);
   console.log(`  Skipped:         ${skipped}`);
   console.log(`  Errors:          ${errors}`);
-  console.log(`\n  Review file: ${reviewPath}`);
 
   if (dryRun) {
     console.log("\n  Dry run — no ISBNs were written to the database.");
