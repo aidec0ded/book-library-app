@@ -92,7 +92,7 @@
 - Expand chat tool use — can it access the web (check new releases), remove a book from the library, change book status (e.g. remove from "Reading"), and take other site actions beyond list management? **[DONE]**
 - Add web access tool to chat (e.g. search for books, look up author info, check reviews)
 - Full data export (JSON) — books, syllabi, reading paths, conversations, excerpts, memory, reader profile. Richer complement to the CSV library export for users who want a complete backup
-- Smoother reading path creation for books not in library — when chat creates a reading path, it should be able to add books the user doesn't own yet (auto-add to library or use external items more seamlessly)
+- ~~Smoother reading path creation for books not in library~~ — when chat creates a syllabus or reading path, books not in the library are now auto-added as wishlist items **[DONE]**
 - Future cost optimization strategies to evaluate when we have usage data:
   - Alternative model providers (e.g. DeepSeek) for chat to reduce per-message cost
   - Intelligent model routing — Sonnet for complex messages, Haiku for simple ones (or Sonnet for first N messages, Haiku after)
@@ -140,4 +140,4 @@
 
 - Account settings page design refinement — revisit when we think of what else to add to settings
 - Add Book search noise — hard to find the right book for famous authors (Rushdie, etc.); consider result filtering, ranking by relevance, or alternative search strategies
-- Reduce reading path creation friction — books not in library can't be smoothly added during path creation via chat
+- ~~Reduce reading path creation friction~~ — books not in library are now auto-added as wishlist items during syllabus/reading path creation **[DONE]**

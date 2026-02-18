@@ -131,9 +131,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ConversationList.tsx` — Past conversations panel (collapsible)
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
+- `server/book-lookup.ts` — `findBookByTitle` (multi-stage fuzzy match) and `findOrCreateBook` (lookup-or-insert as wishlist + auto-link external list items)
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
-- `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete) with rationale support
-- `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content) with seminar content support
+- `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete) with rationale support; auto-adds missing books as wishlist items via findOrCreateBook
+- `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content) with seminar content support; auto-adds missing books as wishlist items via findOrCreateBook
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
@@ -180,7 +181,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
-**AI Output** — Predicted ratings for unread books, AI-managed syllabi + reading paths + wishlist via chat tools, personalized home page with AI greeting, personalized recommendations page, reading paths with seminar-style scaffolding (thesis, pre-reading context, focus questions, post-reading prompts, progress tracking)
+**AI Output** — Predicted ratings for unread books, AI-managed syllabi + reading paths + wishlist via chat tools (books not in library are auto-added as wishlist items), personalized home page with AI greeting, personalized recommendations page, reading paths with seminar-style scaffolding (thesis, pre-reading context, focus questions, post-reading prompts, progress tracking)
 
 **Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases, literary awards via Wikidata (17 awards, winner/shortlist/longlist/nominee)
 
