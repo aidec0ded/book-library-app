@@ -63,6 +63,7 @@ function spawn(label: string, command: string, guard: keyof typeof inFlight): vo
 async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
   try {
     const targets = getTargetMonths();
+    console.log(`[releases] Checking ${targets.map((t) => t.label).join(", ")}...`);
 
     for (const { year, month, label } of targets) {
       // Check how many releases exist for this month
@@ -85,16 +86,6 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
 
       // Releases exist — check if scoring is needed
       if (!inFlight.ingestion && !inFlight.scoring) {
-        // Look up a user with a reader profile for personal scoring
-        const { data: profileUser } = await supabase
-          .from("reader_profile")
-          .select("user_id")
-          .order("generated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const userIdFlag = profileUser ? ` --user-id ${profileUser.user_id}` : "";
-
         // Check 1: General signal scoring (shared, runs once)
         const { count: unscoredCount } = await supabase
           .from("new_releases")
@@ -104,6 +95,14 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
           .is("general_signal_score", null);
 
         if ((unscoredCount ?? 0) > 0) {
+          // Pick any profile user for the first scoring pass (general + personal)
+          const { data: anyProfile } = await supabase
+            .from("reader_profile")
+            .select("user_id")
+            .order("generated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const userIdFlag = anyProfile ? ` --user-id ${anyProfile.user_id}` : "";
           spawn(
             `Scoring for ${label} (${unscoredCount} unscored)`,
             `npx tsx scripts/score-releases.ts --month ${label} --batch${userIdFlag}`,
@@ -112,8 +111,16 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
           break;
         }
 
-        // Check 2: Personal scoring — general scores exist but user has no personal scores
-        if (profileUser) {
+        // Check 2: Personal scoring — find ANY user with a profile but no scores
+        const { data: allProfiles } = await supabase
+          .from("reader_profile")
+          .select("user_id")
+          .order("generated_at", { ascending: false });
+
+        // Deduplicate user IDs (a user may have multiple profile generations)
+        const profileUserIds = [...new Set((allProfiles ?? []).map((p) => p.user_id))];
+
+        if (profileUserIds.length > 0) {
           const { count: scoredReleases } = await supabase
             .from("new_releases")
             .select("id", { count: "exact", head: true })
@@ -121,21 +128,31 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
             .eq("pub_month", month)
             .not("general_signal_score", "is", null);
 
-          const { count: userScores } = await supabase
-            .from("user_release_scores")
-            .select("id", { count: "exact", head: true })
-            .eq("user_id", profileUser.user_id);
+          if ((scoredReleases ?? 0) > 0) {
+            for (const uid of profileUserIds) {
+              const { count: userScores } = await supabase
+                .from("user_release_scores")
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", uid);
 
-          if ((scoredReleases ?? 0) > 0 && (userScores ?? 0) === 0) {
-            spawn(
-              `Personal scoring for ${label} (${scoredReleases} releases, user ${profileUser.user_id.slice(0, 8)}...)`,
-              `npx tsx scripts/score-releases.ts --month ${label} --batch --force${userIdFlag}`,
-              "scoring",
-            );
-            break;
+              if ((userScores ?? 0) === 0) {
+                spawn(
+                  `Personal scoring for ${label} (${scoredReleases} releases, user ${uid.slice(0, 8)}...)`,
+                  `npx tsx scripts/score-releases.ts --month ${label} --batch --force --user-id ${uid}`,
+                  "scoring",
+                );
+                break;
+              }
+            }
           }
         }
+
+        if (inFlight.scoring) break; // A scoring job was spawned above
       }
+    }
+
+    if (!inFlight.ingestion && !inFlight.scoring) {
+      console.log("[releases] All months covered, nothing to do.");
     }
   } catch (err) {
     console.error(
