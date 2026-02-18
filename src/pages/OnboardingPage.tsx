@@ -140,8 +140,11 @@ export function OnboardingPage() {
         <div className="mx-auto max-w-2xl space-y-4">
           {messages.length === 0 && !streaming && (
             <div className="py-12 text-center">
-              <p className="text-sm text-muted-foreground">
-                Send a message to start chatting about books.
+              <p className="font-serif text-lg font-bold">
+                What's the last book you finished?
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Tell me about it — I'll start building your library as we talk.
               </p>
             </div>
           )}
