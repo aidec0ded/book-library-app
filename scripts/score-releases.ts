@@ -155,12 +155,18 @@ async function fetchLatestProfile(): Promise<{
   profile: ReaderProfileData;
   generatedAt: string;
 } | null> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("reader_profile")
     .select("profile_data, generated_at")
     .order("generated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+
+  // When --user-id is provided, filter to that user's profile
+  if (userId) {
+    query = query.eq("user_id", userId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw new Error(`fetchLatestProfile: ${error.message}`);
   if (!data) return null;
@@ -176,10 +182,14 @@ async function fetchCanonBooks(
 ): Promise<{ title: string; author: string; rating: number | null }[]> {
   if (canonIds.length === 0) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("books")
     .select("title, author, rating")
     .in("id", canonIds);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error) throw new Error(`fetchCanonBooks: ${error.message}`);
   return data ?? [];
@@ -193,11 +203,14 @@ async function fetchAllCanonicalTags(): Promise<
   let from = 0;
 
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("book_vibes")
       .select("book_id, vibe, tag_category")
-      .eq("is_canonical", true)
-      .range(from, from + PAGE_SIZE - 1);
+      .eq("is_canonical", true);
+
+    if (userId) query = query.eq("user_id", userId);
+
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
 
     if (error) throw new Error(`fetchAllCanonicalTags: ${error.message}`);
     rows.push(...data);
@@ -217,11 +230,15 @@ async function fetchAllCanonicalTags(): Promise<
 async function fetchCalibrationSet(
   tagMap: Map<string, { vibe: string; tag_category: string }[]>,
 ): Promise<CalibratedBook[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("books")
     .select("id, title, author, book_type, rating, genre")
     .gt("rating", 0)
     .order("rating");
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
 
   if (error) throw new Error(`fetchCalibrationSet: ${error.message}`);
   if (!data || data.length === 0) return [];

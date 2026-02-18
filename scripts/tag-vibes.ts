@@ -23,6 +23,7 @@ const anthropic = new Anthropic({
 
 interface BookForTagging {
   id: string;
+  user_id: string;
   title: string;
   author: string;
   summary: string | null;
@@ -150,7 +151,7 @@ async function main() {
   let query = supabase
     .from("books")
     .select(
-      "id, title, author, summary, notes, genre, category, timing_raw"
+      "id, user_id, title, author, summary, notes, genre, category, timing_raw"
     )
     .eq("book_type", "fiction")
     .order("title");
@@ -198,6 +199,9 @@ async function main() {
     console.log("No books to tag.");
     return;
   }
+
+  // Build user_id lookup from books (needed for insert into user-scoped book_vibes)
+  const userIdMap = new Map(booksToTag.map((b) => [b.id, b.user_id]));
 
   // Step 2: Process batches
   let totalVibes = 0;
@@ -272,10 +276,11 @@ async function main() {
           .eq("is_canonical", true);
       }
 
-      // Build rows to insert
+      // Build rows to insert (user_id required since migration 020)
       const rows = results.flatMap((r) =>
         r.vibes.map((vibe) => ({
           book_id: r.id,
+          user_id: userIdMap.get(r.id)!,
           vibe,
           ai_assigned: true,
           user_confirmed: false,

@@ -19,6 +19,7 @@ const anthropic = new Anthropic({
 
 interface BookForTagging {
   id: string;
+  user_id: string;
   title: string;
   author: string;
   summary: string | null;
@@ -278,6 +279,7 @@ function parsePoetryResponse(
 
 interface TagRow {
   book_id: string;
+  user_id: string;
   vibe: string;
   tag_category: string;
   ai_assigned: boolean;
@@ -285,11 +287,12 @@ interface TagRow {
   is_canonical: boolean;
 }
 
-function nonfictionResultToRows(result: NonfictionResult): TagRow[] {
+function nonfictionResultToRows(result: NonfictionResult, userId: string): TagRow[] {
   const rows: TagRow[] = [];
   for (const topic of result.topics) {
     rows.push({
       book_id: result.id,
+      user_id: userId,
       vibe: topic,
       tag_category: "topic",
       ai_assigned: true,
@@ -300,6 +303,7 @@ function nonfictionResultToRows(result: NonfictionResult): TagRow[] {
   if (result.form) {
     rows.push({
       book_id: result.id,
+      user_id: userId,
       vibe: result.form,
       tag_category: "form",
       ai_assigned: true,
@@ -310,6 +314,7 @@ function nonfictionResultToRows(result: NonfictionResult): TagRow[] {
   if (result.depth) {
     rows.push({
       book_id: result.id,
+      user_id: userId,
       vibe: result.depth,
       tag_category: "depth",
       ai_assigned: true,
@@ -320,11 +325,12 @@ function nonfictionResultToRows(result: NonfictionResult): TagRow[] {
   return rows;
 }
 
-function poetryResultToRows(result: PoetryResult): TagRow[] {
+function poetryResultToRows(result: PoetryResult, userId: string): TagRow[] {
   const rows: TagRow[] = [];
   for (const m of result.movement) {
     rows.push({
       book_id: result.id,
+      user_id: userId,
       vibe: m,
       tag_category: "movement",
       ai_assigned: true,
@@ -335,6 +341,7 @@ function poetryResultToRows(result: PoetryResult): TagRow[] {
   for (const f of result.formal_feel) {
     rows.push({
       book_id: result.id,
+      user_id: userId,
       vibe: f,
       tag_category: "formal_feel",
       ai_assigned: true,
@@ -345,6 +352,7 @@ function poetryResultToRows(result: PoetryResult): TagRow[] {
   if (result.accessibility) {
     rows.push({
       book_id: result.id,
+      user_id: userId,
       vibe: result.accessibility,
       tag_category: "accessibility",
       ai_assigned: true,
@@ -381,7 +389,7 @@ async function processType(
   // Fetch books of this type
   const { data: books, error: fetchError } = await supabase
     .from("books")
-    .select("id, title, author, summary, notes, genre, category, book_type")
+    .select("id, user_id, title, author, summary, notes, genre, category, book_type")
     .eq("book_type", bookType)
     .order("title");
 
@@ -426,6 +434,9 @@ async function processType(
     console.log(`No ${bookType} books to tag.`);
     return;
   }
+
+  // Build user_id lookup from books (needed for insert into user-scoped book_vibes)
+  const userIdMap = new Map(booksToTag.map((b) => [b.id, b.user_id]));
 
   // Build prompts
   const systemPrompt =
@@ -475,14 +486,14 @@ async function processType(
             batchIds,
             validTags,
           );
-          rows = results.flatMap(nonfictionResultToRows);
+          rows = results.flatMap((r) => nonfictionResultToRows(r, userIdMap.get(r.id)!));
         } else {
           const results = parsePoetryResponse(
             textBlock.text,
             batchIds,
             validTags,
           );
-          rows = results.flatMap(poetryResultToRows);
+          rows = results.flatMap((r) => poetryResultToRows(r, userIdMap.get(r.id)!));
         }
         break;
       } catch (err) {

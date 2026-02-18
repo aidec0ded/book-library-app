@@ -93,9 +93,19 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
           .is("general_signal_score", null);
 
         if ((unscoredCount ?? 0) > 0) {
+          // Look up a user with a reader profile to include personal scoring
+          const { data: profileUser } = await supabase
+            .from("reader_profile")
+            .select("user_id")
+            .order("generated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const userIdFlag = profileUser ? ` --user-id ${profileUser.user_id}` : "";
+
           spawn(
             `Scoring for ${label} (${unscoredCount} unscored)`,
-            `npx tsx scripts/score-releases.ts --month ${label} --batch`,
+            `npx tsx scripts/score-releases.ts --month ${label} --batch${userIdFlag}`,
             "scoring",
           );
           // Only score one month at a time to avoid overlapping Claude API load
