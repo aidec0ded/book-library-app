@@ -276,12 +276,13 @@ async function main() {
           .eq("is_canonical", true);
       }
 
-      // Build rows to insert (user_id required since migration 020)
+      // Build rows to insert (user_id + tag_category required since migrations 020/021)
       const rows = results.flatMap((r) =>
         r.vibes.map((vibe) => ({
           book_id: r.id,
           user_id: userIdMap.get(r.id)!,
           vibe,
+          tag_category: "vibe",
           ai_assigned: true,
           user_confirmed: false,
           is_canonical: true,
@@ -292,7 +293,7 @@ async function main() {
 
       const { error: insertError } = await supabase
         .from("book_vibes")
-        .upsert(rows, { onConflict: "book_id,vibe" });
+        .upsert(rows, { onConflict: "book_id,vibe,tag_category" });
 
       if (insertError) {
         // Unique constraint violations — skip silently
@@ -300,6 +301,7 @@ async function main() {
           console.log(
             `  [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${batchVibeCount} vibes (some duplicates skipped)`
           );
+          totalVibes += batchVibeCount;
         } else {
           console.log(
             `  [${String(batchNum).padStart(3)}/${totalBatches}] ✗ DB error: ${insertError.message}`
@@ -310,9 +312,8 @@ async function main() {
         console.log(
           `  [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${batchVibeCount} vibes`
         );
+        totalVibes += batchVibeCount;
       }
-
-      totalVibes += batchVibeCount;
     }
 
     // Rate limiting between batches
