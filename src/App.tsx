@@ -1,9 +1,10 @@
-import { lazy, Suspense } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense, useState, useEffect } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Layout } from "@/components/Layout";
 import { LandingPage } from "@/pages/LandingPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { fetchOnboardingStatus } from "@/lib/onboarding";
 
 // Lazy-loaded pages — each gets its own chunk
 const Home = lazy(() => import("@/pages/Home").then((m) => ({ default: m.Home })));
@@ -23,6 +24,7 @@ const FeaturesPage = lazy(() => import("@/pages/FeaturesPage").then((m) => ({ de
 const ContactPage = lazy(() => import("@/pages/ContactPage").then((m) => ({ default: m.ContactPage })));
 const PricingPage = lazy(() => import("@/pages/PricingPage").then((m) => ({ default: m.PricingPage })));
 const FAQPage = lazy(() => import("@/pages/FAQPage").then((m) => ({ default: m.FAQPage })));
+const OnboardingPage = lazy(() => import("@/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
 
 function Spinner() {
   return (
@@ -46,6 +48,43 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function OnboardingGate({ children }: { children: React.ReactNode }) {
+  const { session } = useAuth();
+  const location = useLocation();
+  const [status, setStatus] = useState<"loading" | "complete" | "incomplete">("loading");
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const completed = await fetchOnboardingStatus();
+        if (!cancelled) {
+          setStatus(completed ? "complete" : "incomplete");
+        }
+      } catch {
+        // If we can't check, let them through
+        if (!cancelled) setStatus("complete");
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [session]);
+
+  if (status === "loading") {
+    return <Spinner />;
+  }
+
+  // Allow /import during onboarding (user needs to import Goodreads data)
+  const isImportPage = location.pathname === "/import";
+  if (status === "incomplete" && !isImportPage) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 export function App() {
   return (
     <Suspense fallback={<Spinner />}>
@@ -58,9 +97,19 @@ export function App() {
         <Route path="faq" element={<FAQPage />} />
         <Route path="login" element={<LoginPage />} />
         <Route
+          path="onboarding"
           element={
             <ProtectedRoute>
-              <Layout />
+              <OnboardingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          element={
+            <ProtectedRoute>
+              <OnboardingGate>
+                <Layout />
+              </OnboardingGate>
             </ProtectedRoute>
           }
         >

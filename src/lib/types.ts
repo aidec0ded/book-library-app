@@ -78,6 +78,7 @@ export interface Conversation {
   started_at: string;
   title: string | null;
   archived_at: string | null;
+  is_onboarding: boolean;
 }
 
 export interface Message {

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import { linkExternalItemsToBook } from "@/lib/lists";
@@ -17,6 +17,8 @@ type Step = "upload" | "preview" | "importing" | "summary";
 const BATCH_SIZE = 50;
 
 export function ImportBooks() {
+  const [importSearchParams] = useSearchParams();
+  const fromOnboarding = importSearchParams.get("from") === "onboarding";
   const [step, setStep] = useState<Step>("upload");
   const [rows, setRows] = useState<GoodreadsRow[]>([]);
   const [shelfCounts, setShelfCounts] = useState<Record<string, number>>({});
@@ -435,18 +437,29 @@ export function ImportBooks() {
             )}
 
             <div className="flex items-center gap-4">
-              <Link
-                to="/library"
-                className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
-              >
-                Go to Library →
-              </Link>
-              <Link
-                to="/add"
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                Add another book →
-              </Link>
+              {fromOnboarding ? (
+                <Link
+                  to="/onboarding?imported=true"
+                  className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+                >
+                  Continue setup →
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    to="/library"
+                    className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+                  >
+                    Go to Library →
+                  </Link>
+                  <Link
+                    to="/add"
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Add another book →
+                  </Link>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>

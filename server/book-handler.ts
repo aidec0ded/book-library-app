@@ -2,8 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { findBookByTitle } from "./book-lookup.js";
 
 export interface BookCommand {
-  action: "update_status" | "update_rating" | "toggle_favorite" | "delete";
+  action: "update_status" | "update_rating" | "toggle_favorite" | "delete" | "add";
   book_title: string;
+  author?: string;
   status?: string;
   rating?: number;
 }
@@ -16,6 +17,31 @@ export async function executeBookCommand(
 ): Promise<string> {
   if (!command.book_title) {
     throw new Error("book_title is required");
+  }
+
+  // "add" action doesn't require an existing book
+  if (command.action === "add") {
+    // Check if already in library
+    const existing = await findBookByTitle<{ status: string | null }>(
+      supabase,
+      command.book_title,
+      "id, title, status",
+    );
+    if (existing) {
+      return `'${existing.title}' is already in the library with status '${existing.status}'.`;
+    }
+
+    const status = command.status && VALID_STATUSES.includes(command.status) ? command.status : "read";
+    const { error } = await supabase.from("books").insert({
+      title: command.book_title,
+      author: command.author ?? "Unknown",
+      status,
+      is_favorite: false,
+      is_up_next: false,
+    });
+
+    if (error) throw error;
+    return `Added '${command.book_title}' to the library with status '${status}'.`;
   }
 
   // Look up book by title with fuzzy fallback

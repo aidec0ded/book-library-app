@@ -35,6 +35,7 @@ import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
 import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
 import { startReleasesScheduler } from "./releases-scheduler.js";
+import { buildOnboardingPrompt } from "./onboarding-prompt.js";
 import {
   handleStripeWebhook,
   createCheckoutSession,
@@ -215,6 +216,7 @@ Approach each type differently in conversation:
 interface ChatRequest {
   conversation_id: string | null;
   message: string;
+  is_onboarding?: boolean;
 }
 
 function writeSSE(
@@ -332,9 +334,38 @@ async function handleChat(
     return;
   }
 
-  // Chat message gating for free users
+  // Determine if this is an onboarding conversation
+  let isOnboarding = false;
+
+  if (body.conversation_id) {
+    // Existing conversation — check its onboarding flag
+    const { data: convRow } = await serviceSupabase
+      .from("conversations")
+      .select("is_onboarding")
+      .eq("id", body.conversation_id)
+      .single();
+    if (convRow?.is_onboarding) {
+      // Validate that onboarding is still in progress
+      const { data: subRow } = await serviceSupabase
+        .from("user_subscriptions")
+        .select("onboarding_completed_at")
+        .eq("user_id", userId)
+        .single();
+      isOnboarding = !subRow?.onboarding_completed_at;
+    }
+  } else if (body.is_onboarding) {
+    // New conversation — validate that onboarding is not already complete
+    const { data: subRow } = await serviceSupabase
+      .from("user_subscriptions")
+      .select("onboarding_completed_at")
+      .eq("user_id", userId)
+      .single();
+    isOnboarding = !subRow?.onboarding_completed_at;
+  }
+
+  // Chat message gating for free users (skip for onboarding)
   const subscription = await getOrCreateSubscription(userId);
-  if (!isPaidAndActive(subscription)) {
+  if (!isOnboarding && !isPaidAndActive(subscription)) {
     if (subscription.chat_messages_used >= FREE_MESSAGE_LIMIT) {
       setCorsHeaders(req, res);
       res.writeHead(403, { "Content-Type": "application/json" });
@@ -361,7 +392,7 @@ async function handleChat(
     if (!conversationId) {
       const { data: conv, error: convError } = await supabase
         .from("conversations")
-        .insert({})
+        .insert(isOnboarding ? { is_onboarding: true } : {})
         .select("id")
         .single();
 
@@ -388,13 +419,23 @@ async function handleChat(
 
     if (histError) throw histError;
 
-    // Build system prompt with library index, reader profile, and list context
-    const [libraryIndex, readerProfile, syllabusIndex] = await Promise.all([
-      buildLibraryIndex(supabase, userId),
-      loadReaderProfile(supabase, userId),
-      buildSyllabusIndex(supabase, userId),
-    ]);
-    const systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex);
+    // Build system prompt — onboarding uses a simpler prompt
+    let systemPrompt: string;
+    if (isOnboarding) {
+      const libraryIndex = await buildLibraryIndex(supabase, userId);
+      // Count books for prompt branch selection
+      const { count: libraryCount } = await supabase
+        .from("books")
+        .select("id", { count: "exact", head: true });
+      systemPrompt = buildOnboardingPrompt(libraryIndex, libraryCount ?? 0);
+    } else {
+      const [libraryIndex, readerProfile, syllabusIndex] = await Promise.all([
+        buildLibraryIndex(supabase, userId),
+        loadReaderProfile(supabase, userId),
+        buildSyllabusIndex(supabase, userId),
+      ]);
+      systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex);
+    }
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
@@ -520,13 +561,14 @@ async function handleChat(
           {
             name: "manage_book",
             description:
-              "Update a book's status, rating, or favorite flag, or remove it from the library. Use when the reader says they started, finished, or gave up on a book, rates a book, marks a favorite, or wants to delete a book.",
+              "Add a book to the library, or update a book's status, rating, or favorite flag, or remove it from the library. Use 'add' to add a new book (defaults to 'read' status). Use other actions when the reader says they started, finished, or gave up on a book, rates a book, marks a favorite, or wants to delete a book.",
             input_schema: {
               type: "object" as const,
               properties: {
                 action: {
                   type: "string",
                   enum: [
+                    "add",
                     "update_status",
                     "update_rating",
                     "toggle_favorite",
@@ -537,7 +579,12 @@ async function handleChat(
                 book_title: {
                   type: "string",
                   description:
-                    "Exact book title as shown in the library",
+                    "Exact book title (for add: the title of the book to add)",
+                },
+                author: {
+                  type: "string",
+                  description:
+                    "Book author (used with add)",
                 },
                 status: {
                   type: "string",
@@ -549,7 +596,7 @@ async function handleChat(
                     "wishlist",
                   ],
                   description:
-                    "New reading status (required for update_status)",
+                    "Reading status (for add: defaults to 'read'; for update_status: required)",
                 },
                 rating: {
                   type: "number",
@@ -810,8 +857,8 @@ async function handleChat(
 
     writeSSE(res, "done", { message_id: savedMsg.id });
 
-    // Increment chat message counter for free users
-    if (!isPaidAndActive(subscription)) {
+    // Increment chat message counter for free users (skip for onboarding)
+    if (!isOnboarding && !isPaidAndActive(subscription)) {
       void serviceSupabase
         .from("user_subscriptions")
         .update({ chat_messages_used: subscription.chat_messages_used + 1 })
@@ -1043,6 +1090,38 @@ const server = http.createServer((req, res) => {
           console.error("[account/delete] Error:", msg);
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Failed to delete account" }));
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && url === "/api/onboarding/complete") {
+      void (async () => {
+        let userId: string;
+        try {
+          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
+          userId = getUserIdFromToken(token);
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        try {
+          const { error } = await serviceSupabase
+            .from("user_subscriptions")
+            .update({ onboarding_completed_at: new Date().toISOString() })
+            .eq("user_id", userId);
+
+          if (error) throw error;
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[onboarding/complete] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to complete onboarding" }));
         }
       })();
       return;

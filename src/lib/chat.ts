@@ -6,6 +6,7 @@ export async function fetchConversations(): Promise<Conversation[]> {
     .from("conversations")
     .select("*")
     .is("archived_at", null)
+    .eq("is_onboarding", false)
     .order("started_at", { ascending: false })
     .limit(20);
 
@@ -33,16 +34,31 @@ export interface ChatCallbacks {
   onError: (data: { message: string }) => void;
 }
 
+export interface SendMessageOptions {
+  isOnboarding?: boolean;
+}
+
 export function sendMessage(
   conversationId: string | null,
   message: string,
   callbacks: ChatCallbacks,
+  options?: SendMessageOptions,
 ): AbortController {
   const controller = new AbortController();
 
   void (async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+
+      const body: Record<string, unknown> = {
+        conversation_id: conversationId,
+        message,
+      };
+      // Only send is_onboarding for new conversations
+      if (options?.isOnboarding && !conversationId) {
+        body.is_onboarding = true;
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -51,10 +67,7 @@ export function sendMessage(
             Authorization: `Bearer ${session.access_token}`,
           }),
         },
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          message,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
