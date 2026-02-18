@@ -67,6 +67,8 @@ npx tsx scripts/ingest-awards.ts --dry-run     # preview queries and counts, no 
 npx tsx scripts/ingest-awards.ts --match-only  # skip Wikidata, only re-run library matching
 npx tsx scripts/ingest-awards.ts --force       # re-fetch all from Wikidata (default skips existing)
 npx tsx scripts/ingest-awards.ts --limit 5     # process only first N awards
+npx tsx scripts/grant-subscription.ts user@example.com           # grant complimentary paid subscription
+npx tsx scripts/grant-subscription.ts user@example.com --revoke  # revoke back to free tier
 ```
 
 Dev workflow requires two terminals: `npm run dev` (Vite, port 5173) + `npm run dev:server` (chat API, port 3001). Vite proxies `/api/chat`, `/api/greeting`, and `/api/isbndb` to the chat server.
@@ -346,6 +348,24 @@ Requires `.env` (not committed) with:
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
 - `VITE_POSTHOG_KEY` — PostHog project API key (optional — analytics disabled when unset)
 - `VITE_POSTHOG_HOST` — PostHog ingest URL (optional, defaults to `https://us.i.posthog.com`)
+
+## Admin Operations
+
+### Granting complimentary subscriptions
+
+To give a user full paid access without requiring payment (for alpha testers, yourself, or special cases):
+
+```bash
+npx tsx scripts/grant-subscription.ts user@example.com
+```
+
+This sets the user to an active annual plan with no Stripe IDs and a far-future expiry. Because there are no Stripe IDs on the row, Stripe webhooks will never overwrite it.
+
+To revoke and return a user to the free tier:
+
+```bash
+npx tsx scripts/grant-subscription.ts user@example.com --revoke
+```
 
 ## Design Prototyping (Stitch)
 
