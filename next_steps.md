@@ -141,3 +141,4 @@
 - Account settings page design refinement — revisit when we think of what else to add to settings
 - Add Book search noise — hard to find the right book for famous authors (Rushdie, etc.); consider result filtering, ranking by relevance, or alternative search strategies
 - ~~Reduce reading path creation friction~~ — books not in library are now auto-added as wishlist items during syllabus/reading path creation **[DONE]**
+- Custom SMTP provider for auth emails — Supabase default emails are generic and unbranded; evaluate Resend, SendGrid, or Postmark for branded transactional emails (confirmation, password reset)
