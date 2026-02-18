@@ -25,6 +25,7 @@ const ContactPage = lazy(() => import("@/pages/ContactPage").then((m) => ({ defa
 const PricingPage = lazy(() => import("@/pages/PricingPage").then((m) => ({ default: m.PricingPage })));
 const FAQPage = lazy(() => import("@/pages/FAQPage").then((m) => ({ default: m.FAQPage })));
 const OnboardingPage = lazy(() => import("@/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
+const GuidePage = lazy(() => import("@/pages/GuidePage").then((m) => ({ default: m.GuidePage })));
 
 function Spinner() {
   return (
@@ -124,6 +125,7 @@ export function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="add" element={<AddBook />} />
           <Route path="import" element={<ImportBooks />} />
+          <Route path="guide" element={<GuidePage />} />
           <Route path="books/:id" element={<BookDetail />} />
         </Route>
       </Routes>

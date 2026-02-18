@@ -11,6 +11,7 @@ import {
   User,
   Settings,
   PlusCircle,
+  BookOpen,
   X,
   LogOut,
   Lock,
@@ -159,6 +160,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         >
           <PlusCircle className={`h-4 w-4 shrink-0 ${isActive(pathname, search, FOOTER_ITEM.path) ? "text-accent" : ""}`} />
           {FOOTER_ITEM.label}
+        </Link>
+        <Link
+          to="/guide"
+          onClick={onNavigate}
+          className={`flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors ${
+            isActive(pathname, search, "/guide")
+              ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          }`}
+        >
+          <BookOpen className={`h-4 w-4 shrink-0 ${isActive(pathname, search, "/guide") ? "text-accent" : ""}`} />
+          Guide
         </Link>
         {user && (
           <button

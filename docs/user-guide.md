@@ -6,9 +6,36 @@ Rekollekt is a personal book library app designed for readers who want more than
 
 ## Getting Started
 
-Rekollekt requires an account. Visit the landing page and sign up with your email and password, or use Google OAuth. Once signed in, you'll land on your personalized home page.
+Rekollekt requires an account. Visit the landing page and sign up with your email and password, or use Google OAuth. Once signed in, you'll be guided through a short onboarding flow.
 
-If you're new, start by adding books to your library — the more books and ratings you provide, the better Rekollekt's AI features become. After you've added and rated enough books, Rekollekt will generate your first reader profile automatically.
+### Onboarding
+
+New accounts start with a two-step setup:
+
+1. **Welcome gate** — Choose how to begin: import your Goodreads library, jump into a conversation with the AI, or skip setup entirely.
+2. **Onboarding chat** — If you choose to chat, the AI reading companion helps populate your library through natural conversation. It asks about books you love, adds them as you mention them, and starts learning your taste. Messages during onboarding are free and don't count toward the monthly chat limit.
+
+You can click "Start exploring" at any time to finish setup and enter the app.
+
+### Importing from Goodreads
+
+If you have a Goodreads account, you can import your library:
+
+1. Export your library from Goodreads: My Books > Import and export > Export Library
+2. Upload the CSV file in Rekollekt
+3. Select which shelves to import (read, currently-reading, to-read, custom shelves)
+4. For "to-read" books, choose whether to import them as Unread or Wishlist
+5. Rekollekt detects duplicates by ISBN and title+author — matches are skipped automatically
+
+Import runs in batches with a progress bar. After import, you'll return to the onboarding chat where the AI can see your imported library.
+
+### Free and Paid Plans
+
+Rekollekt offers two tiers:
+
+**Free** — Full library management, shelves, Goodreads import, predicted ratings, monthly reader profile, recommendations, new releases, and 5 AI chat messages per month.
+
+**Reading Companion** ($7/month or $60/year) — Everything in Free, plus unlimited chat messages, AI-created syllabi and reading paths, saved conversation excerpts, and on-demand profile regeneration.
 
 ---
 
@@ -36,11 +63,11 @@ The library is the heart of Rekollekt — a searchable, filterable view of your 
 
 The default view shows all books in a list format with cover thumbnails, titles, authors, and vibe badges.
 
-**Search** — Type in the search bar to filter by title or author. Results update as you type.
+**Search** — Type in the search bar to filter by title or author. Results update as you type. Toggle "Advanced" for separate title and author search fields.
 
 **Filters** — Expand the filter bar to narrow by:
 - Status (unread, reading, read, unfinished, wishlist)
-- Minimum rating
+- Minimum rating (user rating or AI-predicted rating)
 - Genre
 - Page count range
 - Publication year range
@@ -173,7 +200,7 @@ Reading paths appear alongside syllabi on the Syllabi page, with a "Reading Path
 
 The detail page shows the path's thesis prominently, followed by a progress summary ("2 of 6 books completed"). Each item includes:
 
-- **Progress badge** — Click to cycle through not_started → reading → completed. Marking a book completed automatically updates its library status to "read."
+- **Progress badge** — Click to cycle through not_started > reading > completed. Marking a book completed automatically updates its library status to "read."
 - **Pre-reading context** — Why this book is positioned where it is and what to watch for
 - **Focus questions** — 2-4 questions to consider while reading (expandable)
 - **Post-reading prompts** — Reflection starters after finishing (expandable, visually gated until the book is completed)
@@ -201,7 +228,7 @@ The reading companion has access to your entire library and can take actions on 
 
 **Discuss books** — Talk about what you're reading, how it's affecting you, and what connections you see to other books. The companion approaches fiction, nonfiction, and poetry differently — exploring emotional resonance for novels, ideas and arguments for nonfiction, and language and form for poetry.
 
-**Manage your library** — Tell the companion you started, finished, or gave up on a book, and it will update the status. It can also set ratings, mark favorites, and remove books.
+**Manage your library** — Tell the companion you started, finished, or gave up on a book, and it will update the status. It can also set ratings, mark favorites, add new books, and remove books.
 
 **Create syllabi** — Ask the companion to build a themed reading list. It will create a syllabus, add books from your library, and provide rationale for each selection. It always confirms before creating.
 
@@ -215,9 +242,27 @@ The reading companion has access to your entire library and can take actions on 
 
 **Remember you** — The companion uses persistent memory to remember your preferences, emotional reactions, and evolving tastes across conversations. It checks its memory at the start of each conversation and records meaningful new insights.
 
+### Conversation Starters
+
+Not sure what to talk about? Here are some prompts that showcase what the companion does best:
+
+- **"I just finished [book title] and I'm not sure what to read next."** — The companion will ask what worked about that book, connect it to patterns in your library, and suggest what to pick up next based on what you're in the mood for.
+
+- **"What connections do you see between my favorite books?"** — The companion reads across your library and surfaces thematic threads you might not have noticed — recurring obsessions, emotional patterns, or aesthetic preferences that link seemingly unrelated books.
+
+- **"Build me a reading path around [theme or movement]."** — For paid users, the companion designs a structured intellectual journey with sequenced books, pre-reading context, focus questions, and post-reading prompts.
+
+- **"I've been thinking about [idea from a book] — what else in my library touches on that?"** — The companion draws cross-library connections, linking fiction to nonfiction to poetry when relevant. It treats your library as a conversation between authors.
+
+- **"What's coming out this month that I might like?"** — The companion searches new releases scored against your profile and explains why specific books match your taste.
+
 ### Conversations
 
 Each chat creates a conversation that's titled automatically after the first exchange. You can start new conversations or return to previous ones through the conversation list panel.
+
+### Free Tier Limits
+
+Free accounts get 5 chat messages per month. The counter resets at the start of each month. A message count appears in the chat interface so you always know how many you have left. Onboarding messages don't count.
 
 ---
 
@@ -281,6 +326,20 @@ A toggle at the bottom lets you show or hide dismissed books.
 
 ---
 
+## Settings
+
+Access Settings from the sidebar. Here you can manage your account and subscription.
+
+**Password** — Change your password. If you signed up with Google OAuth, this section notes that your password is managed through Google.
+
+**Library Export** — Download your entire library as a CSV file containing titles, authors, ratings, status, notes, and metadata.
+
+**Subscription** — View your current plan and billing period. Paid subscribers can access the Stripe Customer Portal to manage billing. Free users see upgrade options.
+
+**Delete Account** — Permanently delete your account and all associated data. Requires typing a confirmation phrase.
+
+---
+
 ## Navigation
 
 Rekollekt's sidebar provides access to all major sections:
@@ -289,12 +348,13 @@ Rekollekt's sidebar provides access to all major sections:
 |---------|-------------|
 | **Home** | Personalized dashboard |
 | **Library** | Book catalog with search, filters, and gallery tabs |
-| **Syllabi** | Curated reading collections |
+| **Syllabi** | Curated reading collections and reading paths |
 | **Shelves** | Visual bookshelves (manual + auto) |
 | **Recommendations** | AI-predicted top picks |
 | **New Releases** | Scored upcoming books |
 | **Chat** | AI reading companion |
 | **Profile** | Reader identity portrait |
+| **Settings** | Account, export, and subscription management |
 | **Add Book** | Search ISBNdb and add to library |
 
 On mobile, the sidebar is accessible via the menu button and slides in as an overlay.
