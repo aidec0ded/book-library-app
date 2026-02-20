@@ -26,6 +26,8 @@ Rekollekt's central loop is: **read, reflect, AI understanding deepens, better r
 | Styling | Tailwind CSS v4 + shadcn/ui (New York style, neutral palette) |
 | Database | Supabase (PostgreSQL + Row Level Security) |
 | AI | Claude API via `@anthropic-ai/sdk` (Sonnet for chat/scoring, Opus for profiles) |
+| Billing | Stripe (subscriptions, checkout, customer portal, webhooks) |
+| Analytics | PostHog (`posthog-js`, client-side) |
 | Book Data | ISBNdb API (search, enrichment, new releases) |
 | Awards Data | Wikidata SPARQL queries |
 
@@ -49,13 +51,17 @@ Rekollekt's central loop is: **read, reflect, AI understanding deepens, better r
    ```env
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   SUPABASE_ANON_KEY=your-anon-key
    ANTHROPIC_API_KEY=your-anthropic-key
    ISBNDB_API_KEY=your-isbndb-key
+   STRIPE_SECRET_KEY=sk_...
+   STRIPE_WEBHOOK_SECRET=whsec_...
+   STRIPE_MONTHLY_PRICE_ID=price_...
+   STRIPE_ANNUAL_PRICE_ID=price_...
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-key
-   ```
-
-   SUPABASE_ANON_KEY=your-anon-key
+   VITE_POSTHOG_KEY=phc_...           # optional — analytics disabled if unset
+   VITE_POSTHOG_HOST=https://us.i.posthog.com
    ```
 
    - `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS; used by scripts
@@ -73,7 +79,7 @@ Rekollekt's central loop is: **read, reflect, AI understanding deepens, better r
    npm run dev:server
    ```
 
-   Vite proxies `/api/chat`, `/api/greeting`, and `/api/isbndb` to the chat server.
+   Vite proxies `/api/chat`, `/api/greeting`, `/api/isbndb`, `/api/contact`, `/api/account`, `/api/stripe`, `/api/subscription`, and `/api/onboarding` to the chat server.
 
 ## Project Structure
 
@@ -83,9 +89,15 @@ src/
   pages/
     LandingPage.tsx           # Public landing page (standalone, no sidebar)
     LoginPage.tsx             # Login/signup with email+password and Google OAuth
+    OnboardingPage.tsx        # Welcome gate + onboarding chat for new users
+    ImportBooks.tsx            # Goodreads/CSV import with shelf mapping and progress
     PhilosophyPage.tsx        # Public editorial essay on reading philosophy
     FeaturesPage.tsx          # Public features page with sticky-scroll layout
+    PricingPage.tsx           # Public pricing comparison (Free vs Companion)
+    FAQPage.tsx               # Public FAQ with accordion sections
     ContactPage.tsx           # Public contact form page
+    GuidePage.tsx             # Public user guide page
+    Settings.tsx              # Account settings (password, export, subscription, delete)
     Home.tsx                  # Personalized home with greeting, reading, suggestions, stats
     BookList.tsx              # Library with search, filters, gallery tabs, shelves view
     BookDetail.tsx            # Full book metadata with inline editing and AI insights
@@ -122,12 +134,14 @@ src/
     chat.ts                   # Conversation CRUD + SSE streaming client
     isbndb.ts                 # ISBNdb API client (search, lookup, edition grouping)
     awards.ts                 # Award queries for book detail
+    posthog.ts                # PostHog analytics (init, identify, capture, pageview hook)
     types.ts                  # Shared TypeScript interfaces
   hooks/
     useChatSession.ts         # Chat state machine (shared context)
   contexts/
     AuthContext.tsx            # Supabase Auth session state
     ChatContext.tsx            # Chat session + panel open/close state
+    SubscriptionContext.tsx    # Subscription state (plan, limits, isPaid)
 
 server/
   index.ts                    # HTTP server: chat streaming + greeting + ISBNdb proxy
@@ -141,9 +155,12 @@ server/
   book-handler.ts             # Book status/rating/favorite/delete executor
   releases-handler.ts         # Releases browse/top/search executor
   memory-handler.ts           # Claude memory tool file operations
+  book-lookup.ts              # Fuzzy book matching + find-or-create for chat tools
+  onboarding-prompt.ts        # Onboarding-specific system prompt builder
   profile-loader.ts           # Cached profile loader for chat prompt
   profile-scheduler.ts        # Activity-gated monthly profile regeneration
   greeting-handler.ts         # AI greeting generation with 1hr cache
+  stripe-handler.ts           # Stripe webhook processing + checkout/portal sessions
 
 scripts/
   import-books.ts             # CSV → Supabase bulk import (destructive)
@@ -156,6 +173,7 @@ scripts/
   score-releases.ts           # AI release scoring (general + personal)
   reclassify-genres.ts        # AI genre reclassification (29-genre taxonomy)
   ingest-awards.ts            # Wikidata literary awards ingestion + matching
+  grant-subscription.ts       # Admin script to grant/revoke complimentary subscriptions
 ```
 
 ## Scripts Reference
@@ -177,7 +195,7 @@ All scripts use `npx tsx` and support common flags:
 
 ## Data Model
 
-Fourteen tables in Supabase. Key tables:
+Fifteen tables in Supabase. Key tables:
 
 - **books** — 1,711 rows with `book_type` (fiction/nonfiction/poetry), `status`, `rating`, `predicted_rating`, cover images, and ISBNdb metadata
 - **book_vibes** — Classification tags with `tag_category` (vibe, topic, form, depth, movement, formal_feel, accessibility) and AI/user provenance tracking
@@ -189,6 +207,7 @@ Fourteen tables in Supabase. Key tables:
 - **reader_profile** — AI-generated profiles with structured JSON data
 - **new_releases** — ISBNdb releases with AI scoring
 - **literary_awards** / **award_entries** — Award data matched to library books
+- **user_subscriptions** — Stripe subscription tracking (plan, status, billing period, chat message counter)
 - **book_excerpts** — AI-curated insights saved from chat conversations
 
 ## Chat Server Architecture
@@ -198,8 +217,10 @@ The chat server (`server/index.ts`) is a standalone Node.js HTTP server that:
 1. Receives user messages via POST `/api/chat` (SSE streaming response)
 2. Builds a system prompt from the library index, reader profile, and syllabi context (all cached 10min)
 3. Streams Claude responses with a tool-use loop supporting 7 tools: memory, syllabi management, reading paths, wishlist, excerpts, book management, and releases search
-4. Generates conversation titles after the first exchange
-5. Runs a daily profile scheduler that checks activity deltas against the last generation snapshot
+4. Uses a dedicated onboarding prompt for new users (library population through conversation)
+5. Generates conversation titles after the first exchange
+6. Handles Stripe webhooks, checkout sessions, and subscription management
+7. Runs a daily profile scheduler that checks activity deltas against the last generation snapshot
 
 ## Git Workflow
 
