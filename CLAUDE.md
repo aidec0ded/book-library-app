@@ -102,7 +102,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth; public pages standalone.
+- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/onboarding` (OnboardingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/import` (ImportBooks), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/settings` (Settings), `/guide` (GuidePage), `/chat` (Chat), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth via OnboardingGate; public pages standalone.
 - `src/pages/LandingPage.tsx` — Public landing page (standalone, no sidebar/Layout wrapper)
 - `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth
 - `src/pages/PhilosophyPage.tsx` — Public editorial essay on Rekollekt's reading philosophy
@@ -110,7 +110,14 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/ContactPage.tsx` — Public contact form page
 - `src/pages/PricingPage.tsx` — Public pricing comparison page (Free vs Companion, Stripe checkout integration)
 - `src/pages/FAQPage.tsx` — Public FAQ with accordion sections
-- `src/contexts/AuthContext.tsx` — Supabase Auth context with session state, wraps entire app
+- `src/pages/OnboardingPage.tsx` — Two-phase onboarding: welcome gate (chat/import/skip) + AI chat to populate library
+- `src/pages/ImportBooks.tsx` — Goodreads CSV import: upload, shelf selection, dedup, batch insert with progress
+- `src/pages/GuidePage.tsx` — In-app guide page for new users
+- `src/pages/Settings.tsx` — Account settings: password reset, library export, subscription management, delete account
+- `src/lib/onboarding.ts` — Onboarding status check and completion
+- `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation
+- `src/lib/posthog.ts` — PostHog analytics wrapper (init, identify, reset, capture, pageview hook). No-op when VITE_POSTHOG_KEY unset.
+- `src/contexts/AuthContext.tsx` — Supabase Auth context with session state + PostHog identify/reset, wraps entire app
 - `server/auth.ts` — Server-side auth utilities (JWT verification, per-user Supabase client creation)
 - `src/components/Layout.tsx` — App shell with sidebar + `<Outlet />`, wraps protected routes in ChatProvider
 - `src/components/Sidebar.tsx` — Collapsible navigation sidebar (Library, Syllabi, Shelves, Recommendations, Releases, Chat, Profile)
@@ -142,8 +149,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete)
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
+- `server/onboarding-prompt.ts` — Onboarding-specific system prompt builder (empty library vs. imported library paths)
 - `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
 - `server/stripe-handler.ts` — Stripe webhook event processing, checkout/portal session creation
+- `scripts/grant-subscription.ts` — Admin script to grant/revoke complimentary paid subscriptions by email
 - `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 fiction vibes, batches of 5, retries, --dry-run/--limit/--force flags)
 - `scripts/tag-classifications.ts` — AI classification tagging for nonfiction (topics/form/depth) and poetry (movement/formal_feel/accessibility), same batch architecture
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
@@ -189,17 +198,23 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Library as Space** — Visual bookshelf with manual + auto shelves, coverflow carousel, Bookshop.org purchase links
 
-**Public Presence** — Public landing page at `/` with editorial design, brand tagline, value proposition, and feature highlights. Personalized home at `/home`.
+**Public Presence** — Public landing page at `/` with editorial design, brand tagline, value proposition, and feature highlights. Philosophy, features, pricing, FAQ, and contact pages. Personalized home at `/home`.
 
 **Auth & Multi-User** — Supabase Auth with email+password and Google OAuth, RLS policies on all tables, user-scoped queries throughout, JWT-verified server endpoints, login/signup UI
 
-**Monetization** — Stripe-based subscription (free tier: 5 chat messages/month + full library; paid: $7/month or $60/year for unlimited chat + syllabi + reading paths + excerpts). Stripe Checkout + Customer Portal, webhook handler for subscription lifecycle, chat message gating, tool filtering for free users, subscription context + UI (message counters, lock icons, upgrade CTAs), public pricing + FAQ pages, subscription management in Settings
+**Onboarding** — Two-phase flow: welcome gate (chat, Goodreads import, or skip) + AI chat that populates library through conversation. Onboarding gate redirects new users until complete. Goodreads CSV import with shelf selection, duplicate detection, and batch insert.
 
-### Active & Upcoming
+**Monetization** — Stripe-based subscription (free tier: 5 chat messages/month + full library; paid: $7/month or $60/year for unlimited chat + syllabi + reading paths + excerpts). Stripe Checkout + Customer Portal, webhook handler for subscription lifecycle, chat message gating, tool filtering for free users, subscription context + UI (message counters, lock icons, upgrade CTAs), public pricing + FAQ pages, subscription management in Settings. Admin script for granting complimentary subscriptions.
 
-**Alpha Launch Prep** — Early profile generation for new users, account settings page (password reset, delete account), Goodreads/CSV import for onboarding, empty states for new users, chat tone refinement, domain setup
+**Analytics** — PostHog client-side integration tracking pageviews, auth events, onboarding funnel, chat engagement, book additions, imports, releases, checkout, and shelf creation. Graceful no-op when key unset.
 
-**Future** — Reading Life narrative (AI-identified eras in the reader's journey), social features (shared lists/shelves/profiles), chat web access tool, mobile application
+**Account Management** — Settings page with password reset, library CSV export, full JSON data export, subscription management via Stripe Customer Portal, and account deletion with confirmation.
+
+### Future
+
+- Reading Life narrative (AI-identified eras in the reader's journey)
+- Social features (shared lists/shelves/profiles)
+- Mobile application
 
 ## Data Model
 

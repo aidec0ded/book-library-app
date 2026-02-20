@@ -45,8 +45,8 @@
 **Core functionality**
 
 - Document the app / create a GitHub readme **[DONE]**
-- User signup and profile creation
-- Deploy to cloud (Vercel/Cloudflare Pages + serverless)
+- User signup and profile creation **[DONE]**
+- Deploy to cloud (Vercel/Cloudflare Pages + serverless) **[DONE]**
 - Bulk canonical tagging script + two-tier tagging flow in `tag-vibes.ts` **[DONE]**
 - Auto-triggering profile regeneration **[DONE]**
 - Ability to edit cover images (manual URL entry or upload) — ISBNdb sometimes returns low-quality photos of physical books instead of proper cover art **[DONE]**
@@ -133,7 +133,7 @@
 
 - Monetization implementation — usage-gated free tier + paid subscription. See pricing strategy at `.claude/design/pricing-strategy.md` and implementation plan at `.claude/plans/monetization-plan.md` **[DONE]**
 - AI cost optimization — token tracking implemented; batch API for releases scoring implemented; system prompt compression implemented. Monitor usage data before further optimization **[DONE]**
-- Verify all documentation is current — README, CLAUDE.md, any user-facing docs. Ensure they reflect current features, architecture, and pricing model
+- Verify all documentation is current — README, CLAUDE.md, any user-facing docs. Ensure they reflect current features, architecture, and pricing model **[DONE]**
 - Alpha launch plan — define launch strategy: target audience, distribution channels, feedback collection, success metrics, and timeline. See `.claude/design/launch-plan.md` **[DONE]**
 
 ---

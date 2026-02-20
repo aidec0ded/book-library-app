@@ -18,7 +18,7 @@ Everything should feel personal. The app should celebrate the reader's own libra
 
 ## Product Direction
 
-Rekollekt is being built as a public web application (and eventually mobile). The current development phase uses a single library to get the experience right before adding authentication, multi-user data isolation, and hosting. Features are evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
+Rekollekt is a public web application deployed at rekollekt.io (and eventually mobile). Authentication and multi-user data isolation are in place via Supabase Auth with Row Level Security. The app is in alpha — live with real users, iterating on the experience based on feedback. Features are evaluated as product decisions — "would this be valuable to readers?" — not just personal utility.
 
 ---
 
@@ -268,19 +268,17 @@ AI is woven throughout Rekollekt at multiple levels:
 - Public landing page, philosophy page, features page, contact page
 - Reading paths with seminar-style scaffolding (thesis, seminar content, progress tracking, auto-linking)
 
-### Current Phase: Alpha Launch Preparation
-- Early reader profile generation for new users (trigger after N books/ratings, not monthly)
-- Account settings page (password reset, delete account)
-- Goodreads/CSV import for onboarding
-- Chat tone refinement (literature professor voice)
-- Empty states and onboarding flow for new users
-- Domain setup and production configuration
+### Current Phase: Alpha
+- Onboarding flow (welcome gate, AI chat to populate library, Goodreads/CSV import)
+- Account settings (password reset, delete account, library export, data export)
+- Stripe subscription billing (free tier + paid Reading Companion plan)
+- PostHog product analytics
+- Chat tone and onboarding prompt refinement
+- Alpha user recruitment and feedback collection
 
 ### Future
-- Chat web access tool (search for books, look up author info, check reviews)
 - Reading Life narrative (AI-identified eras and chapters in the reader's journey)
 - Social features (shared lists/shelves/profiles, seminar cohorts, taste-based discovery)
-- Notifications system
 - Mobile application
 
 ---
