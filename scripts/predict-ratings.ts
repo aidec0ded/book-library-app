@@ -27,6 +27,8 @@ const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
+const userIdIdx = args.indexOf("--user-id");
+const cliUserId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
 
 // --- Constants ---
 
@@ -134,15 +136,36 @@ function formatShift(shift: TasteShift): string {
   return `- ${date}: ${shift.description}`;
 }
 
-// --- Data Gathering ---
+// --- Data Gathering (all queries scoped to a single user) ---
 
-async function fetchLatestProfile(): Promise<{
+async function fetchUsersWithProfiles(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("reader_profile")
+    .select("user_id")
+    .order("generated_at", { ascending: false });
+
+  if (error) throw new Error(`fetchUsersWithProfiles: ${error.message}`);
+
+  // Deduplicate — a user may have many profile generations
+  const seen = new Set<string>();
+  const users: string[] = [];
+  for (const row of data ?? []) {
+    if (row.user_id && !seen.has(row.user_id)) {
+      seen.add(row.user_id);
+      users.push(row.user_id);
+    }
+  }
+  return users;
+}
+
+async function fetchLatestProfile(userId: string): Promise<{
   profile: ReaderProfileData;
   generatedAt: string;
 } | null> {
   const { data, error } = await supabase
     .from("reader_profile")
     .select("profile_data, generated_at")
+    .eq("user_id", userId)
     .order("generated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -156,10 +179,11 @@ async function fetchLatestProfile(): Promise<{
   };
 }
 
-async function countRatedBooks(): Promise<number> {
+async function countRatedBooks(userId: string): Promise<number> {
   const { count, error } = await supabase
     .from("books")
     .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
     .gt("rating", 0);
 
   if (error) throw new Error(`countRatedBooks: ${error.message}`);
@@ -167,12 +191,14 @@ async function countRatedBooks(): Promise<number> {
 }
 
 async function fetchCalibrationSet(
+  userId: string,
   tagMap: Map<string, { vibe: string; tag_category: string }[]>,
 ): Promise<CalibratedBook[]> {
-  // Fetch all rated books
+  // Fetch all rated books for this user
   const { data, error } = await supabase
     .from("books")
     .select("id, title, author, book_type, rating, genre")
+    .eq("user_id", userId)
     .gt("rating", 0)
     .order("rating");
 
@@ -227,6 +253,7 @@ async function fetchCalibrationSet(
 }
 
 async function fetchCanonBooks(
+  userId: string,
   canonIds: string[],
 ): Promise<{ title: string; author: string; rating: number | null }[]> {
   if (canonIds.length === 0) return [];
@@ -234,16 +261,18 @@ async function fetchCanonBooks(
   const { data, error } = await supabase
     .from("books")
     .select("title, author, rating")
+    .eq("user_id", userId)
     .in("id", canonIds);
 
   if (error) throw new Error(`fetchCanonBooks: ${error.message}`);
   return data ?? [];
 }
 
-async function fetchUnreadBooks(): Promise<BookForPrediction[]> {
+async function fetchUnreadBooks(userId: string): Promise<BookForPrediction[]> {
   let query = supabase
     .from("books")
     .select("id, title, author, book_type, genre, summary, notes")
+    .eq("user_id", userId)
     .or("status.eq.unread,status.is.null")
     .order("title");
 
@@ -260,9 +289,9 @@ async function fetchUnreadBooks(): Promise<BookForPrediction[]> {
   return data ?? [];
 }
 
-async function fetchAllCanonicalTags(): Promise<
-  Map<string, { vibe: string; tag_category: string }[]>
-> {
+async function fetchAllCanonicalTags(
+  userId: string,
+): Promise<Map<string, { vibe: string; tag_category: string }[]>> {
   const PAGE_SIZE = 1000;
   const rows: { book_id: string; vibe: string; tag_category: string }[] = [];
   let from = 0;
@@ -271,6 +300,7 @@ async function fetchAllCanonicalTags(): Promise<
     const { data, error } = await supabase
       .from("book_vibes")
       .select("book_id, vibe, tag_category")
+      .eq("user_id", userId)
       .eq("is_canonical", true)
       .range(from, from + PAGE_SIZE - 1);
 
@@ -488,43 +518,48 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// --- Main ---
+// --- Per-user processing ---
 
-async function main() {
-  console.log("Rekollekt Predicted Ratings\n");
+interface UserResult {
+  status: "predicted" | "skipped";
+  reason?: string;
+  books: number;
+  predictions: number;
+  errors: number;
+}
 
-  // Prerequisites
+async function processUser(userId: string): Promise<UserResult> {
+  const tag = `[${userId.slice(0, 8)}]`;
+
+  // Prerequisites — both scoped to this user
   const [profileResult, ratedCount] = await Promise.all([
-    fetchLatestProfile(),
-    countRatedBooks(),
+    fetchLatestProfile(userId),
+    countRatedBooks(userId),
   ]);
 
   if (!profileResult) {
-    console.error(
-      "  No reader profile found. Run: npx tsx scripts/generate-profile.ts",
-    );
-    process.exit(1);
+    console.log(`${tag} No reader profile — skipping.`);
+    return { status: "skipped", reason: "no profile", books: 0, predictions: 0, errors: 0 };
   }
 
   if (ratedCount < MIN_RATED_BOOKS) {
-    console.error(
-      `  Need at least ${MIN_RATED_BOOKS} rated books (found ${ratedCount}).`,
+    console.log(
+      `${tag} Only ${ratedCount} rated book(s) (need ${MIN_RATED_BOOKS}) — skipping.`,
     );
-    process.exit(1);
+    return { status: "skipped", reason: "too few rated books", books: 0, predictions: 0, errors: 0 };
   }
 
-  // Gather data
+  // Gather data (all user-scoped)
   const profileText = formatProfileForPrompt(profileResult.profile);
   const canonIds = profileResult.profile.personal_canon ?? [];
 
-  // Fetch all canonical tags once (avoids URL-length issues with .in() filters)
   const [canonBooks, unreadBooks, tagMap] = await Promise.all([
-    fetchCanonBooks(canonIds),
-    fetchUnreadBooks(),
-    fetchAllCanonicalTags(),
+    fetchCanonBooks(userId, canonIds),
+    fetchUnreadBooks(userId),
+    fetchAllCanonicalTags(userId),
   ]);
 
-  const calibration = await fetchCalibrationSet(tagMap);
+  const calibration = await fetchCalibrationSet(userId, tagMap);
 
   let booksToPredict = unreadBooks;
   if (limit && limit > 0) {
@@ -532,46 +567,34 @@ async function main() {
   }
 
   const totalBatches = Math.ceil(booksToPredict.length / BATCH_SIZE);
-
   const systemPrompt = buildSystemPrompt(profileText, canonBooks, calibration);
 
-  console.log(`  Mode: ${dryRun ? "dry-run" : "live"} | Model: ${MODEL}`);
   console.log(
-    `  Books: ${booksToPredict.length} unread | Batches: ${totalBatches} (${BATCH_SIZE} per batch)`,
+    `${tag} ${booksToPredict.length} unread | ${totalBatches} batch(es) | ${ratedCount} rated | profile ${new Date(profileResult.generatedAt).toLocaleDateString()} | calibration ${calibration.length}`,
   );
-  console.log(
-    `  Profile: generated ${new Date(profileResult.generatedAt).toLocaleDateString()} | Calibration: ${calibration.length} books`,
-  );
-  console.log(`  Rated books in library: ${ratedCount}`);
-  if (force) console.log("  --force: will re-predict all unread books");
-  console.log();
 
   if (booksToPredict.length === 0) {
-    console.log("No books to predict.");
-    return;
+    return { status: "predicted", books: 0, predictions: 0, errors: 0 };
   }
 
   if (dryRun) {
     const firstBatch = booksToPredict.slice(0, BATCH_SIZE);
-    const userPrompt = buildUserPrompt(firstBatch, vibeMap);
-    console.log("--- System Prompt ---");
+    const userPrompt = buildUserPrompt(firstBatch, tagMap);
+    console.log(`\n--- System Prompt (${tag}) ---`);
     console.log(systemPrompt.slice(0, 1000) + "...");
     console.log();
-    console.log("--- User Prompt (batch 1) ---");
+    console.log(`--- User Prompt (${tag}, batch 1) ---`);
     console.log(userPrompt.slice(0, 1500) + "...");
     console.log();
     console.log(
       `Estimated input: ~${Math.ceil((systemPrompt.length + userPrompt.length) / 4)} tokens`,
     );
-    console.log("Dry run complete.");
-    return;
+    return { status: "predicted", books: booksToPredict.length, predictions: 0, errors: 0 };
   }
 
   // Process batches
-  console.log("Processing...");
   let totalPredictions = 0;
   let totalErrors = 0;
-  const allRatings: number[] = [];
 
   for (let i = 0; i < booksToPredict.length; i += BATCH_SIZE) {
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
@@ -605,7 +628,7 @@ async function main() {
         if (isRetryable && attempt < MAX_RETRIES) {
           const backoff = 1000 * Math.pow(2, attempt - 1);
           console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`,
+            `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`,
           );
           await sleep(backoff);
           continue;
@@ -613,7 +636,7 @@ async function main() {
 
         const errMsg = err instanceof Error ? err.message : String(err);
         console.log(
-          `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 ${errMsg}`,
+          `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✗ ${errMsg}`,
         );
         totalErrors++;
         break;
@@ -621,7 +644,8 @@ async function main() {
     }
 
     if (results && results.length > 0) {
-      // Update each book individually (each gets a different predicted_rating)
+      // Update each book individually (each gets a different predicted_rating).
+      // Scope by user_id as a safety belt against any cross-user id collision.
       let batchPredictions = 0;
       let batchSum = 0;
 
@@ -633,23 +657,23 @@ async function main() {
             predicted_rationale: result.predicted_rationale || null,
             predicted_at: new Date().toISOString(),
           })
-          .eq("id", result.id);
+          .eq("id", result.id)
+          .eq("user_id", userId);
 
         if (updateError) {
           console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2717 DB error for ${result.id}: ${updateError.message}`,
+            `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✗ DB error for ${result.id}: ${updateError.message}`,
           );
           totalErrors++;
         } else {
           batchPredictions++;
           batchSum += result.predicted_rating;
-          allRatings.push(result.predicted_rating);
         }
       }
 
       const avg = batchPredictions > 0 ? (batchSum / batchPredictions).toFixed(1) : "0";
       console.log(
-        `  [${String(batchNum).padStart(3)}/${totalBatches}] \u2713 ${batchPredictions} predictions (avg ${avg})`,
+        `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${batchPredictions} predictions (avg ${avg})`,
       );
       totalPredictions += batchPredictions;
     }
@@ -660,19 +684,60 @@ async function main() {
     }
   }
 
-  // Distribution summary
-  const dist = {
-    low: allRatings.filter((r) => r <= 2.0).length,
-    midLow: allRatings.filter((r) => r >= 2.5 && r <= 3.0).length,
-    midHigh: allRatings.filter((r) => r >= 3.5 && r <= 4.0).length,
-    high: allRatings.filter((r) => r >= 4.5).length,
+  return {
+    status: "predicted",
+    books: booksToPredict.length,
+    predictions: totalPredictions,
+    errors: totalErrors,
   };
+}
+
+// --- Main ---
+
+async function main() {
+  console.log("Rekollekt Predicted Ratings\n");
+
+  // Determine which users to process. A single --user-id processes just that
+  // user; otherwise process every user that has a reader profile.
+  const users = cliUserId ? [cliUserId] : await fetchUsersWithProfiles();
+
+  if (users.length === 0) {
+    console.log(
+      "No users with reader profiles found. Run: npx tsx scripts/generate-profile.ts",
+    );
+    return;
+  }
 
   console.log(
-    `\nDone: ${booksToPredict.length} books, ${totalPredictions} predictions, ${totalErrors} error${totalErrors !== 1 ? "s" : ""}`,
+    `  Mode: ${dryRun ? "dry-run" : "live"} | Model: ${MODEL} | Users: ${users.length}`,
   );
+  if (force) console.log("  --force: will re-predict all unread books");
+  if (limit) console.log(`  --limit: ${limit} books per user`);
+  console.log();
+
+  let totalBooks = 0;
+  let totalPredictions = 0;
+  let totalErrors = 0;
+  let processed = 0;
+  let skipped = 0;
+
+  for (const uid of users) {
+    const result = await processUser(uid);
+    if (result.status === "skipped") {
+      skipped++;
+    } else {
+      processed++;
+      totalBooks += result.books;
+      totalPredictions += result.predictions;
+      totalErrors += result.errors;
+    }
+
+    // In dry-run, one user's preview is enough — don't spam every user's prompt.
+    if (dryRun && !cliUserId) break;
+  }
+
   console.log(
-    `Distribution: \u26050.5-2.0: ${dist.low} | \u26052.5-3.0: ${dist.midLow} | \u26053.5-4.0: ${dist.midHigh} | \u26054.5-5.0: ${dist.high}`,
+    `\nDone: ${processed} user(s) processed, ${skipped} skipped | ${totalBooks} books, ${totalPredictions} predictions, ${totalErrors} error${totalErrors !== 1 ? "s" : ""}`,
   );
 }
 

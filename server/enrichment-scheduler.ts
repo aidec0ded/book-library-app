@@ -140,32 +140,42 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
       }
     }
 
-    // Stage 4: Predicted ratings — unread books without predictions (requires profile)
+    // Stage 4: Predicted ratings — per user, unread books without predictions
+    // (requires a profile + enough rated books). Predictions are user-scoped:
+    // each user's books are predicted from their own profile and calibration,
+    // so we find one user with pending work per cycle and spawn for just them.
     if (!inFlight.predictions) {
-      const { count: profileCount } = await supabase
+      const { data: profileRows } = await supabase
         .from("reader_profile")
-        .select("id", { count: "exact", head: true });
+        .select("user_id")
+        .order("generated_at", { ascending: false });
 
-      if ((profileCount ?? 0) > 0) {
+      // Deduplicate — a user may have multiple profile generations
+      const profileUserIds = [...new Set((profileRows ?? []).map((r) => r.user_id))];
+
+      for (const uid of profileUserIds) {
         const { count: ratedCount } = await supabase
           .from("books")
           .select("id", { count: "exact", head: true })
+          .eq("user_id", uid)
           .gt("rating", 0);
 
-        if ((ratedCount ?? 0) >= 10) {
-          const { count: unpredicted } = await supabase
-            .from("books")
-            .select("id", { count: "exact", head: true })
-            .or("status.eq.unread,status.is.null")
-            .is("predicted_at", null);
+        if ((ratedCount ?? 0) < 10) continue;
 
-          if ((unpredicted ?? 0) > 0) {
-            spawn(
-              `Predicted ratings (${unpredicted} pending)`,
-              "npx tsx scripts/predict-ratings.ts --limit 20",
-              "predictions",
-            );
-          }
+        const { count: unpredicted } = await supabase
+          .from("books")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", uid)
+          .or("status.eq.unread,status.is.null")
+          .is("predicted_at", null);
+
+        if ((unpredicted ?? 0) > 0) {
+          spawn(
+            `Predicted ratings (${unpredicted} pending, user ${uid.slice(0, 8)}...)`,
+            `npx tsx scripts/predict-ratings.ts --user-id ${uid} --limit 20`,
+            "predictions",
+          );
+          break; // one user per cycle; the 5-min loop covers the rest
         }
       }
     }
