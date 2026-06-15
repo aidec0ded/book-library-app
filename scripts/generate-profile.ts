@@ -357,6 +357,37 @@ async function gatherActivitySnapshot(): Promise<ActivitySnapshot> {
   };
 }
 
+// --- Prediction Invalidation ---
+
+/**
+ * Mark existing predicted ratings as stale after a profile regeneration.
+ *
+ * Predictions are derived from the reader profile + calibration set, so when the
+ * profile changes they no longer reflect current taste. We null out `predicted_at`
+ * (the freshness marker) for unread books that already have a prediction — this is
+ * exactly the candidate filter both predict-ratings.ts and the enrichment scheduler
+ * use, so those books get re-predicted on the next scheduler cycle.
+ *
+ * `predicted_rating` / `predicted_rationale` are intentionally left intact so the
+ * existing (stale) value stays visible in the UI until a fresh one replaces it,
+ * rather than flashing empty. Scope matches the re-prediction scope: unread books.
+ */
+async function markPredictionsStale(): Promise<number> {
+  let query = supabase
+    .from("books")
+    .update({ predicted_at: null })
+    .or("status.eq.unread,status.is.null")
+    .not("predicted_at", "is", null)
+    .select("id");
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
+
+  if (error) throw new Error(`markPredictionsStale: ${error.message}`);
+  return data?.length ?? 0;
+}
+
 // --- Main ---
 
 async function main() {
@@ -530,6 +561,15 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
     `  ✓ Profile generated (${response.usage.input_tokens} input tokens → ${response.usage.output_tokens} output tokens)`,
   );
   console.log("  ✓ Saved to database");
+
+  // Invalidate predictions made under the previous profile so they get refreshed.
+  const staleCount = await markPredictionsStale();
+  if (staleCount > 0) {
+    console.log(
+      `  ✓ Marked ${staleCount} predicted rating${staleCount !== 1 ? "s" : ""} stale (will re-predict on next scheduler cycle)`,
+    );
+  }
+
   console.log("\nDone.");
 }
 
