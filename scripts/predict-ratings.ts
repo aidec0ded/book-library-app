@@ -18,6 +18,10 @@ const supabase = createClient(
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
+  // Tolerate flaky networks: longer per-request timeout + SDK-level retries on
+  // connection errors. Our batch loop adds a further retry layer on top.
+  timeout: 120_000,
+  maxRetries: 4,
 });
 
 // --- CLI args ---
@@ -625,8 +629,11 @@ async function processUser(userId: string): Promise<UserResult> {
         break;
       } catch (err) {
         const isRetryable =
-          err instanceof Anthropic.APIError &&
-          (err.status === 429 || err.status >= 500);
+          // Connection failures / timeouts (no HTTP status) — the common
+          // transient case. APIConnectionTimeoutError extends this.
+          err instanceof Anthropic.APIConnectionError ||
+          (err instanceof Anthropic.APIError &&
+            (err.status === 429 || err.status >= 500));
 
         if (isRetryable && attempt < MAX_RETRIES) {
           const backoff = 1000 * Math.pow(2, attempt - 1);
