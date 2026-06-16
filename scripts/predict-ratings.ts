@@ -407,12 +407,12 @@ function buildSystemPrompt(
 based on their reading profile, taste patterns, and rating history.
 
 ## Rating Scale
-0.25 to 5.0 in 0.25 increments:
+0.5 to 5.0 in 0.25 increments:
 - 5.0: All-time favorite, deeply impactful
 - 4.0-4.75: Excellent, strongly resonated
 - 3.0-3.75: Good, solid but not exceptional
 - 2.0-2.75: Below average for this reader
-- 0.25-1.75: Poor match, likely wouldn't finish
+- 0.5-1.75: Poor match, likely wouldn't finish
 
 The library contains fiction, nonfiction, and poetry. Each type has different
 classification vocabularies (vibes for fiction, topics/form/depth for nonfiction,
@@ -430,7 +430,7 @@ ${canonSection}
 ${calibrationSection}
 
 Rules:
-- Return 0.25-increment ratings only (0.25, 0.5, 0.75, 1.0, ..., 5.0)
+- Return 0.25-increment ratings only (0.5, 0.75, 1.0, ..., 5.0)
 - Base predictions on THIS READER's demonstrated taste, not general critical consensus
 - A critically acclaimed book gets a low prediction if it doesn't match this reader's patterns
 - Personal canon themes should pull related predictions UP
@@ -504,8 +504,8 @@ function parseResponse(
 
     // Round to nearest 0.25
     let rating = Math.round(entry.predicted_rating * 4) / 4;
-    // Clamp to valid range
-    rating = Math.max(0.25, Math.min(5.0, rating));
+    // Clamp to the DB-valid range (books_predicted_rating_check: 0.5–5.0)
+    rating = Math.max(0.5, Math.min(5.0, rating));
 
     // Extract rationale (default to empty string if missing)
     const rationale = typeof entry.rationale === "string" ? entry.rationale : "";
@@ -520,6 +520,40 @@ function parseResponse(
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Write one book's prediction, retrying transient failures (e.g. a dropped
+ * connection surfacing as "fetch failed"). Deterministic errors such as a
+ * check-constraint violation are returned immediately — retrying can't help.
+ * Returns null on success, or the error message on permanent failure.
+ */
+async function writePrediction(
+  userId: string,
+  result: PredictionResult,
+): Promise<string | null> {
+  const DB_MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= DB_MAX_RETRIES; attempt++) {
+    const { error } = await supabase
+      .from("books")
+      .update({
+        predicted_rating: result.predicted_rating,
+        predicted_rationale: result.predicted_rationale || null,
+        predicted_at: new Date().toISOString(),
+      })
+      .eq("id", result.id)
+      .eq("user_id", userId);
+
+    if (!error) return null;
+
+    // Constraint / validation failures are deterministic — don't retry.
+    const deterministic =
+      error.code === "23514" || /violates .*constraint/i.test(error.message);
+    if (deterministic || attempt === DB_MAX_RETRIES) return error.message;
+
+    await sleep(500 * attempt);
+  }
+  return "unknown error";
 }
 
 // --- Per-user processing ---
@@ -660,19 +694,11 @@ async function processUser(userId: string): Promise<UserResult> {
       let batchSum = 0;
 
       for (const result of results) {
-        const { error: updateError } = await supabase
-          .from("books")
-          .update({
-            predicted_rating: result.predicted_rating,
-            predicted_rationale: result.predicted_rationale || null,
-            predicted_at: new Date().toISOString(),
-          })
-          .eq("id", result.id)
-          .eq("user_id", userId);
+        const updateError = await writePrediction(userId, result);
 
         if (updateError) {
           console.log(
-            `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✗ DB error for ${result.id}: ${updateError.message}`,
+            `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✗ DB error for ${result.id}: ${updateError}`,
           );
           totalErrors++;
         } else {
