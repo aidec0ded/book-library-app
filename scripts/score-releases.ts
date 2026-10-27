@@ -35,7 +35,7 @@ const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
 
 // --- Constants ---
 
-const MODEL = "claude-sonnet-4-5-20250929";
+const MODEL = "claude-sonnet-5-5";
 const BATCH_SIZE = 10;
 const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
@@ -652,7 +652,8 @@ async function runBatchMode(
       custom_id: entry.customId,
       params: {
         model: MODEL,
-        max_tokens: 4096,
+        max_tokens: 16000,
+        output_config: { effort: "low" },
         system: systemPrompt,
         messages: [{ role: "user" as const, content: buildUserPrompt(entry.releases) }],
       },
@@ -766,7 +767,8 @@ async function runSequentialMode(
       try {
         const response = await anthropic.messages.create({
           model: MODEL,
-          max_tokens: 4096,
+          max_tokens: 16000,
+          output_config: { effort: "low" },
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         });

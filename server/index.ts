@@ -44,7 +44,7 @@ import {
 
 config();
 
-const MODEL = "claude-sonnet-4-5-20250929";
+const MODEL = "claude-sonnet-5-5";
 
 async function logTokenUsage(
   supabase: ReturnType<typeof createUserClient>,
@@ -753,7 +753,8 @@ async function handleChat(
         messages: apiMessages,
         tools,
         betas: ["context-management-2025-06-27"],
-        max_tokens: 4096,
+        max_tokens: 16000,
+        output_config: { effort: "medium" },
       });
 
       // Forward text deltas to client
@@ -906,7 +907,8 @@ async function generateTitle(
   try {
     const response = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: 50,
+      max_tokens: 1024,
+      output_config: { effort: "low" },
       system:
         "Generate a 3-6 word title for this conversation. Return only the title, no quotes or punctuation.",
       messages: [

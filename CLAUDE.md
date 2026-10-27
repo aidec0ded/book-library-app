@@ -162,8 +162,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/SeminarSection.tsx` — Expandable seminar content (pre-reading context, focus questions, post-reading prompts) with inline editing
 - `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
 - `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
-- `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, opus model)
-- `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (batches of 20, Sonnet 4.5, --dry-run/--limit/--force flags)
+- `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, Opus 5.5)
+- `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (batches of 20, Sonnet 5.5, --dry-run/--limit/--force flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 - `src/pages/SyllabiPage.tsx` — Syllabi course catalog index with editorial card layout
 - `src/pages/SyllabusDetail.tsx` — Numbered editorial syllabus detail with inline rationale editing, external book support
@@ -177,8 +177,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, score badges, sort toggle, rationale display, dismiss, pagination
 - `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference, dismiss/undismiss)
 - `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
-- `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 4.5, --dry-run/--limit/--month/--force flags)
-- `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 4.5, --dry-run/--limit/--force/--output/--apply flags)
+- `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 5.5, --dry-run/--limit/--month/--force flags)
+- `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 5.5, --dry-run/--limit/--force/--output/--apply flags)
 - `scripts/ingest-awards.ts` — Wikidata SPARQL ingestion of literary awards (17 awards, 4 query patterns) + library matching (--dry-run/--match-only/--force/--limit flags)
 - `src/lib/awards.ts` — Award queries for book detail (join award_entries + literary_awards)
 - `src/components/ShelvesView.tsx` — Shelf index with cards + create form (manual and auto shelves)

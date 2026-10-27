@@ -92,7 +92,7 @@ const applyFile = applyIdx !== -1 ? args[applyIdx + 1] : null;
 
 // --- Constants ---
 
-const MODEL = "claude-sonnet-4-5-20250929";
+const MODEL = "claude-sonnet-5-5";
 const BATCH_SIZE = 20;
 const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
@@ -395,7 +395,8 @@ async function generateReviewFile(): Promise<void> {
       try {
         const response = await anthropic.messages.create({
           model: MODEL,
-          max_tokens: 2048,
+          max_tokens: 16000,
+          output_config: { effort: "low" },
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }],
         });

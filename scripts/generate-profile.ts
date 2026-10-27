@@ -27,7 +27,7 @@ const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
 
 // --- Constants ---
 
-const MODEL = "claude-opus-4-5-20251101";
+const MODEL = "claude-opus-5-5";
 
 const SYSTEM_PROMPT = `You are generating a Reader Profile for Rekollekt, a personal book library app. Analyze the reader's library, conversation history, and your accumulated notes to produce a structured profile.
 
@@ -493,7 +493,8 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
 
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 8192,
+    max_tokens: 16000,
+    output_config: { effort: "high" },
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
   });

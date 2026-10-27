@@ -36,7 +36,7 @@ const cliUserId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
 
 // --- Constants ---
 
-const MODEL = "claude-sonnet-4-5-20250929";
+const MODEL = "claude-sonnet-5-5";
 const BATCH_SIZE = 20;
 const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
@@ -649,7 +649,8 @@ async function processUser(userId: string): Promise<UserResult> {
           // A batch of 20 predictions each carry a 1-2 sentence rationale, which
           // overruns a 2048-token cap and truncates the JSON mid-string. Higher
           // caps are free (billed on tokens generated, not the cap).
-          max_tokens: 8192,
+          max_tokens: 16000,
+          output_config: { effort: "low" },
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         });
