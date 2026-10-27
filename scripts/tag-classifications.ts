@@ -469,8 +469,9 @@ async function processType(
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2048,
+          model: "claude-sonnet-5-5",
+          max_tokens: 16000,
+          output_config: { effort: "low" },
           system: systemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         });

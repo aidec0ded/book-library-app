@@ -215,7 +215,7 @@ async function main() {
 
     if (dryRun) {
       console.log(`--- Batch ${batchNum}/${totalBatches} ---`);
-      console.log("SYSTEM:", systemPrompt.slice(0, 80) + "...");
+      console.log("SYSTEM:", SYSTEM_PROMPT.slice(0, 80) + "...");
       console.log("USER:", userPrompt);
       console.log();
       continue;
@@ -226,8 +226,9 @@ async function main() {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1024,
+          model: "claude-sonnet-5-5",
+          max_tokens: 16000,
+          output_config: { effort: "low" },
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }],
         });
