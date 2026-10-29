@@ -1,23 +1,37 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// Input shapes follow the memory_20250818 tool (see BetaMemoryTool20250818Command
+// in the SDK): create sends file_text, insert sends insert_text, rename sends
+// old_path/new_path. The legacy names (content, new_str for insert, path for
+// rename) are still accepted as fallbacks.
 export interface MemoryCommand {
   command: string;
   path?: string;
+  file_text?: string;
   content?: string;
+  old_path?: string;
   new_path?: string;
   old_str?: string;
   new_str?: string;
   insert_line?: number;
+  insert_text?: string;
   view_range?: [number, number];
 }
 
+const ROOT = "/memories";
+
 function validatePath(path: string): void {
-  if (!path.startsWith("/memories/")) {
-    throw new Error("Path must start with /memories/");
+  if (path !== ROOT && !path.startsWith(`${ROOT}/`)) {
+    throw new Error(`Path must be ${ROOT} or start with ${ROOT}/`);
   }
   if (path.includes("..")) {
     throw new Error("Path traversal not allowed");
   }
+}
+
+// Directory paths ("/memories", "/memories/books/") normalize to a trailing slash
+function asDirectory(path: string): string {
+  return path.endsWith("/") ? path : `${path}/`;
 }
 
 function formatLineNumbers(content: string, startLine = 1): string {
@@ -30,47 +44,61 @@ function formatLineNumbers(content: string, startLine = 1): string {
     .join("\n");
 }
 
+// A user has only a handful of memory files (RLS scopes the query to them), so
+// prefix matching happens here rather than with LIKE, where "_" in names like
+// "reader_profile.md" would act as a wildcard.
+async function listDirectory(supabase: SupabaseClient, dir: string): Promise<string> {
+  const { data: rows, error } = await supabase
+    .from("memory_files")
+    .select("path, content")
+    .order("path");
+
+  if (error) throw error;
+
+  const data = (rows ?? []).filter((row) => row.path.startsWith(dir));
+  if (data.length === 0) {
+    return dir === `${ROOT}/`
+      ? `No memory files found in ${ROOT}. Use 'create' to create one.`
+      : `No files found in ${dir}`;
+  }
+
+  const lines = data.map((row) => {
+    const size = new TextEncoder().encode(row.content).length;
+    return `${row.path} (${size} bytes)`;
+  });
+  return lines.join("\n");
+}
+
 export async function executeMemoryCommand(
   supabase: SupabaseClient,
   command: MemoryCommand,
 ): Promise<string> {
   switch (command.command) {
     case "view": {
-      if (!command.path) {
-        // List all files
-        const { data, error } = await supabase
-          .from("memory_files")
-          .select("path, content")
-          .order("path");
+      const path = command.path ?? ROOT;
+      validatePath(path);
 
-        if (error) throw error;
-
-        if (!data || data.length === 0) {
-          return "No memory files found. Use 'create' to create one.";
-        }
-
-        const lines = data.map((row) => {
-          const size = new TextEncoder().encode(row.content).length;
-          return `${row.path} (${size} bytes)`;
-        });
-        return lines.join("\n");
+      if (path === ROOT || path.endsWith("/")) {
+        return listDirectory(supabase, asDirectory(path));
       }
-
-      validatePath(command.path);
 
       const { data, error } = await supabase
         .from("memory_files")
         .select("content")
-        .eq("path", command.path)
+        .eq("path", path)
         .maybeSingle();
 
       if (error) throw error;
-      if (!data) return `File not found: ${command.path}`;
+      // Not a file — it may be a directory given without a trailing slash
+      if (!data) {
+        const listing = await listDirectory(supabase, asDirectory(path));
+        return listing.startsWith("No files found") ? `File not found: ${path}` : listing;
+      }
 
       if (command.view_range) {
         const lines = data.content.split("\n");
         const [start, end] = command.view_range;
-        const slice = lines.slice(start - 1, end);
+        const slice = lines.slice(start - 1, end === -1 ? undefined : end);
         return formatLineNumbers(slice.join("\n"), start);
       }
 
@@ -78,25 +106,36 @@ export async function executeMemoryCommand(
     }
 
     case "create": {
-      if (!command.path || command.content === undefined) {
-        throw new Error("'create' requires path and content");
+      const fileText = command.file_text ?? command.content;
+      if (!command.path || fileText === undefined) {
+        throw new Error("'create' requires path and file_text");
       }
       validatePath(command.path);
+      if (command.path === ROOT || command.path.endsWith("/")) {
+        throw new Error("'create' requires a file path, not a directory");
+      }
 
-      // Check if file already exists
-      const { data: existing } = await supabase
+      // create overwrites an existing file, per the memory tool spec
+      const { data: existing, error: lookupError } = await supabase
         .from("memory_files")
         .select("path")
         .eq("path", command.path)
         .maybeSingle();
 
+      if (lookupError) throw lookupError;
+
       if (existing) {
-        throw new Error(`File already exists: ${command.path}. Use str_replace to edit it.`);
+        const { error } = await supabase
+          .from("memory_files")
+          .update({ content: fileText })
+          .eq("path", command.path);
+        if (error) throw error;
+        return `Overwrote ${command.path}`;
       }
 
       const { error } = await supabase
         .from("memory_files")
-        .insert({ path: command.path, content: command.content });
+        .insert({ path: command.path, content: fileText });
 
       if (error) throw error;
       return `Created ${command.path}`;
@@ -129,7 +168,8 @@ export async function executeMemoryCommand(
         );
       }
 
-      const newContent = data.content.replace(command.old_str, command.new_str);
+      // Function replacer so "$&" etc. in new_str are inserted literally
+      const newContent = data.content.replace(command.old_str, () => command.new_str!);
       const { error: updateError } = await supabase
         .from("memory_files")
         .update({ content: newContent })
@@ -140,12 +180,13 @@ export async function executeMemoryCommand(
     }
 
     case "insert": {
+      const insertText = command.insert_text ?? command.new_str;
       if (
         !command.path ||
         command.insert_line === undefined ||
-        command.new_str === undefined
+        insertText === undefined
       ) {
-        throw new Error("'insert' requires path, insert_line, and new_str");
+        throw new Error("'insert' requires path, insert_line, and insert_text");
       }
       validatePath(command.path);
 
@@ -165,7 +206,7 @@ export async function executeMemoryCommand(
         );
       }
 
-      const newLines = command.new_str.split("\n");
+      const newLines = insertText.split("\n");
       lines.splice(command.insert_line, 0, ...newLines);
 
       const { error: updateError } = await supabase
@@ -183,18 +224,21 @@ export async function executeMemoryCommand(
       }
       validatePath(command.path);
 
-      // Support prefix matching for directory-like deletes
-      const { data: matches, error: matchError } = await supabase
+      // Exact file match, or everything under it when it names a directory.
+      // (A bare prefix match would let "/memories/book" delete "/memories/books.md".)
+      const dir = asDirectory(command.path);
+      const { data: rows, error: matchError } = await supabase
         .from("memory_files")
-        .select("path")
-        .like("path", `${command.path}%`);
+        .select("path");
 
       if (matchError) throw matchError;
-      if (!matches || matches.length === 0) {
+      const paths = (rows ?? [])
+        .map((r) => r.path as string)
+        .filter((p) => p === command.path || p.startsWith(dir));
+      if (paths.length === 0) {
         throw new Error(`No files found matching: ${command.path}`);
       }
 
-      const paths = matches.map((m) => m.path);
       const { error } = await supabase
         .from("memory_files")
         .delete()
@@ -205,10 +249,11 @@ export async function executeMemoryCommand(
     }
 
     case "rename": {
-      if (!command.path || !command.new_path) {
-        throw new Error("'rename' requires path and new_path");
+      const oldPath = command.old_path ?? command.path;
+      if (!oldPath || !command.new_path) {
+        throw new Error("'rename' requires old_path and new_path");
       }
-      validatePath(command.path);
+      validatePath(oldPath);
       validatePath(command.new_path);
 
       // Check destination doesn't exist
@@ -222,31 +267,23 @@ export async function executeMemoryCommand(
         throw new Error(`Destination already exists: ${command.new_path}`);
       }
 
-      // Read source
       const { data: source, error: readError } = await supabase
         .from("memory_files")
-        .select("content")
-        .eq("path", command.path)
+        .select("path")
+        .eq("path", oldPath)
         .maybeSingle();
 
       if (readError) throw readError;
-      if (!source) throw new Error(`File not found: ${command.path}`);
+      if (!source) throw new Error(`File not found: ${oldPath}`);
 
-      // Insert at new path, delete old (path is PK so can't update it directly)
-      const { error: insertError } = await supabase
+      const { error: updateError } = await supabase
         .from("memory_files")
-        .insert({ path: command.new_path, content: source.content });
+        .update({ path: command.new_path })
+        .eq("path", oldPath);
 
-      if (insertError) throw insertError;
+      if (updateError) throw updateError;
 
-      const { error: deleteError } = await supabase
-        .from("memory_files")
-        .delete()
-        .eq("path", command.path);
-
-      if (deleteError) throw deleteError;
-
-      return `Renamed ${command.path} → ${command.new_path}`;
+      return `Renamed ${oldPath} → ${command.new_path}`;
     }
 
     default:

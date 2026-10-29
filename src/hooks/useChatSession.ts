@@ -146,10 +146,8 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
             setStreamingContent(streamingContentRef.current);
           },
           onThinking: () => {
-            // Server is processing tool calls — clear any leaked internal
-            // reasoning text and show thinking indicator.
-            streamingContentRef.current = "";
-            setStreamingContent("");
+            // Server is processing tool calls — keep any text already streamed
+            // (it's part of the reply) and show the thinking indicator.
             setThinking(true);
           },
           onDone: ({ message_id }) => {

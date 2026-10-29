@@ -757,11 +757,16 @@ async function handleChat(
         output_config: { effort: "medium" },
       });
 
-      // Forward text deltas to client
+      // Forward text deltas to client. Text from separate rounds is joined
+      // with a paragraph break so it doesn't run together.
       stream.on("text", (text) => {
+        let chunk = text;
+        if (roundText.length === 0 && accumulatedText.length > 0 && !accumulatedText.endsWith("\n\n")) {
+          chunk = `\n\n${text}`;
+        }
         roundText += text;
-        accumulatedText += text;
-        writeSSE(res, "text", { content: text });
+        accumulatedText += chunk;
+        writeSSE(res, "text", { content: chunk });
       });
 
       const finalMessage = await stream.finalMessage();
@@ -779,12 +784,10 @@ async function handleChat(
         break;
       }
 
-      // Tool round — any text Claude produced before tool calls is internal
-      // reasoning (e.g. "Let me try a different approach"). Tell the client
-      // to discard it and show a thinking indicator.
-      if (roundText.length > 0) {
-        accumulatedText = accumulatedText.slice(0, accumulatedText.length - roundText.length);
-      }
+      // Tool round — keep any text already streamed. The model often writes
+      // its full reply and saves to memory in the same turn; its between-tool
+      // progress notes arrive as thinking blocks, not text. Just show the
+      // thinking indicator while tools run.
       writeSSE(res, "thinking", {});
 
       // Execute tool calls and build continuation messages
@@ -799,6 +802,7 @@ async function handleChat(
         if (block.type !== "tool_use") continue;
 
         let result: string;
+        let isError = false;
         try {
           if (block.name === "manage_syllabi") {
             result = await executeSyllabusCommand(
@@ -838,13 +842,22 @@ async function handleChat(
             );
           }
         } catch (err) {
-          result = `Error: ${err instanceof Error ? err.message : String(err)}`;
+          // Supabase throws PostgrestError objects, not Error instances
+          const message =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err !== null && "message" in err
+                ? String(err.message)
+                : String(err);
+          result = `Error: ${message}`;
+          isError = true;
         }
 
         toolResults.push({
           type: "tool_result",
           tool_use_id: block.id,
           content: result,
+          ...(isError && { is_error: true }),
         });
       }
 

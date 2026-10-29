@@ -14,6 +14,7 @@ export function ChatPanel() {
     input,
     streaming,
     streamingContent,
+    thinking,
     error,
     messageLimitReached,
     setInput,
@@ -164,7 +165,7 @@ export function ChatPanel() {
               />
             )}
 
-            {streaming && !streamingContent && (
+            {streaming && (!streamingContent || thinking) && (
               <div className="flex justify-start">
                 <div className="rounded-2xl bg-muted px-4 py-2.5">
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
