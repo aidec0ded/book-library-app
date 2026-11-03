@@ -125,11 +125,13 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger. Section order follows reading status: unread leads with predicted rating and summary, reading with lists and notes, read with notes
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
 - `src/lib/books.ts` — Book update helper (type-constrained to editable fields)
+- `src/lib/reading-dates.ts` — Pure reading date logic shared by browser and server: date changes that go with a status change, validation, the reader's local date
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
 - `src/pages/AddBook.tsx` — ISBNdb search, edition picker, preview, and add-to-library flow
 - `src/components/EditionPicker.tsx` — Edition list with format and language filters (shared by Add Book and Change edition)
 - `src/components/BookListsSection.tsx` — "On your lists" section on the book page: the reader's syllabi and reading paths with this book, its position, progress, and focus questions
+- `src/components/ReadingDates.tsx` — Start and finish dates on the book page, with inline editing
 - `src/components/AlsoByAuthor.tsx` — "Also by" section on the book page: the reader's other books by an author, in-progress and unread first
 - `src/components/ChangeEditionModal.tsx` — Switch a library book to another edition from the book page
 - `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, publication year, ISBN, and cover image URL
@@ -154,7 +156,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
-- `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete)
+- `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/onboarding-prompt.ts` — Onboarding-specific system prompt builder (empty library vs. imported library paths)
 - `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
@@ -196,7 +198,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ### What's Built
 
-**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, author links and an "Also by" section on the book page, library filter by author, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
+**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, author links and an "Also by" section on the book page, editable reading dates, library filter by author, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
@@ -235,6 +237,7 @@ Fifteen tables in Supabase:
 - `book_type` — `fiction`, `nonfiction`, or `poetry` (check-constrained, default `'fiction'`). Backfilled from 29-genre taxonomy; auto-detected from ISBNdb subjects on Add Book.
 - `rating` — numeric 0-5 in 0.5 increments; null means unrated (catalog stored 0.0 for unrated)
 - `status` — read, unread, reading, unfinished, wishlist (unconstrained text)
+- `date_started`, `date_finished` — reading dates. The book page and reading path completion fill blanks when the status changes, and undo a date set the same day if the status is changed back. For `unfinished` books, `date_finished` means when the reader stopped
 - `is_favorite` — boolean from catalog flag
 - `is_up_next` — boolean from catalog flag (column retained but no longer surfaced in UI)
 - `page_count`, `publisher`, `publication_year`, `format` — enriched from ISBNdb

@@ -20,7 +20,7 @@ export async function fetchCurrentlyReading(): Promise<HomeBook[]> {
       "id, title, author, cover_image_url, status, predicted_rating, created_at",
     )
     .eq("status", "reading")
-    .order("date_started", { ascending: false });
+    .order("date_started", { ascending: false, nullsFirst: false });
 
   if (error) throw error;
   return data;

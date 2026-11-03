@@ -6,6 +6,7 @@ interface ExportBook {
   isbn: string | null;
   rating: number | null;
   status: string | null;
+  date_started: string | null;
   date_finished: string | null;
   publication_year: number | null;
   page_count: number | null;
@@ -23,6 +24,7 @@ const CSV_COLUMNS = [
   "ISBN",
   "Rating",
   "Status",
+  "Date Started",
   "Date Finished",
   "Publication Year",
   "Pages",
@@ -48,6 +50,7 @@ function bookToRow(book: ExportBook): string {
     book.isbn ?? "",
     book.rating != null ? String(book.rating) : "",
     book.status ?? "",
+    book.date_started ?? "",
     book.date_finished ?? "",
     book.publication_year != null ? String(book.publication_year) : "",
     book.page_count != null ? String(book.page_count) : "",
@@ -65,7 +68,7 @@ export async function exportLibraryCSV(): Promise<{ count: number }> {
   const { data: books, error } = await supabase
     .from("books")
     .select(
-      "title, author, isbn, rating, status, date_finished, publication_year, page_count, publisher, format, notes, book_type, genre, is_favorite",
+      "title, author, isbn, rating, status, date_started, date_finished, publication_year, page_count, publisher, format, notes, book_type, genre, is_favorite",
     )
     .order("title");
 

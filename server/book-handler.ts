@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describeSimilarBooks, findBookByTitle, findOrCreateBook } from "./book-lookup.js";
+import { isIsoDate, readingDatesError, type ReadingDates } from "../src/lib/reading-dates.js";
 
 export interface BookCommand {
   action: "update_status" | "update_rating" | "toggle_favorite" | "delete" | "add";
@@ -7,13 +8,44 @@ export interface BookCommand {
   author?: string;
   status?: string;
   rating?: number;
+  date?: string;
 }
 
 const VALID_STATUSES = ["unread", "reading", "read", "unfinished", "wishlist"];
 
+/**
+ * The date changes for a date the reader gave. Unlike the book page, the chat only sets dates
+ * it was told about: "I read that years ago" shouldn't record today as the finish date.
+ */
+function datesFromReader(
+  status: string,
+  date: string,
+  current: ReadingDates,
+  today: string,
+): { changes: Partial<ReadingDates> } | { problem: string } {
+  if (!isIsoDate(date)) return { problem: `Invalid date '${date}'. Use YYYY-MM-DD.` };
+
+  let changes: Partial<ReadingDates>;
+  if (status === "reading") {
+    // Starting after an earlier finish is a reread, so that finish no longer applies
+    changes =
+      current.date_finished && current.date_finished < date
+        ? { date_started: date, date_finished: null }
+        : { date_started: date };
+  } else if (status === "read" || status === "unfinished") {
+    changes = { date_finished: date };
+  } else {
+    return { problem: `A book with status '${status}' doesn't have reading dates.` };
+  }
+
+  const problem = readingDatesError({ ...current, ...changes }, today);
+  return problem ? { problem } : { changes };
+}
+
 export async function executeBookCommand(
   supabase: SupabaseClient,
   command: BookCommand,
+  today: string,
 ): Promise<string> {
   if (!command.book_title) {
     throw new Error("book_title is required");
@@ -26,14 +58,26 @@ export async function executeBookCommand(
     if (!added.created) {
       return `'${added.title}' is already in the library with status '${added.status}'.`;
     }
-    return `Added '${added.title}' to the library with status '${status}'.${describeSimilarBooks([added])}`;
+    let dateNote = "";
+    if (command.date) {
+      const dates = datesFromReader(status, command.date, { date_started: null, date_finished: null }, today);
+      if ("problem" in dates) {
+        dateNote = ` The date wasn't saved: ${dates.problem}`;
+      } else {
+        const { error } = await supabase.from("books").update(dates.changes).eq("id", added.id);
+        if (error) throw error;
+      }
+    }
+    return `Added '${added.title}' to the library with status '${status}'.${dateNote}${describeSimilarBooks([added])}`;
   }
 
   // Look up book by title with fuzzy fallback
-  const book = await findBookByTitle<{ status: string | null; rating: number | null; is_favorite: boolean }>(
+  const book = await findBookByTitle<
+    { status: string | null; rating: number | null; is_favorite: boolean } & ReadingDates
+  >(
     supabase,
     command.book_title,
-    "id, title, status, rating, is_favorite",
+    "id, title, status, rating, is_favorite, date_started, date_finished",
   );
 
   if (!book) {
@@ -51,18 +95,30 @@ export async function executeBookCommand(
         return `Invalid status '${command.status}'. Valid options: ${VALID_STATUSES.join(", ")}`;
       }
 
-      if (book.status === newStatus) {
+      const dates = command.date
+        ? datesFromReader(newStatus, command.date, book, today)
+        : { changes: {} };
+      if ("problem" in dates) {
+        return `No change made to '${book.title}': ${dates.problem}`;
+      }
+
+      const dateNote = command.date ? ` Date recorded: ${command.date}.` : "";
+
+      if (book.status === newStatus && !command.date) {
         return `'${book.title}' already has status '${newStatus}'.`;
       }
 
       const { error } = await supabase
         .from("books")
-        .update({ status: newStatus })
+        .update({ status: newStatus, ...dates.changes })
         .eq("id", book.id);
 
       if (error) throw error;
 
-      return `Updated '${book.title}' status from '${book.status ?? "unset"}' to '${newStatus}'.`;
+      if (book.status === newStatus) {
+        return `'${book.title}' already has status '${newStatus}'.${dateNote}`;
+      }
+      return `Updated '${book.title}' status from '${book.status ?? "unset"}' to '${newStatus}'.${dateNote}`;
     }
 
     case "update_rating": {

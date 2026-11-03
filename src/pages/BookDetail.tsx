@@ -16,7 +16,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { VibeEditor } from "@/components/VibeEditor";
 import { AlsoByAuthor } from "@/components/AlsoByAuthor";
 import { BookListsSection } from "@/components/BookListsSection";
+import { ReadingDates } from "@/components/ReadingDates";
 import { authorLibraryPath, updateBook, deleteBook, formatRating } from "@/lib/books";
+import { datesForStatusChange, localToday } from "@/lib/reading-dates";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
@@ -26,15 +28,6 @@ import { EditionDetailsForm, type EditionDetails } from "@/components/EditionDet
 import { mapToEditionFields, normalizeFormat, parseAuthorNames, type ISBNdbBook } from "@/lib/isbndb";
 import { useChatContext } from "@/contexts/ChatContext";
 import type { Book, BookExcerpt, BookType } from "@/lib/types";
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
 
 const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
 
@@ -291,7 +284,13 @@ function BookDetailContent({ id }: { id: string | undefined }) {
       <BookListsSection
         bookId={book.id}
         bookStatus={book.status}
-        onBookMarkedRead={() => setBook((b) => (b ? { ...b, status: "read" } : b))}
+        onBookMarkedRead={() =>
+          setBook((b) =>
+            b && b.status !== "read"
+              ? { ...b, status: "read", ...datesForStatusChange("read", b, localToday()) }
+              : b,
+          )
+        }
         onError={setSaveError}
       />
     ),
@@ -420,20 +419,6 @@ function BookDetailContent({ id }: { id: string | undefined }) {
                   </div>
                 )}
               </>
-            )}
-
-            {book.date_started && (
-              <div>
-                <dt className="font-medium text-muted-foreground">Date Started</dt>
-                <dd>{formatDate(book.date_started)}</dd>
-              </div>
-            )}
-
-            {book.date_finished && (
-              <div>
-                <dt className="font-medium text-muted-foreground">Date Finished</dt>
-                <dd>{formatDate(book.date_finished)}</dd>
-              </div>
             )}
           </dl>
         </CardContent>
@@ -657,7 +642,12 @@ function BookDetailContent({ id }: { id: string | undefined }) {
             <label className="text-xs font-medium text-muted-foreground">Status</label>
             <Select
               value={book.status ?? "unread"}
-              onValueChange={(val) => handleFieldUpdate("status", val)}
+              onValueChange={(val) =>
+                handleFieldsUpdate(
+                  { status: val, ...datesForStatusChange(val, book, localToday()) },
+                  "Failed to save status",
+                )
+              }
             >
               <SelectTrigger>
                 <SelectValue />
@@ -671,6 +661,12 @@ function BookDetailContent({ id }: { id: string | undefined }) {
               </SelectContent>
             </Select>
           </div>
+
+          <ReadingDates
+            status={book.status}
+            dates={{ date_started: book.date_started, date_finished: book.date_finished }}
+            onSave={(dates) => handleFieldsUpdate(dates, "Failed to save dates")}
+          />
 
           {/* Star rating (hidden for wishlist) */}
           {book.status !== "wishlist" && (

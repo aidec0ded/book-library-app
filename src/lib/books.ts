@@ -25,6 +25,8 @@ export async function updateBook(
       | "format"
       | "summary"
       | "isbndb_enriched_at"
+      | "date_started"
+      | "date_finished"
     >
   >,
 ): Promise<void> {

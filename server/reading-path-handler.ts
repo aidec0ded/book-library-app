@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describeSimilarBooks, findOrCreateBook, type FoundBook } from "./book-lookup.js";
+import { datesForStatusChange } from "../src/lib/reading-dates.js";
 import {
   fetchListEntries,
   findEntry,
@@ -69,6 +70,7 @@ async function findPathByName(
 export async function executeReadingPathCommand(
   supabase: SupabaseClient,
   command: ReadingPathCommand,
+  today: string,
 ): Promise<string> {
   switch (command.action) {
     case "create_path": {
@@ -359,14 +361,14 @@ export async function executeReadingPathCommand(
       if (command.progress === "completed" && target.book_id) {
         const { data: book } = await supabase
           .from("books")
-          .select("status")
+          .select("status, date_started, date_finished")
           .eq("id", target.book_id)
           .single();
 
         if (book && book.status !== "read") {
           await supabase
             .from("books")
-            .update({ status: "read" })
+            .update({ status: "read", ...datesForStatusChange("read", book, today) })
             .eq("id", target.book_id);
         }
       }

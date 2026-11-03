@@ -33,6 +33,7 @@ import {
 import { buildSyllabusIndex, invalidateSyllabusIndex } from "./syllabus-index.js";
 import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
+import { isIsoDate } from "../src/lib/reading-dates.js";
 import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
 import { startReleasesScheduler } from "./releases-scheduler.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
@@ -170,7 +171,10 @@ under "From Conversations." Always confirm with the reader before saving.
 
 You can update books in the library using your manage_book tool. When the
 reader says they started, finished, or gave up on a book, update its status.
-When they rate a book, set the rating. You can also mark/unmark favorites
+When they say when that happened ("I just finished it", "I started it last
+week"), include the date. If they don't say, or it was a while ago, leave the
+date out rather than guessing. When they rate a book, set the rating. You can
+also mark/unmark favorites
 and remove books from the library. Always confirm before deleting a book.
 A deleted book stays on any syllabi and reading paths it's part of.
 
@@ -221,6 +225,7 @@ interface ChatRequest {
   conversation_id: string | null;
   message: string;
   is_onboarding?: boolean;
+  today?: string;
 }
 
 function writeSSE(
@@ -392,6 +397,9 @@ async function handleChat(
 
   try {
     // Create or reuse conversation
+    // The server runs on UTC, so the reader's own date comes from the browser
+    const today = isIsoDate(body.today) ? body.today : new Date().toISOString().slice(0, 10);
+
     let conversationId = body.conversation_id;
     if (!conversationId) {
       const { data: conv, error: convError } = await supabase
@@ -440,6 +448,7 @@ async function handleChat(
       ]);
       systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex);
     }
+    systemPrompt += `\n\nToday's date is ${today}.`;
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
@@ -628,6 +637,11 @@ async function handleChat(
                   type: "number",
                   description:
                     "Rating from 0.25 to 5.0 in 0.25 increments, or 0 to clear (required for update_rating)",
+                },
+                date: {
+                  type: "string",
+                  description:
+                    "YYYY-MM-DD, with add or update_status: the day the reader started (status 'reading'), finished (status 'read'), or stopped (status 'unfinished') the book. Only when the reader said when; never guess. update_status with the book's current status and a date just records the date.",
                 },
               },
               required: ["action", "book_title"],
@@ -885,6 +899,7 @@ async function handleChat(
             result = await executeBookCommand(
               supabase,
               block.input as BookCommand,
+              today,
             );
           } else if (block.name === "search_releases") {
             result = await executeReleasesCommand(
@@ -896,6 +911,7 @@ async function handleChat(
             result = await executeReadingPathCommand(
               supabase,
               block.input as ReadingPathCommand,
+              today,
             );
           } else {
             result = await executeMemoryCommand(

@@ -1,4 +1,5 @@
 import { authorsCompatible, compareTitles } from "@/lib/editions";
+import { datesForStatusChange, localToday } from "@/lib/reading-dates";
 import { supabase } from "@/lib/supabase";
 import type {
   Book,
@@ -389,14 +390,14 @@ export async function updateItemProgress(
     if (item.book_id) {
       const { data: book } = await supabase
         .from("books")
-        .select("status")
+        .select("status, date_started, date_finished")
         .eq("id", item.book_id)
         .single();
 
       if (book && book.status !== "read") {
         await supabase
           .from("books")
-          .update({ status: "read" })
+          .update({ status: "read", ...datesForStatusChange("read", book, localToday()) })
           .eq("id", item.book_id);
       }
     }

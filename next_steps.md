@@ -13,7 +13,7 @@
 - Make "Discuss this book" prominent — chat is the core loop, but it's a small link just above "Remove from library"
 - Order the page by status — unread leads with predicted rating and summary; read leads with rating, notes, and conversations. Notes currently sit below metadata for every book **[DONE]**
 - "From Conversations" — hide when empty, and find out why no user has a saved excerpt (the tool is paid-only, so free users can never fill it). "View conversation" should open that conversation, not the general chat page
-- Reading dates — add a way to set start and finish dates on the book page; it can only display them today
+- Reading dates — set start and finish dates on the book page, filled in automatically when the status changes. No page tracking, which would push toward logging progress **[DONE]**
 - Tidy the left column — move the raw cover URL and ISBN fields into "Edit details" now that "Change edition" exists **[DONE]**
 - Small fixes — excerpt delete button only appears on hover, so touch screens can't reach it; "← Back" leaves the app when a book page was opened directly **[DONE]**
 - Predicted rating voice — reasons read like notes about someone else ("Directly on his consciousness syllabus"). The prompt asks why "this reader" would rate the book that way, so the text talks about the reader, and it guesses at gender. Speak to the reader as "you" instead. New-release reasons use the same wording, so check those too. Saved reasons stay as they are until predictions are re-run, which costs API calls

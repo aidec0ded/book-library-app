@@ -1,3 +1,4 @@
+import { localToday } from "@/lib/reading-dates";
 import { supabase } from "@/lib/supabase";
 import type { Conversation, Message } from "@/lib/types";
 
@@ -53,6 +54,7 @@ export function sendMessage(
 
       const body: Record<string, unknown> = {
         conversation_id: conversationId,
+        today: localToday(),
         message,
       };
       // Only send is_onboarding for new conversations

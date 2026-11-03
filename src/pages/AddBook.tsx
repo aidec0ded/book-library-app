@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { Loader2, Plus, AlertTriangle, ArrowLeft, Bookmark, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { linkExternalItemsToBook } from "@/lib/lists";
+import { localToday } from "@/lib/reading-dates";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -273,9 +274,10 @@ export function AddBook() {
     const payload = mapToBookInsert(selected, statusOverride ?? status);
     // Override book_type with user selection (may differ from auto-detect)
     payload.book_type = bookType;
+    // A book added as "read" was probably finished long ago, so only a start date is safe to assume
     const { data, error } = await supabase
       .from("books")
-      .insert(payload)
+      .insert(payload.status === "reading" ? { ...payload, date_started: localToday() } : payload)
       .select("id")
       .single();
 
