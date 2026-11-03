@@ -30,7 +30,7 @@ import {
   executeReadingPathCommand,
   type ReadingPathCommand,
 } from "./reading-path-handler.js";
-import { buildSyllabusIndex } from "./syllabus-index.js";
+import { buildSyllabusIndex, invalidateSyllabusIndex } from "./syllabus-index.js";
 import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
 import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
@@ -172,6 +172,7 @@ You can update books in the library using your manage_book tool. When the
 reader says they started, finished, or gave up on a book, update its status.
 When they rate a book, set the rating. You can also mark/unmark favorites
 and remove books from the library. Always confirm before deleting a book.
+A deleted book stays on any syllabi and reading paths it's part of.
 
 You can browse new releases using your search_releases tool. Use it to check
 what books are coming out, find top recommendations, or search for specific
@@ -454,7 +455,7 @@ async function handleChat(
       {
             name: "manage_syllabi",
             description:
-              "Create and manage curated syllabi (themed reading collections). Books don't need to be in the library already — any book not found will be automatically added as a wishlist item. Use this to build themed syllabi, reading recommendations, or collections based on conversation context.",
+              "Create and manage curated syllabi (themed reading collections). Books don't need to be in the library already — any book not found will be automatically added as a wishlist item. Use this to build themed syllabi, reading recommendations, or collections based on conversation context. Edit a syllabus in place with reorder, update_rationale, and update_syllabus rather than removing and re-adding books. Removing a book deletes its rationale, so only remove a book or delete a syllabus when the reader asks. Books stay in the library either way.",
             input_schema: {
               type: "object" as const,
               properties: {
@@ -466,6 +467,9 @@ async function handleChat(
                     "add_books",
                     "remove_books",
                     "delete",
+                    "reorder",
+                    "update_rationale",
+                    "update_syllabus",
                   ],
                   description: "The action to perform",
                 },
@@ -476,7 +480,7 @@ async function handleChat(
                 },
                 description: {
                   type: "string",
-                  description: "Syllabus description (used with create)",
+                  description: "Syllabus description (used with create and update_syllabus)",
                 },
                 books: {
                   type: "array",
@@ -502,7 +506,26 @@ async function handleChat(
                 rationale: {
                   type: "string",
                   description:
-                    "Brief explanation of why these books belong in the syllabus (used with create and add_books)",
+                    "Brief explanation of why these books belong in the syllabus (used with create, add_books, and update_rationale; empty clears it)",
+                },
+                new_name: {
+                  type: "string",
+                  description: "New name for the syllabus (used with update_syllabus)",
+                },
+                book_title: {
+                  type: "string",
+                  description: "Book to act on (used with update_rationale, and with reorder to move one book)",
+                },
+                ordered_titles: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "New order of books (used with reorder). Books left out keep their relative order after those named.",
+                },
+                position: {
+                  type: "number",
+                  description:
+                    "1-based position (used with reorder to move book_title, and with add_books to insert there instead of at the end)",
                 },
               },
               required: ["action"],
@@ -645,7 +668,7 @@ async function handleChat(
           {
             name: "manage_reading_paths",
             description:
-              "Create and manage reading paths — structured intellectual journeys through books with seminar-style scaffolding. Each path has a thesis, and each book has pre-reading context, focus questions, and post-reading prompts. Books don't need to be in the library already — any book not found will be automatically added as a wishlist item. Reading paths are deeper than syllabi and designed for thematic exploration.",
+              "Create and manage reading paths — structured intellectual journeys through books with seminar-style scaffolding. Each path has a thesis, and each book has pre-reading context, focus questions, and post-reading prompts. Books don't need to be in the library already — any book not found will be automatically added as a wishlist item. Reading paths are deeper than syllabi and designed for thematic exploration. Edit a path in place with update_seminar_content, reorder, and update_path, including writing focus questions for a book that has none. Never remove and re-add a book to change it: removing a book permanently deletes its seminar content and progress, so only remove a book or delete a path when the reader asks. Books stay in the library either way.",
             input_schema: {
               type: "object" as const,
               properties: {
@@ -657,6 +680,11 @@ async function handleChat(
                     "add_path_books",
                     "update_progress",
                     "get_seminar_content",
+                    "update_seminar_content",
+                    "reorder",
+                    "remove_path_books",
+                    "update_path",
+                    "delete_path",
                   ],
                   description: "The action to perform",
                 },
@@ -668,12 +696,16 @@ async function handleChat(
                 thesis: {
                   type: "string",
                   description:
-                    "The framing thesis for the reading path (used with create_path)",
+                    "The framing thesis for the reading path (used with create_path and update_path)",
                 },
                 description: {
                   type: "string",
                   description:
-                    "Path description (used with create_path)",
+                    "Path description (used with create_path and update_path)",
+                },
+                new_name: {
+                  type: "string",
+                  description: "New name for the path (used with update_path)",
                 },
                 books: {
                   type: "array",
@@ -711,12 +743,40 @@ async function handleChat(
                     required: ["title"],
                   },
                   description:
-                    "Books to add with optional seminar content (used with create_path and add_path_books)",
+                    "Books to add with optional seminar content (used with create_path and add_path_books), or books to remove by title (used with remove_path_books)",
                 },
                 book_title: {
                   type: "string",
                   description:
-                    "Specific book title (used with update_progress and get_seminar_content)",
+                    "Specific book title (used with update_progress, get_seminar_content, update_seminar_content, and with reorder to move one book)",
+                },
+                pre_reading_context: {
+                  type: "string",
+                  description:
+                    "Why this book is here and what it builds on (used with update_seminar_content; left out keeps the current value)",
+                },
+                focus_questions: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "The book's complete set of 2-4 focus questions, replacing the current ones (used with update_seminar_content; left out keeps the current value)",
+                },
+                post_reading_prompts: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "The book's complete set of discussion starters, replacing the current ones (used with update_seminar_content; left out keeps the current value)",
+                },
+                ordered_titles: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "New order of books (used with reorder). Books left out keep their relative order after those named.",
+                },
+                position: {
+                  type: "number",
+                  description:
+                    "1-based position (used with reorder to move book_title, and with add_path_books to insert there instead of at the end)",
                 },
                 progress: {
                   type: "string",
@@ -805,6 +865,7 @@ async function handleChat(
         let isError = false;
         try {
           if (block.name === "manage_syllabi") {
+            invalidateSyllabusIndex(userId);
             result = await executeSyllabusCommand(
               supabase,
               block.input as SyllabusCommand,
@@ -831,6 +892,7 @@ async function handleChat(
               block.input as ReleasesCommand,
             );
           } else if (block.name === "manage_reading_paths") {
+            invalidateSyllabusIndex(userId);
             result = await executeReadingPathCommand(
               supabase,
               block.input as ReadingPathCommand,

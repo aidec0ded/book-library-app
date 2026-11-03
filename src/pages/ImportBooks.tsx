@@ -173,7 +173,7 @@ export function ImportBooks() {
       const { data, error } = await supabase
         .from("books")
         .insert(payload)
-        .select("id, title");
+        .select("id, title, author");
 
       if (error) {
         errors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${error.message}`);
@@ -182,7 +182,7 @@ export function ImportBooks() {
         // Link external list items for each inserted book
         for (const book of data) {
           try {
-            await linkExternalItemsToBook(book.id, book.title);
+            await linkExternalItemsToBook(book.id, book.title, book.author);
           } catch {
             // Non-critical — don't fail the import
           }

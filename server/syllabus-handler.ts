@@ -1,5 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { describeSimilarBooks, findBookByTitle, findOrCreateBook, type FoundBook } from "./book-lookup.js";
+import { describeSimilarBooks, findOrCreateBook, type FoundBook } from "./book-lookup.js";
+import {
+  fetchListEntries,
+  findEntry,
+  hasEntryFor,
+  placeNewEntries,
+  removeListBooks,
+  reorderList,
+} from "./list-items.js";
 
 interface SyllabusBook {
   title: string;
@@ -7,11 +15,23 @@ interface SyllabusBook {
 }
 
 export interface SyllabusCommand {
-  action: "create" | "view" | "add_books" | "remove_books" | "delete";
+  action:
+    | "create"
+    | "view"
+    | "add_books"
+    | "remove_books"
+    | "delete"
+    | "reorder"
+    | "update_rationale"
+    | "update_syllabus";
   list_name?: string;
+  new_name?: string;
   description?: string;
   books?: SyllabusBook[] | string[];
   rationale?: string;
+  book_title?: string;
+  ordered_titles?: string[];
+  position?: number;
 }
 
 interface ResolvedBooks {
@@ -200,43 +220,49 @@ export async function executeSyllabusCommand(
         throw new Error(`No syllabus found matching '${command.list_name}'.`);
       }
 
-      const { found } = await resolveBooks(supabase, command.books);
+      const requested = normalizeBooksInput(command.books);
+      const { found } = await resolveBooks(supabase, requested);
+      const entries = await fetchListEntries(supabase, list.id);
 
-      // Get current max position
-      const { data: existing, error: fetchError } = await supabase
-        .from("list_items")
-        .select("position")
-        .eq("list_id", list.id)
-        .order("position", { ascending: false })
-        .limit(1);
-
-      if (fetchError) throw fetchError;
-
-      const startPosition = (existing?.[0]?.position ?? 0) + 1;
-
-      let added = 0;
+      const newIds: string[] = [];
+      let skipped = 0;
       for (let i = 0; i < found.length; i++) {
-        const { error } = await supabase.from("list_items").insert({
-          list_id: list.id,
-          book_id: found[i].id,
-          position: startPosition + i,
-          rationale: command.rationale ?? null,
-        });
+        const book = requested[i]!;
+        // Includes entries kept after their book left the library
+        if (hasEntryFor(entries, book.title, book.author)) {
+          skipped++;
+          continue;
+        }
+
+        const { data: inserted, error } = await supabase
+          .from("list_items")
+          .insert({
+            list_id: list.id,
+            book_id: found[i]!.id,
+            position: entries.length + 1 + i,
+            rationale: command.rationale ?? null,
+          })
+          .select("id")
+          .single();
 
         if (error) {
           // 23505 = unique violation (book already in syllabus) — skip silently
-          if (error.code === "23505") continue;
+          if (error.code === "23505") {
+            skipped++;
+            continue;
+          }
           throw error;
         }
-        added++;
+        newIds.push(inserted.id);
       }
 
+      await placeNewEntries(supabase, list.id, newIds, command.position);
+
       const created = found.filter((b) => b.created).length;
-      let msg = `Added ${added} book${added === 1 ? "" : "s"} to '${list.name}'.`;
+      let msg = `Added ${newIds.length} book${newIds.length === 1 ? "" : "s"} to '${list.name}'.`;
       if (created > 0) {
         msg += ` ${created} added to your library as wishlist item${created === 1 ? "" : "s"}.`;
       }
-      const skipped = found.length - added;
       if (skipped > 0) {
         msg += ` ${skipped} already in the syllabus.`;
       }
@@ -256,54 +282,16 @@ export async function executeSyllabusCommand(
         throw new Error(`No syllabus found matching '${command.list_name}'.`);
       }
 
-      // For removal, only look up existing books — don't create new ones
-      const titles = normalizeBooksInput(command.books).map((b) => b.title);
-      const foundBooks: { title: string; id: string }[] = [];
-      const notFoundTitles: string[] = [];
-      for (const title of titles) {
-        const book = await findBookByTitle(supabase, title);
-        if (book) {
-          foundBooks.push({ title: book.title, id: book.id });
-        } else {
-          notFoundTitles.push(title);
-        }
-      }
+      const { removed, notFound } = await removeListBooks(
+        supabase,
+        list.id,
+        list.name,
+        normalizeBooksInput(command.books).map((b) => b.title),
+      );
 
-      let removed = 0;
-      for (const book of foundBooks) {
-        const { error, count } = await supabase
-          .from("list_items")
-          .delete({ count: "exact" })
-          .eq("list_id", list.id)
-          .eq("book_id", book.id);
-
-        if (error) throw error;
-        if (count && count > 0) removed++;
-      }
-
-      // Renormalize positions
-      const { data: remaining, error: fetchError } = await supabase
-        .from("list_items")
-        .select("id")
-        .eq("list_id", list.id)
-        .order("position");
-
-      if (fetchError) throw fetchError;
-
-      if (remaining && remaining.length > 0) {
-        await Promise.all(
-          remaining.map((item, i) =>
-            supabase
-              .from("list_items")
-              .update({ position: i + 1 })
-              .eq("id", item.id),
-          ),
-        );
-      }
-
-      let msg = `Removed ${removed} book${removed === 1 ? "" : "s"} from '${list.name}'.`;
-      if (notFoundTitles.length > 0) {
-        msg += ` Could not find: ${notFoundTitles.map((t) => `'${t}'`).join(", ")}.`;
+      let msg = `Removed ${removed.length} book${removed.length === 1 ? "" : "s"} from '${list.name}'.`;
+      if (notFound.length > 0) {
+        msg += ` Could not find: ${notFound.map((t) => `'${t}'`).join(", ")}.`;
       }
       return msg;
     }
@@ -326,6 +314,79 @@ export async function executeSyllabusCommand(
       if (error) throw error;
 
       return `Deleted syllabus '${list.name}'.`;
+    }
+
+    case "reorder": {
+      if (!command.list_name) {
+        throw new Error("'reorder' requires list_name");
+      }
+
+      const list = await findSyllabusByName(supabase, command.list_name);
+      if (!list) {
+        throw new Error(`No syllabus found matching '${command.list_name}'.`);
+      }
+
+      return reorderList(supabase, list.id, list.name, command);
+    }
+
+    case "update_rationale": {
+      if (!command.list_name) {
+        throw new Error("'update_rationale' requires list_name");
+      }
+      if (!command.book_title) {
+        throw new Error("'update_rationale' requires book_title");
+      }
+      if (command.rationale === undefined) {
+        throw new Error("'update_rationale' requires rationale");
+      }
+
+      const list = await findSyllabusByName(supabase, command.list_name);
+      if (!list) {
+        throw new Error(`No syllabus found matching '${command.list_name}'.`);
+      }
+
+      const entries = await fetchListEntries(supabase, list.id);
+      const target = findEntry(entries, command.book_title, list.name);
+
+      const { error } = await supabase
+        .from("list_items")
+        .update({ rationale: command.rationale || null })
+        .eq("id", target.id);
+
+      if (error) throw error;
+
+      return `Updated the rationale for '${target.title}' in '${list.name}'.`;
+    }
+
+    case "update_syllabus": {
+      if (!command.list_name) {
+        throw new Error("'update_syllabus' requires list_name");
+      }
+
+      const list = await findSyllabusByName(supabase, command.list_name);
+      if (!list) {
+        throw new Error(`No syllabus found matching '${command.list_name}'.`);
+      }
+
+      const fields = {
+        ...(command.new_name && { name: command.new_name }),
+        ...(command.description !== undefined && { description: command.description }),
+      };
+      if (Object.keys(fields).length === 0) {
+        throw new Error("'update_syllabus' requires new_name or description");
+      }
+
+      if (command.new_name) {
+        const clash = await findSyllabusByName(supabase, command.new_name);
+        if (clash && clash.id !== list.id) {
+          throw new Error(`A syllabus named '${clash.name}' already exists.`);
+        }
+      }
+
+      const { error } = await supabase.from("lists").update(fields).eq("id", list.id);
+      if (error) throw error;
+
+      return `Updated syllabus '${command.new_name ?? list.name}'.`;
     }
 
     default:

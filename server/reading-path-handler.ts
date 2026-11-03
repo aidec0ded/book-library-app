@@ -1,5 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describeSimilarBooks, findOrCreateBook, type FoundBook } from "./book-lookup.js";
+import {
+  fetchListEntries,
+  findEntry,
+  hasEntryFor,
+  placeNewEntries,
+  removeListBooks,
+  reorderList,
+} from "./list-items.js";
 
 interface SeminarContent {
   pre_reading_context: string;
@@ -21,13 +29,24 @@ export interface ReadingPathCommand {
     | "view_path"
     | "add_path_books"
     | "update_progress"
-    | "get_seminar_content";
+    | "get_seminar_content"
+    | "update_seminar_content"
+    | "reorder"
+    | "remove_path_books"
+    | "update_path"
+    | "delete_path";
   path_name?: string;
+  new_name?: string;
   thesis?: string;
   description?: string;
   books?: PathBook[];
   book_title?: string;
   progress?: "not_started" | "reading" | "completed";
+  pre_reading_context?: string;
+  focus_questions?: string[];
+  post_reading_prompts?: string[];
+  ordered_titles?: string[];
+  position?: number;
 }
 
 
@@ -190,17 +209,9 @@ export async function executeReadingPathCommand(
         return `No reading path found matching '${command.path_name}'.`;
       }
 
-      const { data: items, error } = await supabase
-        .from("list_items")
-        .select(
-          "position, path_progress, seminar_content, book_id, external_title, external_author, book:books(title, author)",
-        )
-        .eq("list_id", path.id)
-        .order("position");
+      const items = await fetchListEntries(supabase, path.id);
 
-      if (error) throw error;
-
-      if (!items || items.length === 0) {
+      if (items.length === 0) {
         return `'${path.name}' exists but has no items.`;
       }
 
@@ -212,21 +223,7 @@ export async function executeReadingPathCommand(
       if (path.thesis) header += `\nThesis: ${path.thesis}`;
 
       const lines = items.map((item) => {
-        let title: string;
-        let author: string;
-        if (item.book_id) {
-          const book = item.book as unknown as {
-            title: string;
-            author: string;
-          };
-          title = book.title;
-          author = book.author;
-        } else {
-          title = (item.external_title as string) ?? "Untitled";
-          author = (item.external_author as string) ?? "Unknown";
-        }
-
-        const progress = (item.path_progress as string) ?? "not_started";
+        const progress = item.path_progress ?? "not_started";
         const statusIcon =
           progress === "completed"
             ? "[done]"
@@ -234,11 +231,15 @@ export async function executeReadingPathCommand(
               ? "[reading]"
               : "[ ]";
 
-        let line = `  ${item.position}. ${statusIcon} ${title} by ${author}`;
+        let line = `  ${item.position}. ${statusIcon} ${item.title} by ${item.author ?? "Unknown"}`;
+        if (!item.book_id) line += " [not in library]";
 
         const seminar = item.seminar_content as SeminarContent | null;
         if (seminar?.pre_reading_context) {
           line += `\n     Context: ${seminar.pre_reading_context}`;
+        }
+        if (!seminar?.focus_questions?.length) {
+          line += "\n     (no focus questions yet)";
         }
 
         return line;
@@ -269,20 +270,19 @@ export async function executeReadingPathCommand(
         resolved.push(result);
       }
 
-      // Get current max position
-      const { data: existing, error: fetchError } = await supabase
-        .from("list_items")
-        .select("position")
-        .eq("list_id", path.id)
-        .order("position", { ascending: false })
-        .limit(1);
+      const entries = await fetchListEntries(supabase, path.id);
+      const startPosition = entries.length + 1;
 
-      if (fetchError) throw fetchError;
-      const startPosition = (existing?.[0]?.position ?? 0) + 1;
-
-      let added = 0;
+      const newIds: string[] = [];
+      let alreadyInPath = 0;
       for (let i = 0; i < command.books.length; i++) {
-        const book = command.books[i];
+        const book = command.books[i]!;
+        // Includes entries kept after their book left the library
+        if (hasEntryFor(entries, book.title, book.author)) {
+          alreadyInPath++;
+          continue;
+        }
+
         const seminar =
           book.pre_reading_context || book.focus_questions || book.post_reading_prompts
             ? {
@@ -292,25 +292,37 @@ export async function executeReadingPathCommand(
               }
             : null;
 
-        const { error } = await supabase.from("list_items").insert({
-          list_id: path.id,
-          book_id: resolved[i].id,
-          position: startPosition + i,
-          path_progress: "not_started",
-          seminar_content: seminar,
-        });
+        const { data: inserted, error } = await supabase
+          .from("list_items")
+          .insert({
+            list_id: path.id,
+            book_id: resolved[i]!.id,
+            position: startPosition + i,
+            path_progress: "not_started",
+            seminar_content: seminar,
+          })
+          .select("id")
+          .single();
 
         if (error) {
-          if (error.code === "23505") continue; // duplicate
+          if (error.code === "23505") {
+            alreadyInPath++;
+            continue;
+          }
           throw error;
         }
-        added++;
+        newIds.push(inserted.id);
       }
 
+      await placeNewEntries(supabase, path.id, newIds, command.position);
+
       const created = resolved.filter((b) => b.created).length;
-      let msg = `Added ${added} book${added === 1 ? "" : "s"} to '${path.name}'.`;
+      let msg = `Added ${newIds.length} book${newIds.length === 1 ? "" : "s"} to '${path.name}'.`;
       if (created > 0) {
         msg += ` ${created} added to your library as wishlist item${created === 1 ? "" : "s"}.`;
+      }
+      if (alreadyInPath > 0) {
+        msg += ` ${alreadyInPath} already in the path.`;
       }
       return msg + describeSimilarBooks(resolved);
     }
@@ -333,25 +345,8 @@ export async function executeReadingPathCommand(
         );
       }
 
-      // Find the item by book title
-      const { data: items, error: itemsError } = await supabase
-        .from("list_items")
-        .select("id, book_id, book:books(title)")
-        .eq("list_id", path.id);
-
-      if (itemsError) throw itemsError;
-
-      const target = (items ?? []).find((item) => {
-        if (!item.book_id) return false;
-        const book = item.book as unknown as { title: string };
-        return book.title.toLowerCase() === command.book_title!.toLowerCase();
-      });
-
-      if (!target) {
-        throw new Error(
-          `No book matching '${command.book_title}' found in path '${path.name}'.`,
-        );
-      }
+      const entries = await fetchListEntries(supabase, path.id);
+      const target = findEntry(entries, command.book_title, path.name);
 
       const { error: updateError } = await supabase
         .from("list_items")
@@ -376,10 +371,7 @@ export async function executeReadingPathCommand(
         }
       }
 
-      const bookTitle = (
-        target.book as unknown as { title: string }
-      ).title;
-      return `Updated '${bookTitle}' to ${command.progress} in '${path.name}'.`;
+      return `Updated '${target.title}' to ${command.progress} in '${path.name}'.`;
     }
 
     case "get_seminar_content": {
@@ -397,30 +389,12 @@ export async function executeReadingPathCommand(
         );
       }
 
-      const { data: items, error: itemsError } = await supabase
-        .from("list_items")
-        .select("seminar_content, path_progress, book_id, book:books(title)")
-        .eq("list_id", path.id);
-
-      if (itemsError) throw itemsError;
-
-      const target = (items ?? []).find((item) => {
-        if (!item.book_id) return false;
-        const book = item.book as unknown as { title: string };
-        return book.title.toLowerCase() === command.book_title!.toLowerCase();
-      });
-
-      if (!target) {
-        throw new Error(
-          `No book matching '${command.book_title}' found in path '${path.name}'.`,
-        );
-      }
+      const entries = await fetchListEntries(supabase, path.id);
+      const target = findEntry(entries, command.book_title, path.name);
 
       const seminar = target.seminar_content as SeminarContent | null;
-      const bookTitle = (
-        target.book as unknown as { title: string }
-      ).title;
-      const progress = (target.path_progress as string) ?? "not_started";
+      const bookTitle = target.title;
+      const progress = target.path_progress ?? "not_started";
 
       if (!seminar) {
         return `'${bookTitle}' in '${path.name}' has no seminar content yet. Progress: ${progress}.`;
@@ -438,6 +412,137 @@ export async function executeReadingPathCommand(
       }
 
       return result;
+    }
+
+    case "update_seminar_content": {
+      if (!command.path_name) {
+        throw new Error("'update_seminar_content' requires path_name");
+      }
+      if (!command.book_title) {
+        throw new Error("'update_seminar_content' requires book_title");
+      }
+      if (
+        command.pre_reading_context === undefined &&
+        command.focus_questions === undefined &&
+        command.post_reading_prompts === undefined
+      ) {
+        throw new Error(
+          "'update_seminar_content' requires pre_reading_context, focus_questions, or post_reading_prompts",
+        );
+      }
+
+      const path = await findPathByName(supabase, command.path_name);
+      if (!path) {
+        throw new Error(`No reading path found matching '${command.path_name}'.`);
+      }
+
+      const entries = await fetchListEntries(supabase, path.id);
+      const target = findEntry(entries, command.book_title, path.name);
+      const current = target.seminar_content as SeminarContent | null;
+
+      // Fields left out keep their current value
+      const updated: SeminarContent = {
+        pre_reading_context: command.pre_reading_context ?? current?.pre_reading_context ?? "",
+        focus_questions: command.focus_questions ?? current?.focus_questions ?? [],
+        post_reading_prompts: command.post_reading_prompts ?? current?.post_reading_prompts ?? [],
+      };
+
+      const { error } = await supabase
+        .from("list_items")
+        .update({ seminar_content: updated })
+        .eq("id", target.id);
+
+      if (error) throw error;
+
+      return `Updated seminar content for '${target.title}' in '${path.name}'.`;
+    }
+
+    case "reorder": {
+      if (!command.path_name) {
+        throw new Error("'reorder' requires path_name");
+      }
+
+      const path = await findPathByName(supabase, command.path_name);
+      if (!path) {
+        throw new Error(`No reading path found matching '${command.path_name}'.`);
+      }
+
+      return reorderList(supabase, path.id, path.name, command);
+    }
+
+    case "remove_path_books": {
+      if (!command.path_name) {
+        throw new Error("'remove_path_books' requires path_name");
+      }
+      if (!command.books || command.books.length === 0) {
+        throw new Error("'remove_path_books' requires at least one book");
+      }
+
+      const path = await findPathByName(supabase, command.path_name);
+      if (!path) {
+        throw new Error(`No reading path found matching '${command.path_name}'.`);
+      }
+
+      const { removed, notFound } = await removeListBooks(
+        supabase,
+        path.id,
+        path.name,
+        command.books.map((b) => b.title),
+      );
+
+      let msg = `Removed ${removed.length} book${removed.length === 1 ? "" : "s"} from '${path.name}'. They remain in the library.`;
+      if (notFound.length > 0) {
+        msg += ` Could not find: ${notFound.map((t) => `'${t}'`).join(", ")}.`;
+      }
+      return msg;
+    }
+
+    case "update_path": {
+      if (!command.path_name) {
+        throw new Error("'update_path' requires path_name");
+      }
+
+      const path = await findPathByName(supabase, command.path_name);
+      if (!path) {
+        throw new Error(`No reading path found matching '${command.path_name}'.`);
+      }
+
+      const fields = {
+        ...(command.new_name && { name: command.new_name }),
+        ...(command.thesis !== undefined && { thesis: command.thesis }),
+        ...(command.description !== undefined && { description: command.description }),
+      };
+      if (Object.keys(fields).length === 0) {
+        throw new Error("'update_path' requires new_name, thesis, or description");
+      }
+
+      if (command.new_name) {
+        const clash = await findPathByName(supabase, command.new_name);
+        if (clash && clash.id !== path.id) {
+          throw new Error(`A reading path named '${clash.name}' already exists.`);
+        }
+      }
+
+      const { error } = await supabase.from("lists").update(fields).eq("id", path.id);
+      if (error) throw error;
+
+      return `Updated reading path '${command.new_name ?? path.name}'.`;
+    }
+
+    case "delete_path": {
+      if (!command.path_name) {
+        throw new Error("'delete_path' requires path_name");
+      }
+
+      const path = await findPathByName(supabase, command.path_name);
+      if (!path) {
+        throw new Error(`No reading path found matching '${command.path_name}'.`);
+      }
+
+      const { error } = await supabase.from("lists").delete().eq("id", path.id);
+      if (error) throw error;
+
+      return `Deleted reading path '${path.name}'. Its books remain in the library.`;
     }
 
     default:

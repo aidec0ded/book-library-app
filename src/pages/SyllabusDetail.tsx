@@ -30,6 +30,16 @@ import type { Book, List, PathProgress, SeminarContent } from "@/lib/types";
 
 type EditingField = "name" | "description";
 
+function hasSeminarContent(item: SyllabusItemWithBook): boolean {
+  const seminar = item.seminar_content;
+  return (
+    !!seminar &&
+    (!!seminar.pre_reading_context ||
+      seminar.focus_questions.length > 0 ||
+      seminar.post_reading_prompts.length > 0)
+  );
+}
+
 export function SyllabusDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -52,6 +62,9 @@ export function SyllabusDetail() {
   // Track which item is being rationale-edited
   const [editingRationaleId, setEditingRationaleId] = useState<string | null>(null);
   const [rationaleDraft, setRationaleDraft] = useState("");
+
+  // Removing an item deletes its seminar content, so that takes a second click
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
 
   const isPath = syllabus?.list_type === "reading_path";
 
@@ -744,7 +757,37 @@ export function SyllabusDetail() {
                 </div>
 
                 {/* Hover actions */}
-                <div className="absolute right-4 top-6 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <div
+                  className={`absolute right-4 top-6 flex items-center gap-0.5 transition-opacity group-hover:opacity-100 ${
+                    confirmingRemoveId === item.id ? "opacity-100" : "opacity-0"
+                  }`}
+                >
+                  {confirmingRemoveId === item.id ? (
+                    <div
+                      role="alert"
+                      className="flex items-center gap-2 rounded-md border border-destructive/50 bg-background px-2 py-1 text-xs"
+                    >
+                      <span className="text-destructive">
+                        Remove? Its focus questions will be deleted.
+                      </span>
+                      <button
+                        onClick={() => {
+                          setConfirmingRemoveId(null);
+                          void handleRemoveItem(item.id);
+                        }}
+                        className="rounded bg-destructive px-2 py-0.5 text-white hover:bg-destructive/90"
+                      >
+                        Remove
+                      </button>
+                      <button
+                        onClick={() => setConfirmingRemoveId(null)}
+                        className="rounded border px-2 py-0.5 hover:bg-muted"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
                   {idx > 0 && (
                     <button
                       onClick={() => handleMove(item.id, "up")}
@@ -762,11 +805,20 @@ export function SyllabusDetail() {
                     </button>
                   )}
                   <button
-                    onClick={() => handleRemoveItem(item.id)}
+                    onClick={() => {
+                      if (hasSeminarContent(item)) {
+                        setConfirmingRemoveId(item.id);
+                      } else {
+                        void handleRemoveItem(item.id);
+                      }
+                    }}
+                    aria-label="Remove from list"
                     className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   >
                     <X className="h-4 w-4" />
                   </button>
+                    </>
+                  )}
                 </div>
               </li>
             ))}

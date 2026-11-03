@@ -449,6 +449,9 @@ export function BookDetail() {
           {confirmingDelete ? (
             <div className="space-y-2 rounded-md border border-destructive/50 bg-destructive/5 p-3">
               <p className="text-sm text-destructive">Remove this book from your library?</p>
+              <p className="text-xs text-muted-foreground">
+                It stays on any reading paths and syllabi it&rsquo;s part of.
+              </p>
               <div className="flex gap-2">
                 <button
                   onClick={handleDeleteBook}

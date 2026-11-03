@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  authorsCompatible,
   baseTitle,
+  compareTitles,
   detectBookType,
   findBestLibraryMatch,
   findMatchingEditions,
@@ -134,6 +136,37 @@ function detailsFromEditions(editions: ISBNdbBook[], status: string) {
   return details;
 }
 
+/** Reconnect list items that aren't in the library yet, keeping their focus questions and progress. */
+async function linkExternalItems(
+  supabase: SupabaseClient,
+  bookId: string,
+  title: string,
+  author?: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("list_items")
+    .select("id, external_title, external_author")
+    .is("book_id", null);
+
+  if (error) throw error;
+
+  for (const item of data ?? []) {
+    if (compareTitles(title, item.external_title ?? "") < 2) continue;
+    if (authorsCompatible(author, item.external_author) === false) continue;
+    // A failure here (the book is already on that list) shouldn't stop the add
+    await supabase
+      .from("list_items")
+      .update({
+        book_id: bookId,
+        external_title: null,
+        external_author: null,
+        external_cover_url: null,
+        external_isbn: null,
+      })
+      .eq("id", item.id);
+  }
+}
+
 export interface FoundBook {
   id: string;
   title: string;
@@ -191,12 +224,7 @@ export async function findOrCreateBook(
 
   if (error) throw error;
 
-  // Auto-link any existing external list items matching this title
-  await supabase
-    .from("list_items")
-    .update({ book_id: data.id, external_title: null, external_author: null })
-    .is("book_id", null)
-    .ilike("external_title", title);
+  await linkExternalItems(supabase, data.id, title, author);
 
   const similar = findSameTitleOtherAuthor(title, author, candidates);
   return {

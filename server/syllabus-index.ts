@@ -14,6 +14,11 @@ interface SeminarContent {
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+/** Drop the cached index after a tool changes a list, so the next message sees the change. */
+export function invalidateSyllabusIndex(userId: string): void {
+  cache.delete(userId);
+}
+
 export async function buildSyllabusIndex(
   supabase: SupabaseClient,
   userId: string,

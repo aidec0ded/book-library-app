@@ -1,3 +1,4 @@
+import { authorsCompatible, compareTitles } from "@/lib/editions";
 import { supabase } from "@/lib/supabase";
 import type {
   Book,
@@ -385,16 +386,22 @@ export async function updateItemProgress(
 export async function linkExternalItemsToBook(
   bookId: string,
   bookTitle: string,
+  bookAuthor?: string | null,
 ): Promise<number> {
-  // Find external items (no book_id) whose title matches the new book
-  const { data: matches, error: findError } = await supabase
+  // Find external items (no book_id) that name this book, however it's punctuated
+  const { data: external, error: findError } = await supabase
     .from("list_items")
-    .select("id")
-    .is("book_id", null)
-    .ilike("external_title", bookTitle);
+    .select("id, external_title, external_author")
+    .is("book_id", null);
 
   if (findError) throw findError;
-  if (!matches || matches.length === 0) return 0;
+
+  const matches = (external ?? []).filter(
+    (item) =>
+      compareTitles(bookTitle, item.external_title ?? "") >= 2 &&
+      authorsCompatible(bookAuthor, item.external_author) !== false,
+  );
+  if (matches.length === 0) return 0;
 
   const { error: updateError } = await supabase
     .from("list_items")

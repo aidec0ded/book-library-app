@@ -146,8 +146,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
 - `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, edition grouping and scoring, format and language normalization, field mapping
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
-- `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete) with rationale support; auto-adds missing books as wishlist items via findOrCreateBook
-- `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content) with seminar content support; auto-adds missing books as wishlist items via findOrCreateBook
+- `server/list-items.ts` — Shared list entry helpers for the syllabus and reading path tools: fetch (library and external items alike), find by title, reorder, insert at a position, remove
+- `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete, reorder, update_rationale, update_syllabus) with rationale support; auto-adds missing books as wishlist items via findOrCreateBook
+- `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content, update_seminar_content, reorder, remove_path_books, update_path, delete_path) with seminar content support; auto-adds missing books as wishlist items via findOrCreateBook
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
@@ -280,7 +281,7 @@ Fifteen tables in Supabase:
 
 **list_items** — Ordered item references within syllabi/paths (supports both library and external books). Key fields:
 - `list_id` — FK to lists, CASCADE delete
-- `book_id` — FK to books, SET NULL on delete (nullable — null for external items)
+- `book_id` — FK to books, SET NULL on delete (nullable — null for external items). A trigger copies the book's title, author, cover, and ISBN onto the item first, so deleting a book from the library keeps it on its lists with its seminar content and progress (migration 026)
 - `position` — dense 1-based integer, renormalized on every mutation
 - `rationale` — optional text explaining why the item belongs in the syllabus
 - `seminar_content` (jsonb) — for reading path items: `{ pre_reading_context, focus_questions[], post_reading_prompts[] }`

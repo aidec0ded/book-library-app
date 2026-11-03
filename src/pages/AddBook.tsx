@@ -289,7 +289,7 @@ export function AddBook() {
 
     // Auto-link any external list items (e.g. from AI-created reading paths)
     try {
-      await linkExternalItemsToBook(data.id, payload.title);
+      await linkExternalItemsToBook(data.id, payload.title, payload.author);
     } catch {
       // Non-critical — don't block navigation
     }
