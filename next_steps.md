@@ -16,9 +16,11 @@
 - Reading dates — add a way to set start and finish dates on the book page; it can only display them today
 - Tidy the left column — move the raw cover URL and ISBN fields into "Edit details" now that "Change edition" exists **[DONE]**
 - Small fixes — excerpt delete button only appears on hover, so touch screens can't reach it; "← Back" leaves the app when a book page was opened directly **[DONE]**
+- Predicted rating voice — reasons read like notes about someone else ("Directly on his consciousness syllabus"). The prompt asks why "this reader" would rate the book that way, so the text talks about the reader, and it guesses at gender. Speak to the reader as "you" instead. New-release reasons use the same wording, so check those too. Saved reasons stay as they are until predictions are re-run, which costs API calls
 
 **Investigate**
 
+- Duplicate syllabus — one syllabus appears to have been created twice, with a slightly different title and description but what looks like the same books. Find out whether this was a one-time thing or whether something in creating a syllabus can repeat, such as the AI calling the tool again or a retry
 - 1,000-row limit elsewhere — Supabase silently returns at most 1,000 rows per request, which is what stalled tagging. Check the other scripts and server code for queries that can pass it, and use `scripts/fetch-all.ts` where they do
 - Narrators and illustrators stored as authors — ISBNdb lists them with no role ("Robert Jordan, Rosamund Pike"; one audiobook lists over 100 people). The book page caps the list and only gives the first two names an "Also by" section, but a narrator can still get a section or a filter of their own. Consider cleaning the data on the way in
 - Missing data — no book from any user has a genre, series, or "when to read" month, though `CLAUDE.md` says about 917 should have timing. The library's genre filter has nothing to offer and seasonal recommendations have no data behind them. Find out when and why, then restore or remove
