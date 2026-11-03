@@ -78,8 +78,10 @@ const filterFiction = args.includes("--fiction");
 
 const RATE_LIMIT_MS = 1100;
 const MAX_RETRIES = 3;
-const MAX_PAGES_PER_MONTH = 10;
-const PAGE_SIZE = 1000;
+// ISBNdb allows at most 100 results per page and 10,000 per search (page 101 is a 400),
+// so 100 pages is everything a search can return.
+const PAGE_SIZE = 100;
+const MAX_PAGES_PER_MONTH = 100;
 const UPSERT_BATCH_SIZE = 500;
 const ISBNDB_BASE_URL = "https://api2.isbndb.com";
 
@@ -151,46 +153,55 @@ function formatMonthLabel(year: number, month: number): string {
   return `${MONTH_NAMES[month - 1]} ${year}`;
 }
 
+const MAX_ERROR_BODY_CHARS = 500;
+
+/** One log line naming the request and the response. The key travels in a header, so the URL is safe to log. */
+async function describeFailure(url: string, res: Response, apiKey: string): Promise<string> {
+  const body = await res.text().catch(() => "(could not read response body)");
+  const detail = `ISBNdb request failed: HTTP ${res.status} ${res.statusText} | GET ${url} | response: ${body.slice(0, MAX_ERROR_BODY_CHARS)}`;
+  return detail.replaceAll(apiKey, "[redacted]");
+}
+
 async function fetchISBNdbSearch(
   query: string,
   page: number,
   apiKey: string
 ): Promise<ISBNdbSearchResponse | null> {
+  const url = `${ISBNDB_BASE_URL}/books/${encodeURIComponent(query)}?column=date_published&page=${page}&pageSize=${PAGE_SIZE}`;
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let res: Response;
     try {
-      const url = `${ISBNDB_BASE_URL}/books/${encodeURIComponent(query)}?column=date_published&page=${page}&pageSize=${PAGE_SIZE}`;
-      const res = await fetch(url, {
+      res = await fetch(url, {
         headers: { Authorization: apiKey },
       });
-
-      if (res.status === 404) {
-        return null;
-      }
-
-      if (res.status === 429 || res.status >= 500) {
-        if (attempt < MAX_RETRIES) {
-          const backoff = 1000 * Math.pow(2, attempt - 1);
-          console.log(`    Retry ${attempt}/${MAX_RETRIES} (HTTP ${res.status}, waiting ${backoff}ms)`);
-          await sleep(backoff);
-          continue;
-        }
-        throw new Error(`HTTP ${res.status} after ${MAX_RETRIES} retries`);
-      }
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      return (await res.json()) as ISBNdbSearchResponse;
     } catch (err) {
-      if (err instanceof TypeError && attempt < MAX_RETRIES) {
+      if (attempt < MAX_RETRIES) {
         const backoff = 1000 * Math.pow(2, attempt - 1);
         console.log(`    Retry ${attempt}/${MAX_RETRIES} (network error, waiting ${backoff}ms)`);
         await sleep(backoff);
         continue;
       }
-      throw err;
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`ISBNdb request failed: network error after ${MAX_RETRIES} attempts | GET ${url} | ${reason}`);
     }
+
+    if (res.status === 404) {
+      return null;
+    }
+
+    if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
+      const backoff = 1000 * Math.pow(2, attempt - 1);
+      console.log(`    Retry ${attempt}/${MAX_RETRIES} (HTTP ${res.status}, waiting ${backoff}ms)`);
+      await sleep(backoff);
+      continue;
+    }
+
+    if (!res.ok) {
+      throw new Error(await describeFailure(url, res, apiKey));
+    }
+
+    return (await res.json()) as ISBNdbSearchResponse;
   }
   return null;
 }
