@@ -3,8 +3,10 @@
 **Security**
 
 - Verify login tokens — the server read the user ID from the token without checking its signature, so a forged token could delete another reader's account or open their billing portal, and any bearer value could use the ISBNdb proxy. Every endpoint now checks with Supabase **[DONE]**
-- Malformed chat requests — `JSON.parse` in `handleChat` sits outside any `try`, and nothing catches the rejection, so a signed-in user sending bad JSON can probably crash the server. Return a 400 instead
-- Free message counter — read then written rather than updated atomically, so requests sent at the same time can slip past the limit
+- Malformed chat requests — `JSON.parse` in `handleChat` sat outside any `try`, and nothing caught the rejection, so a signed-in user sending bad JSON could crash the server for everyone. It now returns a 400, and unexpected failures in chat and the ISBNdb proxy return an error instead of reaching the top level **[DONE]**
+- Free message counter — it was checked before the reply and counted after, so requests sent together could all pass the limit. A message is now claimed up front and returned if the reply fails **[DONE]**
+- Onboarding chat has no limit — onboarding conversations skip the free limit until onboarding is marked complete, and the reader controls when that happens, so a new account could keep chatting for free by never finishing. Consider capping it
+- Request size limit — the server reads a whole request body into memory with no cap, and production has 512MB, so a very large request could run it out of memory. Reject bodies past a sensible size
 
 **Conversations get a subject**
 

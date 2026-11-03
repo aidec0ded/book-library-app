@@ -161,7 +161,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view). In a conversation about a book, saves go to that book
 - `server/book-context.ts` — What the AI gets in a conversation about a book: its status, dates, notes, excerpts, list context, summary, and earlier conversations
 - `server/conversation-review.ts` — After a book conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation
-- `server/subscription.ts` — Paid plan check shared by the chat and the review step
+- `server/subscription.ts` — Paid plan check, plus claiming and returning a free reader's chat messages so requests sent together can't pass the limit
+- `server/request-body.ts` — Reads a JSON request body
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/onboarding-prompt.ts` — Onboarding-specific system prompt builder (empty library vs. imported library paths)
