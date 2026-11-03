@@ -13,6 +13,27 @@ import type {
 
 export type SyllabusItemWithBook = ListItem & { book: Book | null };
 
+export type BookListEntry = Pick<
+  ListItem,
+  "id" | "position" | "rationale" | "seminar_content" | "path_progress"
+> & { list: Pick<List, "id" | "name" | "list_type"> };
+
+/** The syllabi and reading paths a library book is on, reading paths first. */
+export async function fetchListsForBook(bookId: string): Promise<BookListEntry[]> {
+  const { data, error } = await supabase
+    .from("list_items")
+    .select("id, position, rationale, seminar_content, path_progress, list:lists(id, name, list_type)")
+    .eq("book_id", bookId);
+
+  if (error) throw error;
+
+  return ((data ?? []) as unknown as BookListEntry[]).sort(
+    (a, b) =>
+      Number(b.list.list_type === "reading_path") - Number(a.list.list_type === "reading_path") ||
+      a.list.name.localeCompare(b.list.name),
+  );
+}
+
 export async function fetchSyllabi(
   listType?: ListType,
 ): Promise<ListWithCount[]> {

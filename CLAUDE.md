@@ -122,16 +122,17 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/Layout.tsx` — App shell with sidebar + `<Outlet />`, wraps protected routes in ChatProvider
 - `src/components/Sidebar.tsx` — Collapsible navigation sidebar (Library, Syllabi, Shelves, Recommendations, Releases, Chat, Profile)
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
-- `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger
+- `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger. Section order follows reading status: unread leads with predicted rating and summary, reading with lists and notes, read with notes
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
 - `src/lib/books.ts` — Book update helper (type-constrained to editable fields)
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
 - `src/pages/AddBook.tsx` — ISBNdb search, edition picker, preview, and add-to-library flow
 - `src/components/EditionPicker.tsx` — Edition list with format and language filters (shared by Add Book and Change edition)
+- `src/components/BookListsSection.tsx` — "On your lists" section on the book page: the reader's syllabi and reading paths with this book, its position, progress, and focus questions
 - `src/components/AlsoByAuthor.tsx` — "Also by" section on the book page: the reader's other books by an author, in-progress and unread first
 - `src/components/ChangeEditionModal.tsx` — Switch a library book to another edition from the book page
-- `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, and publication year
+- `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, publication year, ISBN, and cover image URL
 - `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping) + edition grouping and language/format normalization
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Select, Separator, Textarea)
 - `src/hooks/useChatSession.ts` — Chat state machine (shared between full page and floating panel)

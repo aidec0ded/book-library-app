@@ -8,15 +8,19 @@ interface SeminarSectionProps {
   content: SeminarContent | null;
   progress: PathProgress;
   onUpdate: (content: SeminarContent) => void;
+  questionsOpenByDefault?: boolean;
+  promptsOpenByDefault?: boolean;
 }
 
 export function SeminarSection({
   content,
   progress,
   onUpdate,
+  questionsOpenByDefault = false,
+  promptsOpenByDefault = false,
 }: SeminarSectionProps) {
-  const [questionsOpen, setQuestionsOpen] = useState(false);
-  const [promptsOpen, setPromptsOpen] = useState(false);
+  const [questionsOpen, setQuestionsOpen] = useState(questionsOpenByDefault);
+  const [promptsOpen, setPromptsOpen] = useState(promptsOpenByDefault);
 
   // Editing state
   const [editingContext, setEditingContext] = useState(false);
@@ -200,7 +204,8 @@ export function SeminarSection({
                     </span>
                     <button
                       onClick={() => handleRemoveQuestion(i)}
-                      className="mt-0.5 shrink-0 opacity-0 transition-opacity group-hover/q:opacity-100"
+                      aria-label="Remove question"
+                      className="mt-0.5 shrink-0 opacity-0 transition-opacity group-hover/q:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                     >
                       <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                     </button>
@@ -272,7 +277,8 @@ export function SeminarSection({
                     </span>
                     <button
                       onClick={() => handleRemovePrompt(i)}
-                      className="mt-0.5 shrink-0 opacity-0 transition-opacity group-hover/p:opacity-100"
+                      aria-label="Remove prompt"
+                      className="mt-0.5 shrink-0 opacity-0 transition-opacity group-hover/p:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                     >
                       <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                     </button>

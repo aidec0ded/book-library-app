@@ -15,7 +15,7 @@ const NO_FORMAT = "none";
 
 export type EditionDetails = Pick<
   Book,
-  "format" | "publisher" | "page_count" | "publication_year"
+  "format" | "publisher" | "page_count" | "publication_year" | "isbn" | "cover_image_url"
 >;
 
 interface EditionDetailsFormProps {
@@ -30,6 +30,8 @@ export function EditionDetailsForm({ book, onSave, onCancel }: EditionDetailsFor
   const [publisher, setPublisher] = useState(book.publisher ?? "");
   const [pages, setPages] = useState(book.page_count?.toString() ?? "");
   const [year, setYear] = useState(book.publication_year?.toString() ?? "");
+  const [isbn, setIsbn] = useState(book.isbn ?? "");
+  const [coverUrl, setCoverUrl] = useState(book.cover_image_url ?? "");
   const [error, setError] = useState<string | null>(null);
 
   // Keep an unusual stored format (e.g. "Spiral-bound") selectable
@@ -60,6 +62,8 @@ export function EditionDetailsForm({ book, onSave, onCancel }: EditionDetailsFor
       publisher: publisher.trim() || null,
       page_count: pageCount,
       publication_year: publicationYear,
+      isbn: isbn.trim() || null,
+      cover_image_url: coverUrl.trim() || null,
     });
   }
 
@@ -121,6 +125,28 @@ export function EditionDetailsForm({ book, onSave, onCancel }: EditionDetailsFor
             type="number"
             value={year}
             onChange={(e) => setYear(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label htmlFor="edition-isbn" className="font-medium text-muted-foreground">
+            ISBN
+          </label>
+          <Input
+            id="edition-isbn"
+            value={isbn}
+            onChange={(e) => setIsbn(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1 sm:col-span-2">
+          <label htmlFor="edition-cover" className="font-medium text-muted-foreground">
+            Cover image URL
+          </label>
+          <Input
+            id="edition-cover"
+            value={coverUrl}
+            onChange={(e) => setCoverUrl(e.target.value)}
           />
         </div>
       </div>

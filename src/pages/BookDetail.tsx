@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useState, useCallback } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
-import { ExternalLink, Pencil, X, Check, Star, MessageSquareQuote, Trash2, MessageCircle } from "lucide-react";
+import { Fragment, useEffect, useState, useCallback, type ReactNode } from "react";
+import { useParams, Link, useLocation, useNavigate } from "react-router-dom";
+import { ExternalLink, Pencil, Star, MessageSquareQuote, Trash2, MessageCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +13,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { VibeEditor } from "@/components/VibeEditor";
 import { AlsoByAuthor } from "@/components/AlsoByAuthor";
+import { BookListsSection } from "@/components/BookListsSection";
 import { authorLibraryPath, updateBook, deleteBook, formatRating } from "@/lib/books";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
@@ -43,6 +43,39 @@ const MAX_LISTED_AUTHORS = 4;
 // Later names are often narrators or illustrators, who aren't worth a section of their own
 const MAX_AUTHOR_SECTIONS = 2;
 
+type BookSection =
+  | "predicted"
+  | "summary"
+  | "lists"
+  | "classification"
+  | "awards"
+  | "metadata"
+  | "notes"
+  | "conversations";
+
+/** What's most useful first depends on where the reader is with the book. */
+function sectionOrder(
+  status: string | null,
+  hasExcerpts: boolean,
+): { main: BookSection[]; below: BookSection[] } {
+  // The empty "From Conversations" placeholder shouldn't push the reader's own writing down
+  const conversations: { lead: BookSection[]; below: BookSection[] } = hasExcerpts
+    ? { lead: ["conversations"], below: [] }
+    : { lead: [], below: ["conversations"] };
+  const reference: BookSection[] = ["summary", "classification", "awards", "metadata"];
+
+  if (status === "reading") {
+    return { main: ["lists", "notes", ...conversations.lead, ...reference], below: conversations.below };
+  }
+  if (status === "read" || status === "unfinished") {
+    return { main: ["notes", ...conversations.lead, "lists", ...reference], below: conversations.below };
+  }
+  return {
+    main: ["predicted", "summary", "lists", "classification", "awards", "metadata"],
+    below: ["notes", "conversations"],
+  };
+}
+
 
 export function BookDetail() {
   const { id } = useParams<{ id: string }>();
@@ -57,6 +90,7 @@ export function BookDetail() {
 
 function BookDetailContent({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { openPanel } = useChatContext();
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,10 +103,6 @@ function BookDetailContent({ id }: { id: string | undefined }) {
   // Editable fields state
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
-  const [editingCover, setEditingCover] = useState(false);
-  const [coverDraft, setCoverDraft] = useState("");
-  const [editingIsbn, setEditingIsbn] = useState(false);
-  const [isbnDraft, setIsbnDraft] = useState("");
   const [excerpts, setExcerpts] = useState<BookExcerpt[]>([]);
   const [excerptsLoading, setExcerptsLoading] = useState(true);
   const [awards, setAwards] = useState<BookAward[]>([]);
@@ -159,6 +189,7 @@ function BookDetailContent({ id }: { id: string | undefined }) {
   const handleSaveDetails = useCallback(
     (details: EditionDetails) => {
       setEditingDetails(false);
+      setCoverBroken(false);
       void handleFieldsUpdate(details, "Failed to save details");
     },
     [handleFieldsUpdate],
@@ -221,11 +252,318 @@ function BookDetailContent({ id }: { id: string | undefined }) {
   const showPredictedRating =
     book.status === "unread" || book.status === "wishlist" || book.status === null;
 
+  const sections: Record<BookSection, ReactNode> = {
+    predicted: showPredictedRating && (
+  <Card className="border-amber-200/50 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-950/20">
+    <CardHeader className="pb-2">
+      <CardTitle className="flex items-center gap-2 text-base">
+        <Star className="h-4 w-4 text-amber-500" />
+        Predicted Rating
+      </CardTitle>
+    </CardHeader>
+    <CardContent>
+      {book.predicted_rating != null ? (
+        <div className="space-y-2">
+          <p className="text-2xl font-semibold">★ {formatRating(book.predicted_rating)}</p>
+          {book.predicted_rationale && (
+            <p className="text-sm text-muted-foreground italic">
+              "{book.predicted_rationale}"
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm italic text-muted-foreground">
+          No predicted rating yet
+        </p>
+      )}
+    </CardContent>
+  </Card>
+),
+    summary: book.summary && (
+  <div>
+    <h2 className="mb-2 font-semibold">Summary</h2>
+    <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+      {book.summary}
+    </p>
+  </div>
+),
+    lists: (
+      <BookListsSection
+        bookId={book.id}
+        bookStatus={book.status}
+        onBookMarkedRead={() => setBook((b) => (b ? { ...b, status: "read" } : b))}
+        onError={setSaveError}
+      />
+    ),
+    classification: <VibeEditor bookId={book.id} bookType={book.book_type ?? "fiction"} />,
+    awards: awards.length > 0 && (
+  <div>
+    <h2 className="mb-2 font-semibold">Awards</h2>
+    <div className="flex flex-wrap gap-2">
+      {awards.map((award) => {
+        const label = `${award.award_short_name} ${award.status.charAt(0).toUpperCase() + award.status.slice(1)}${award.year ? ` ${award.year}` : ""}`;
+        const isWinner = award.status === "winner";
+        return (
+          <Badge
+            key={award.id}
+            variant={isWinner ? "default" : "outline"}
+            className={
+              isWinner
+                ? "bg-amber-600 hover:bg-amber-600 text-white"
+                : "border-amber-400 text-amber-700 dark:border-amber-600 dark:text-amber-400"
+            }
+            title={award.award_name}
+          >
+            {label}
+          </Badge>
+        );
+      })}
+    </div>
+  </div>
+),
+    metadata: (
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
+          <CardTitle className="text-base">Metadata</CardTitle>
+          <div className="flex items-center gap-3">
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setChangingEdition(true)}
+            >
+              Change edition
+            </button>
+            {!editingDetails && (
+              <button
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setEditingDetails(true)}
+              >
+                <Pencil className="h-3 w-3" /> Edit details
+              </button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
+            <div>
+              <dt className="font-medium text-muted-foreground">Type</dt>
+              <dd>
+                <Select
+                  value={book.book_type ?? "fiction"}
+                  onValueChange={(val) => handleFieldUpdate("book_type", val as BookType)}
+                >
+                  <SelectTrigger className="h-8 w-32 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fiction">Fiction</SelectItem>
+                    <SelectItem value="nonfiction">Nonfiction</SelectItem>
+                    <SelectItem value="poetry">Poetry</SelectItem>
+                  </SelectContent>
+                </Select>
+              </dd>
+            </div>
+
+            {book.genre && (
+              <div>
+                <dt className="font-medium text-muted-foreground">Genre</dt>
+                <dd>{book.genre}</dd>
+              </div>
+            )}
+
+            {book.category && (
+              <div>
+                <dt className="font-medium text-muted-foreground">Category</dt>
+                <dd>{book.category}</dd>
+              </div>
+            )}
+
+            {editingDetails ? (
+              <EditionDetailsForm
+                book={book}
+                onSave={handleSaveDetails}
+                onCancel={() => setEditingDetails(false)}
+              />
+            ) : (
+              <>
+                {book.page_count && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Pages</dt>
+                    <dd>{book.page_count.toLocaleString()}</dd>
+                  </div>
+                )}
+
+                {book.publication_year && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Published</dt>
+                    <dd>{book.publication_year}</dd>
+                  </div>
+                )}
+
+                {book.publisher && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Publisher</dt>
+                    <dd>{book.publisher}</dd>
+                  </div>
+                )}
+
+                {book.format && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">Format</dt>
+                    <dd>{normalizeFormat(book.format)}</dd>
+                  </div>
+                )}
+
+                {book.isbn && (
+                  <div>
+                    <dt className="font-medium text-muted-foreground">ISBN</dt>
+                    <dd>{book.isbn}</dd>
+                  </div>
+                )}
+              </>
+            )}
+
+            {book.date_started && (
+              <div>
+                <dt className="font-medium text-muted-foreground">Date Started</dt>
+                <dd>{formatDate(book.date_started)}</dd>
+              </div>
+            )}
+
+            {book.date_finished && (
+              <div>
+                <dt className="font-medium text-muted-foreground">Date Finished</dt>
+                <dd>{formatDate(book.date_finished)}</dd>
+              </div>
+            )}
+          </dl>
+        </CardContent>
+      </Card>
+    ),
+    notes: (
+      <div>
+        <h2 className="mb-2 font-semibold">Notes</h2>
+        {editingNotes ? (
+          <div className="space-y-2">
+            <Textarea
+              rows={6}
+              autoFocus
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setEditingNotes(false);
+                }
+              }}
+              placeholder="Personal notes about this book..."
+            />
+            <div className="flex gap-2">
+              <button
+                className="rounded-md bg-primary px-3 py-1 text-sm text-primary-foreground hover:bg-primary/90"
+                onClick={() => {
+                  const trimmed = notesDraft.trim();
+                  handleFieldUpdate("notes", trimmed || null);
+                  setEditingNotes(false);
+                }}
+              >
+                Save
+              </button>
+              <button
+                className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
+                onClick={() => setEditingNotes(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="cursor-pointer rounded-md px-1 py-2 -mx-1 hover:bg-muted/50 min-h-[60px]"
+            onClick={() => {
+              setNotesDraft(book.notes ?? "");
+              setEditingNotes(true);
+            }}
+          >
+            {book.notes ? (
+              <p className="whitespace-pre-line text-sm leading-relaxed">
+                {book.notes}
+              </p>
+            ) : (
+              <p className="text-sm italic text-muted-foreground">
+                Click to add personal notes...
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    ),
+    conversations: (
+      <div>
+        <h2 className="mb-2 font-semibold">From Conversations</h2>
+        {excerptsLoading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : excerpts.length === 0 ? (
+          <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Insights from your AI reading companion conversations will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {excerpts.map((excerpt) => (
+              <div
+                key={excerpt.id}
+                className="group flex items-start gap-3 rounded-md border bg-muted/20 px-4 py-3"
+              >
+                <MessageSquareQuote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-relaxed">{excerpt.content}</p>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>
+                      {new Date(excerpt.created_at).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                    {excerpt.conversation_id && (
+                      <>
+                        <span>·</span>
+                        <Link
+                          to="/chat"
+                          className="hover:text-foreground hover:underline"
+                        >
+                          View conversation
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <button
+                  aria-label="Delete excerpt"
+                  className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+                  onClick={() => handleDeleteExcerpt(excerpt.id)}
+                  title="Delete excerpt"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ),
+  };
+
+  const order = sectionOrder(book.status, excerpts.length > 0);
+  const renderSections = (ids: BookSection[]) =>
+    ids.map((section) => <Fragment key={section}>{sections[section]}</Fragment>);
+
   return (
     <div className="space-y-6">
       {/* Back link */}
       <button
-        onClick={() => navigate(-1)}
+        // A page opened directly has nothing in the app to go back to
+        onClick={() => (location.key === "default" ? navigate("/library") : navigate(-1))}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
         ← Back
@@ -290,80 +628,27 @@ function BookDetailContent({ id }: { id: string | undefined }) {
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
         {/* Left column: Cover + Controls */}
         <div className="space-y-4">
-          {/* Cover with edit */}
-          <div className="space-y-2">
-            {book.cover_image_url && !coverBroken ? (
-              <img
-                src={book.cover_image_url}
-                alt={`Cover of ${book.title}`}
-                className="h-auto w-full max-w-[240px] rounded-lg shadow-md mx-auto lg:mx-0"
-                loading="lazy"
-                onError={() => setCoverBroken(true)}
-                onLoad={(e) => {
-                  if (e.currentTarget.naturalWidth === 0) setCoverBroken(true);
-                }}
+          {book.cover_image_url && !coverBroken ? (
+            <img
+              src={book.cover_image_url}
+              alt={`Cover of ${book.title}`}
+              className="h-auto w-full max-w-[240px] rounded-lg shadow-md mx-auto lg:mx-0"
+              loading="lazy"
+              onError={() => setCoverBroken(true)}
+              onLoad={(e) => {
+                if (e.currentTarget.naturalWidth === 0) setCoverBroken(true);
+              }}
+            />
+          ) : (
+            <div className="mx-auto lg:mx-0">
+              <BookCover
+                title={book.title}
+                author={book.author}
+                coverUrl={null}
+                size="lg"
               />
-            ) : (
-              <div className="mx-auto lg:mx-0">
-                <BookCover
-                  title={book.title}
-                  author={book.author}
-                  coverUrl={null}
-                  size="lg"
-                />
-              </div>
-            )}
-
-            {editingCover ? (
-              <div className="space-y-2">
-                <Input
-                  placeholder="Cover image URL..."
-                  value={coverDraft}
-                  onChange={(e) => setCoverDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setEditingCover(false);
-                    } else if (e.key === "Enter") {
-                      const trimmed = coverDraft.trim();
-                      handleFieldUpdate("cover_image_url", trimmed || null);
-                      setEditingCover(false);
-                      setCoverBroken(false);
-                    }
-                  }}
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button
-                    className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90"
-                    onClick={() => {
-                      const trimmed = coverDraft.trim();
-                      handleFieldUpdate("cover_image_url", trimmed || null);
-                      setEditingCover(false);
-                      setCoverBroken(false);
-                    }}
-                  >
-                    <Check className="h-3 w-3" /> Save
-                  </button>
-                  <button
-                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                    onClick={() => setEditingCover(false)}
-                  >
-                    <X className="h-3 w-3" /> Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                className="text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setCoverDraft(book.cover_image_url ?? "");
-                  setEditingCover(true);
-                }}
-              >
-                Edit cover
-              </button>
-            )}
-          </div>
+            </div>
+          )}
 
           <Separator />
 
@@ -415,61 +700,6 @@ function BookDetailContent({ id }: { id: string | undefined }) {
           )}
 
           <Separator />
-
-          {/* Editable ISBN */}
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">ISBN</label>
-            {editingIsbn ? (
-              <div className="space-y-2">
-                <Input
-                  placeholder="ISBN..."
-                  value={isbnDraft}
-                  onChange={(e) => setIsbnDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setEditingIsbn(false);
-                    } else if (e.key === "Enter") {
-                      const trimmed = isbnDraft.trim();
-                      handleFieldUpdate("isbn", trimmed || null);
-                      setEditingIsbn(false);
-                    }
-                  }}
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button
-                    className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90"
-                    onClick={() => {
-                      const trimmed = isbnDraft.trim();
-                      handleFieldUpdate("isbn", trimmed || null);
-                      setEditingIsbn(false);
-                    }}
-                  >
-                    <Check className="h-3 w-3" /> Save
-                  </button>
-                  <button
-                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
-                    onClick={() => setEditingIsbn(false)}
-                  >
-                    <X className="h-3 w-3" /> Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-sm">{book.isbn ?? "—"}</span>
-                <button
-                  className="rounded p-1 hover:bg-muted"
-                  onClick={() => {
-                    setIsbnDraft(book.isbn ?? "");
-                    setEditingIsbn(true);
-                  }}
-                >
-                  <Pencil className="h-3 w-3 text-muted-foreground" />
-                </button>
-              </div>
-            )}
-          </div>
 
           {/* Bookshop.org link (wishlist only — reader doesn't need a buy link for books they own) */}
           {book.isbn && book.status === "wishlist" && (
@@ -528,304 +758,14 @@ function BookDetailContent({ id }: { id: string | undefined }) {
           )}
         </div>
 
-        {/* Right column: AI insights + Metadata */}
-        <div className="space-y-6">
-          {/* Predicted Rating Card (unread only) */}
-          {showPredictedRating && (
-            <Card className="border-amber-200/50 bg-amber-50/30 dark:border-amber-900/50 dark:bg-amber-950/20">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Star className="h-4 w-4 text-amber-500" />
-                  Predicted Rating
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {book.predicted_rating != null ? (
-                  <div className="space-y-2">
-                    <p className="text-2xl font-semibold">★ {formatRating(book.predicted_rating)}</p>
-                    {book.predicted_rationale && (
-                      <p className="text-sm text-muted-foreground italic">
-                        "{book.predicted_rationale}"
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm italic text-muted-foreground">
-                    No predicted rating yet
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Summary */}
-          {book.summary && (
-            <div>
-              <h2 className="mb-2 font-semibold">Summary</h2>
-              <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                {book.summary}
-              </p>
-            </div>
-          )}
-
-          {/* Classification */}
-          <VibeEditor bookId={book.id} bookType={book.book_type ?? "fiction"} />
-
-          {/* Awards */}
-          {awards.length > 0 && (
-            <div>
-              <h2 className="mb-2 font-semibold">Awards</h2>
-              <div className="flex flex-wrap gap-2">
-                {awards.map((award) => {
-                  const label = `${award.award_short_name} ${award.status.charAt(0).toUpperCase() + award.status.slice(1)}${award.year ? ` ${award.year}` : ""}`;
-                  const isWinner = award.status === "winner";
-                  return (
-                    <Badge
-                      key={award.id}
-                      variant={isWinner ? "default" : "outline"}
-                      className={
-                        isWinner
-                          ? "bg-amber-600 hover:bg-amber-600 text-white"
-                          : "border-amber-400 text-amber-700 dark:border-amber-600 dark:text-amber-400"
-                      }
-                      title={award.award_name}
-                    >
-                      {label}
-                    </Badge>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Metadata */}
-          <Card>
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
-              <CardTitle className="text-base">Metadata</CardTitle>
-              <div className="flex items-center gap-3">
-                <button
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => setChangingEdition(true)}
-                >
-                  Change edition
-                </button>
-                {!editingDetails && (
-                  <button
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setEditingDetails(true)}
-                  >
-                    <Pencil className="h-3 w-3" /> Edit details
-                  </button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
-                <div>
-                  <dt className="font-medium text-muted-foreground">Type</dt>
-                  <dd>
-                    <Select
-                      value={book.book_type ?? "fiction"}
-                      onValueChange={(val) => handleFieldUpdate("book_type", val as BookType)}
-                    >
-                      <SelectTrigger className="h-8 w-32 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="fiction">Fiction</SelectItem>
-                        <SelectItem value="nonfiction">Nonfiction</SelectItem>
-                        <SelectItem value="poetry">Poetry</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </dd>
-                </div>
-
-                {book.genre && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Genre</dt>
-                    <dd>{book.genre}</dd>
-                  </div>
-                )}
-
-                {book.category && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Category</dt>
-                    <dd>{book.category}</dd>
-                  </div>
-                )}
-
-                {editingDetails ? (
-                  <EditionDetailsForm
-                    book={book}
-                    onSave={handleSaveDetails}
-                    onCancel={() => setEditingDetails(false)}
-                  />
-                ) : (
-                  <>
-                    {book.page_count && (
-                      <div>
-                        <dt className="font-medium text-muted-foreground">Pages</dt>
-                        <dd>{book.page_count.toLocaleString()}</dd>
-                      </div>
-                    )}
-
-                    {book.publication_year && (
-                      <div>
-                        <dt className="font-medium text-muted-foreground">Published</dt>
-                        <dd>{book.publication_year}</dd>
-                      </div>
-                    )}
-
-                    {book.publisher && (
-                      <div>
-                        <dt className="font-medium text-muted-foreground">Publisher</dt>
-                        <dd>{book.publisher}</dd>
-                      </div>
-                    )}
-
-                    {book.format && (
-                      <div>
-                        <dt className="font-medium text-muted-foreground">Format</dt>
-                        <dd>{normalizeFormat(book.format)}</dd>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {book.date_started && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Date Started</dt>
-                    <dd>{formatDate(book.date_started)}</dd>
-                  </div>
-                )}
-
-                {book.date_finished && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Date Finished</dt>
-                    <dd>{formatDate(book.date_finished)}</dd>
-                  </div>
-                )}
-              </dl>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Right column */}
+        <div className="space-y-6">{renderSections(order.main)}</div>
       </div>
 
-      {/* Full-width Notes Section */}
       <Separator />
 
       <div className="space-y-6">
-        {/* Personal Notes */}
-        <div>
-          <h2 className="mb-2 font-semibold">Notes</h2>
-          {editingNotes ? (
-            <div className="space-y-2">
-              <Textarea
-                rows={6}
-                autoFocus
-                value={notesDraft}
-                onChange={(e) => setNotesDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setEditingNotes(false);
-                  }
-                }}
-                placeholder="Personal notes about this book..."
-              />
-              <div className="flex gap-2">
-                <button
-                  className="rounded-md bg-primary px-3 py-1 text-sm text-primary-foreground hover:bg-primary/90"
-                  onClick={() => {
-                    const trimmed = notesDraft.trim();
-                    handleFieldUpdate("notes", trimmed || null);
-                    setEditingNotes(false);
-                  }}
-                >
-                  Save
-                </button>
-                <button
-                  className="rounded-md border px-3 py-1 text-sm hover:bg-muted"
-                  onClick={() => setEditingNotes(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div
-              className="cursor-pointer rounded-md px-1 py-2 -mx-1 hover:bg-muted/50 min-h-[60px]"
-              onClick={() => {
-                setNotesDraft(book.notes ?? "");
-                setEditingNotes(true);
-              }}
-            >
-              {book.notes ? (
-                <p className="whitespace-pre-line text-sm leading-relaxed">
-                  {book.notes}
-                </p>
-              ) : (
-                <p className="text-sm italic text-muted-foreground">
-                  Click to add personal notes...
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* From Conversations */}
-        <div>
-          <h2 className="mb-2 font-semibold">From Conversations</h2>
-          {excerptsLoading ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          ) : excerpts.length === 0 ? (
-            <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                Insights from your AI reading companion conversations will appear here.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {excerpts.map((excerpt) => (
-                <div
-                  key={excerpt.id}
-                  className="group flex items-start gap-3 rounded-md border bg-muted/20 px-4 py-3"
-                >
-                  <MessageSquareQuote className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-relaxed">{excerpt.content}</p>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {new Date(excerpt.created_at).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </span>
-                      {excerpt.conversation_id && (
-                        <>
-                          <span>·</span>
-                          <Link
-                            to="/chat"
-                            className="hover:text-foreground hover:underline"
-                          >
-                            View conversation
-                          </Link>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
-                    onClick={() => handleDeleteExcerpt(excerpt.id)}
-                    title="Delete excerpt"
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {renderSections(order.below)}
 
         {authors.slice(0, MAX_AUTHOR_SECTIONS).map((name) => (
           <AlsoByAuthor key={name} bookId={book.id} author={name} />
