@@ -18,6 +18,11 @@ interface BookForEnrichment {
   author: string;
   isbn: string;
   summary: string | null;
+  cover_image_url: string | null;
+  page_count: number | null;
+  publisher: string | null;
+  publication_year: number | null;
+  format: string | null;
 }
 
 interface ISBNdbBookResponse {
@@ -117,20 +122,22 @@ async function fetchISBNdb(
   return null;
 }
 
+// Only fills blanks: --force must not overwrite details a reader edited or an
+// edition they chose on the book page.
 function buildUpdate(
   data: ISBNdbBookResponse,
-  existingSummary: string | null
+  existing: BookForEnrichment
 ): UpdateFields {
   const book = data.book;
   const update: UpdateFields = {
     isbndb_enriched_at: new Date().toISOString(),
   };
 
-  if (book.image) {
+  if (book.image && !existing.cover_image_url) {
     update.cover_image_url = book.image;
   }
 
-  if (existingSummary === null) {
+  if (existing.summary === null) {
     const synopsis = book.synopsis ? stripHtml(book.synopsis).trim() : "";
     const overview = book.overview ? stripHtml(book.overview).trim() : "";
     const text = synopsis || overview;
@@ -139,21 +146,21 @@ function buildUpdate(
     }
   }
 
-  if (book.pages && book.pages > 0) {
+  if (book.pages && book.pages > 0 && existing.page_count === null) {
     update.page_count = book.pages;
   }
 
-  if (book.publisher) {
+  if (book.publisher && !existing.publisher) {
     const trimmed = book.publisher.trim();
     if (trimmed) update.publisher = trimmed;
   }
 
-  if (book.date_published) {
+  if (book.date_published && existing.publication_year === null) {
     const year = parseYear(book.date_published);
     if (year) update.publication_year = year;
   }
 
-  if (book.binding) {
+  if (book.binding && !existing.format) {
     const trimmed = book.binding.trim();
     if (trimmed) update.format = trimmed;
   }
@@ -175,7 +182,7 @@ async function main() {
   // Step 1: Fetch books with ISBNs
   let query = supabase
     .from("books")
-    .select("id, title, author, isbn, summary")
+    .select("id, title, author, isbn, summary, cover_image_url, page_count, publisher, publication_year, format")
     .not("isbn", "is", null)
     .order("title");
 
@@ -199,7 +206,7 @@ async function main() {
   console.log(
     `  Mode: ${dryRun ? "dry-run" : "live"} | Books: ${booksToEnrich.length}`
   );
-  if (force) console.log("  --force: will re-enrich previously enriched books");
+  if (force) console.log("  --force: will re-check previously enriched books (fills blanks only)");
   console.log();
 
   if (booksToEnrich.length === 0) {
@@ -244,7 +251,7 @@ async function main() {
         console.log(`  ${progress} — ${book.title} (not in ISBNdb)`);
         notFound++;
       } else {
-        const update = buildUpdate(data, book.summary);
+        const update = buildUpdate(data, book);
         const { error: updateError } = await supabase
           .from("books")
           .update(update)

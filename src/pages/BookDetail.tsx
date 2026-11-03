@@ -20,6 +20,9 @@ import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
 import { StarRating } from "@/components/StarRating";
+import { ChangeEditionModal } from "@/components/ChangeEditionModal";
+import { EditionDetailsForm, type EditionDetails } from "@/components/EditionDetailsForm";
+import { mapToEditionFields, normalizeFormat, type ISBNdbBook } from "@/lib/isbndb";
 import { useChatContext } from "@/contexts/ChatContext";
 import type { Book, BookExcerpt, BookType } from "@/lib/types";
 
@@ -58,6 +61,8 @@ export function BookDetail() {
   const [excerptsLoading, setExcerptsLoading] = useState(true);
   const [awards, setAwards] = useState<BookAward[]>([]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [changingEdition, setChangingEdition] = useState(false);
 
   useEffect(() => {
     async function fetch() {
@@ -117,6 +122,40 @@ export function BookDetail() {
       }
     },
     [book],
+  );
+
+  const handleFieldsUpdate = useCallback(
+    async (fields: Parameters<typeof updateBook>[1], errorMessage: string) => {
+      if (!book) return;
+      const previous = book;
+      setBook({ ...book, ...fields });
+      try {
+        await updateBook(book.id, fields);
+      } catch {
+        setBook(previous);
+        setSaveError(errorMessage);
+      }
+    },
+    [book],
+  );
+
+  const handleSaveDetails = useCallback(
+    (details: EditionDetails) => {
+      setEditingDetails(false);
+      void handleFieldsUpdate(details, "Failed to save details");
+    },
+    [handleFieldsUpdate],
+  );
+
+  const handleSelectEdition = useCallback(
+    (edition: ISBNdbBook) => {
+      if (!book) return;
+      setChangingEdition(false);
+      setEditingDetails(false);
+      setCoverBroken(false);
+      void handleFieldsUpdate(mapToEditionFields(edition, book), "Failed to change edition");
+    },
+    [book, handleFieldsUpdate],
   );
 
   const handleDeleteExcerpt = useCallback(
@@ -193,6 +232,14 @@ export function BookDetail() {
           </p>
         )}
       </div>
+
+      {changingEdition && (
+        <ChangeEditionModal
+          book={book}
+          onSelect={handleSelectEdition}
+          onClose={() => setChangingEdition(false)}
+        />
+      )}
 
       {/* Two-column layout */}
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
@@ -500,8 +547,24 @@ export function BookDetail() {
 
           {/* Metadata */}
           <Card>
-            <CardHeader className="pb-2">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
               <CardTitle className="text-base">Metadata</CardTitle>
+              <div className="flex items-center gap-3">
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setChangingEdition(true)}
+                >
+                  Change edition
+                </button>
+                {!editingDetails && (
+                  <button
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setEditingDetails(true)}
+                  >
+                    <Pencil className="h-3 w-3" /> Edit details
+                  </button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
@@ -538,32 +601,42 @@ export function BookDetail() {
                   </div>
                 )}
 
-                {book.page_count && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Pages</dt>
-                    <dd>{book.page_count.toLocaleString()}</dd>
-                  </div>
-                )}
+                {editingDetails ? (
+                  <EditionDetailsForm
+                    book={book}
+                    onSave={handleSaveDetails}
+                    onCancel={() => setEditingDetails(false)}
+                  />
+                ) : (
+                  <>
+                    {book.page_count && (
+                      <div>
+                        <dt className="font-medium text-muted-foreground">Pages</dt>
+                        <dd>{book.page_count.toLocaleString()}</dd>
+                      </div>
+                    )}
 
-                {book.publication_year && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Published</dt>
-                    <dd>{book.publication_year}</dd>
-                  </div>
-                )}
+                    {book.publication_year && (
+                      <div>
+                        <dt className="font-medium text-muted-foreground">Published</dt>
+                        <dd>{book.publication_year}</dd>
+                      </div>
+                    )}
 
-                {book.publisher && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Publisher</dt>
-                    <dd>{book.publisher}</dd>
-                  </div>
-                )}
+                    {book.publisher && (
+                      <div>
+                        <dt className="font-medium text-muted-foreground">Publisher</dt>
+                        <dd>{book.publisher}</dd>
+                      </div>
+                    )}
 
-                {book.format && (
-                  <div>
-                    <dt className="font-medium text-muted-foreground">Format</dt>
-                    <dd>{book.format}</dd>
-                  </div>
+                    {book.format && (
+                      <div>
+                        <dt className="font-medium text-muted-foreground">Format</dt>
+                        <dd>{normalizeFormat(book.format)}</dd>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {book.date_started && (

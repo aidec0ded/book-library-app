@@ -21,13 +21,24 @@ import {
   mapToBookInsert,
   groupEditions,
   detectBookType,
+  normalizeFormat,
+  editionYearRange,
+  isSameWork,
+  baseTitle,
+  editionPages,
+  languageCode,
+  languageName,
+  preferredLanguage,
 } from "@/lib/isbndb";
-import type { ISBNdbBook } from "@/lib/isbndb";
+import type { EditionGroup, ISBNdbBook } from "@/lib/isbndb";
 import type { BookType } from "@/lib/types";
 import { Pagination } from "@/components/Pagination";
+import { EditionPicker } from "@/components/EditionPicker";
 import { capture } from "@/lib/posthog";
 
-const PAGE_SIZE = 20;
+// Large enough to return every edition of most books in one request, so they
+// group correctly and the reader's edition is there to choose
+const PAGE_SIZE = 100;
 
 function Section({
   label,
@@ -63,10 +74,15 @@ export function AddBook() {
 
   // Preview state
   const [selected, setSelected] = useState<ISBNdbBook | null>(null);
-  const [view, setView] = useState<"search" | "preview">("search");
+  const [view, setView] = useState<"search" | "editions" | "preview">("search");
+  const [selectedGroup, setSelectedGroup] = useState<EditionGroup | null>(null);
   const [status, setStatus] = useState("unread");
   const [previewImgBroken, setPreviewImgBroken] = useState(false);
   const [duplicate, setDuplicate] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [otherEdition, setOtherEdition] = useState<{
     id: string;
     title: string;
   } | null>(null);
@@ -187,6 +203,7 @@ export function AddBook() {
     setBookType(detectBookType(book.subjects));
     setAddError(null);
     setDuplicate(null);
+    setOtherEdition(null);
     setPreviewImgBroken(false);
 
     // Check for duplicate by ISBN
@@ -199,15 +216,53 @@ export function AddBook() {
         .maybeSingle();
       if (data) {
         setDuplicate(data);
+        return;
       }
+    }
+
+    // Soft check: another edition of this book. Narrow by title in the query,
+    // then compare properly, since stored titles and authors are spelled variously.
+    const titlePattern = baseTitle(book.title).replace(/[\\%_]/g, "\\$&");
+    const { data: sameTitle } = await supabase
+      .from("books")
+      .select("id, title, author")
+      .ilike("title", `%${titlePattern}%`)
+      .limit(25);
+    const match = sameTitle?.find((row) =>
+      isSameWork(row, { title: book.title, author: book.authors?.[0] }),
+    );
+    if (match) setOtherEdition(match);
+  }
+
+  function selectGroup(group: EditionGroup) {
+    if (group.editions.length === 1) {
+      setSelectedGroup(null);
+      void selectBook(group.best);
+    } else {
+      setSelectedGroup(group);
+      setView("editions");
     }
   }
 
   function backToResults() {
     setView("search");
     setSelected(null);
+    setSelectedGroup(null);
     setDuplicate(null);
+    setOtherEdition(null);
     setAddError(null);
+  }
+
+  function backFromPreview() {
+    if (selectedGroup) {
+      setView("editions");
+      setSelected(null);
+      setDuplicate(null);
+      setOtherEdition(null);
+      setAddError(null);
+    } else {
+      backToResults();
+    }
   }
 
   async function handleAdd(statusOverride?: string) {
@@ -250,6 +305,35 @@ export function AddBook() {
 
   const totalPages = Math.ceil(resultTotal / PAGE_SIZE);
 
+  // --- Editions view ---
+  if (view === "editions" && selectedGroup) {
+    const book = selectedGroup.best;
+    return (
+      <div className="space-y-6">
+        <button
+          onClick={backToResults}
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to results
+        </button>
+
+        <div>
+          <h1 className="font-serif text-2xl font-bold">Which edition do you have?</h1>
+          <p className="mt-1 text-muted-foreground">
+            {baseTitle(book.title)} · {book.authors?.join(", ") ?? "Unknown"}
+          </p>
+        </div>
+
+        <EditionPicker
+          editions={selectedGroup.editions}
+          notListedHint="Not listed? Pick the closest one. You can edit its format, publisher, and page count after adding it."
+          onSelect={(edition) => void selectBook(edition)}
+        />
+      </div>
+    );
+  }
+
   // --- Preview view ---
   if (view === "preview" && selected) {
     const isbn = selected.isbn13 || selected.isbn;
@@ -262,6 +346,13 @@ export function AddBook() {
       : "";
     const summaryText = synopsis || overview;
 
+    const previewPages = editionPages(selected);
+    const previewFormat = normalizeFormat(selected.binding);
+    // Only worth pointing out when it isn't the reader's own language
+    const selectedLanguage = languageCode(selected.language);
+    const previewLanguage =
+      selectedLanguage && selectedLanguage !== preferredLanguage() ? selectedLanguage : null;
+
     let publicationYear: string | null = null;
     if (selected.date_published) {
       const match = selected.date_published.match(/((?:19|20)\d{2})/);
@@ -271,12 +362,26 @@ export function AddBook() {
     return (
       <div className="space-y-6">
         <button
-          onClick={backToResults}
+          onClick={backFromPreview}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to results
+          {selectedGroup ? "Back to editions" : "Back to results"}
         </button>
+
+        {/* Another edition already in the library */}
+        {otherEdition && (
+          <div className="flex items-start gap-3 rounded-lg border p-4 text-sm">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+            <p>
+              You already have another edition of this book:{" "}
+              <Link to={`/books/${otherEdition.id}`} className="underline">
+                {otherEdition.title}
+              </Link>
+              . You can still add this one.
+            </p>
+          </div>
+        )}
 
         {/* Duplicate warning */}
         {duplicate && (
@@ -339,13 +444,12 @@ export function AddBook() {
               {publicationYear && (
                 <Section label="Published">{publicationYear}</Section>
               )}
-              {selected.pages && selected.pages > 0 && (
-                <Section label="Pages">
-                  {selected.pages.toLocaleString()}
-                </Section>
+              {previewPages && (
+                <Section label="Pages">{previewPages.toLocaleString()}</Section>
               )}
-              {selected.binding && (
-                <Section label="Format">{selected.binding.trim()}</Section>
+              {previewFormat && <Section label="Format">{previewFormat}</Section>}
+              {previewLanguage && (
+                <Section label="Language">{languageName(previewLanguage)}</Section>
               )}
               {isbn && <Section label="ISBN">{isbn}</Section>}
             </dl>
@@ -530,6 +634,7 @@ export function AddBook() {
               {groupedResults.map((group) => {
                 const book = group.best;
                 const author = book.authors?.join(", ") ?? "Unknown";
+                const hasEditions = group.editions.length > 1;
                 let year: string | null = null;
                 if (book.date_published) {
                   const match = book.date_published.match(
@@ -540,7 +645,7 @@ export function AddBook() {
                 return (
                   <button
                     key={group.key}
-                    onClick={() => void selectBook(book)}
+                    onClick={() => selectGroup(group)}
                     className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50"
                   >
                     {book.image ? (
@@ -557,8 +662,10 @@ export function AddBook() {
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="truncate font-medium">{book.title}</p>
-                        {group.editions.length > 1 && (
+                        <p className="truncate font-medium">
+                          {hasEditions ? baseTitle(book.title) : book.title}
+                        </p>
+                        {hasEditions && (
                           <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                             {group.editions.length} editions
                           </span>
@@ -568,9 +675,11 @@ export function AddBook() {
                         {author}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {[year, book.publisher?.trim()]
-                          .filter(Boolean)
-                          .join(" · ")}
+                        {hasEditions
+                          ? editionYearRange(group.editions)
+                          : [year, book.publisher?.trim()]
+                              .filter(Boolean)
+                              .join(" · ")}
                       </p>
                     </div>
                   </button>

@@ -18,6 +18,12 @@ export async function updateBook(
       | "cover_image_url"
       | "isbn"
       | "book_type"
+      | "publisher"
+      | "publication_year"
+      | "page_count"
+      | "format"
+      | "summary"
+      | "isbndb_enriched_at"
     >
   >,
 ): Promise<void> {

@@ -107,6 +107,90 @@ export async function lookupBook(isbn: string): Promise<ISBNdbBook | null> {
   }
 }
 
+// --- Languages ---
+
+// ISBNdb mixes codes ("eng", "en", "en_US") and leaves many blank
+const ISO3_TO_ISO2: Record<string, string> = {
+  ara: "ar", cat: "ca", ces: "cs", chi: "zh", cze: "cs", dan: "da", deu: "de",
+  dut: "nl", ell: "el", eng: "en", fin: "fi", fra: "fr", fre: "fr", ger: "de",
+  gre: "el", heb: "he", hin: "hi", hun: "hu", ita: "it", jpn: "ja", kor: "ko",
+  nld: "nl", nor: "no", pol: "pl", por: "pt", ron: "ro", rum: "ro", rus: "ru",
+  spa: "es", swe: "sv", tur: "tr", ukr: "uk", zho: "zh",
+};
+
+export function languageCode(raw?: string | null): string | null {
+  const primary = raw?.trim().toLowerCase().split(/[-_]/)[0];
+  if (!primary) return null;
+  return ISO3_TO_ISO2[primary] ?? primary;
+}
+
+export function preferredLanguage(): string {
+  const browser = typeof navigator !== "undefined" ? navigator.language : null;
+  return languageCode(browser) ?? "en";
+}
+
+export function languageName(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+// --- Formats ---
+
+export type FormatCategory = "hardcover" | "paperback" | "ebook" | "audiobook" | "other";
+
+export const FORMAT_OPTIONS = [
+  "Hardcover",
+  "Paperback",
+  "Mass Market Paperback",
+  "eBook",
+  "Audiobook",
+  "Audio CD",
+] as const;
+
+// ISBNdb bindings vary in case and wording ("hardcover", "audioCD", "digital_audiobook")
+export function normalizeFormat(binding?: string | null): string | null {
+  const raw = binding?.trim();
+  if (!raw) return null;
+  const b = raw.toLowerCase();
+  if (b.includes("mass market")) return "Mass Market Paperback";
+  if (/hard\s?(cover|back)/.test(b)) return "Hardcover";
+  if (/paperback|soft\s?cover|softback/.test(b)) return "Paperback";
+  if (/audio\s?cd|mp3\s?cd/.test(b)) return "Audio CD";
+  if (/audio/.test(b)) return "Audiobook";
+  if (/e-?book|kindle|epub|digital/.test(b)) return "eBook";
+  return raw;
+}
+
+export function formatCategory(binding?: string | null): FormatCategory {
+  switch (normalizeFormat(binding)) {
+    case "Hardcover":
+      return "hardcover";
+    case "Paperback":
+    case "Mass Market Paperback":
+      return "paperback";
+    case "eBook":
+      return "ebook";
+    case "Audiobook":
+    case "Audio CD":
+      return "audiobook";
+    default:
+      return "other";
+  }
+}
+
+// Audio listings report placeholder page counts (e.g. 1 for a CD set)
+export function editionPages(book: ISBNdbBook): number | null {
+  if (!book.pages || book.pages <= 0) return null;
+  return formatCategory(book.binding) === "audiobook" ? null : book.pages;
+}
+
+export function editionYear(book: ISBNdbBook): number | null {
+  return book.date_published ? parseYear(book.date_published) : null;
+}
+
 // --- Edition grouping ---
 
 export interface EditionGroup {
@@ -115,7 +199,54 @@ export interface EditionGroup {
   editions: ISBNdbBook[];
 }
 
-function normalizeWorkKey(title: string, author?: string): string {
+const NAME_PARTICLES = /^(de|del|della|der|di|du|la|le|st|van|von)\s/;
+
+function normalizeText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * ISBNdb lists one person as both "Andy Weir" and "Weir, Andy", and a stored
+ * author may be a comma-joined list. Reduce to the first author's name tokens,
+ * sorted, so word order doesn't matter.
+ */
+function normalizeAuthorKey(author?: string | null): string {
+  const raw = (author ?? "").replace(/\b\d{4}\b|-/g, " ");
+  const [first, second] = raw.split(",").map(normalizeText).filter(Boolean);
+  if (!first) return "unknown";
+
+  let name = first;
+  if (second) {
+    const isSurnameFirst = !first.includes(" ") || NAME_PARTICLES.test(`${first} `);
+    if (isSurnameFirst && !/^(jr|sr|ii|iii|iv)$/.test(second)) {
+      name = `${first} ${second}`;
+    }
+  }
+
+  // Treat "J. R. R." and "JRR" alike by joining runs of initials
+  const tokens: string[] = [];
+  let initials = "";
+  for (const token of name.split(" ")) {
+    if (/^(jr|sr|ii|iii|iv)$/.test(token)) continue;
+    if (token.length === 1) {
+      initials += token;
+      continue;
+    }
+    if (initials) tokens.push(initials);
+    initials = "";
+    tokens.push(token);
+  }
+  if (initials) tokens.push(initials);
+  return tokens.sort().join(" ") || "unknown";
+}
+
+function normalizeWorkTitle(title: string): string {
   let t = title.toLowerCase();
   // Remove subtitles and parentheticals
   t = t.replace(/\s*[:(\[].*$/, "").trim();
@@ -130,36 +261,89 @@ function normalizeWorkKey(title: string, author?: string): string {
   t = t.replace(/,\s*(the|a|an)$/i, "").trim();
   // Strip leading articles
   t = t.replace(/^(the|a|an)\s+/i, "").trim();
-  // Remove punctuation, collapse whitespace
-  t = t.replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
-
-  const a = (author ?? "unknown")
-    .split(",")[0] // first author only
-    .toLowerCase()
-    .replace(/[^\w\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return `${t}|${a}`;
+  return normalizeText(t);
 }
 
-function editionScore(book: ISBNdbBook): number {
+function normalizeWorkKey(title: string, author?: string | null): string {
+  return `${normalizeWorkTitle(title)}|${normalizeAuthorKey(author)}`;
+}
+
+export function isSameWork(
+  a: { title: string; author?: string | null },
+  b: { title: string; author?: string | null },
+): boolean {
+  return normalizeWorkKey(a.title, a.author) === normalizeWorkKey(b.title, b.author);
+}
+
+/** The title without its subtitle, for searching by work. */
+export function baseTitle(title: string): string {
+  return title.replace(/\s*[:(\[].*$/, "").trim() || title;
+}
+
+// Study guides, summaries, and box sets share a title with the book itself
+const NON_EDITION_RE =
+  /\b(summary|study guide|supersummary|analysis of|workbook|sparknotes|box(ed)? set|collection set|\d[- ]book|books? collection|trilogy set)\b/i;
+
+export function isLikelyNonEdition(book: ISBNdbBook): boolean {
+  return NON_EDITION_RE.test(`${book.title} ${book.authors?.join(" ") ?? ""}`);
+}
+
+function languageRank(book: ISBNdbBook, preferred: string): number {
+  const code = languageCode(book.language);
+  if (code === preferred) return 0;
+  return code === null ? 1 : 2;
+}
+
+function editionScore(book: ISBNdbBook, preferred: string): number {
   let score = 0;
+  const language = languageRank(book, preferred);
+  if (language === 0) score += 20;
+  else if (language === 1) score += 5;
+  if (isLikelyNonEdition(book)) score -= 30;
   if (book.image) score += 10;
   if (book.synopsis || book.overview) score += 3;
-  if (book.pages && book.pages > 0) score += 2;
+  if (editionPages(book)) score += 2;
   if (book.publisher) score += 1;
-  const binding = (book.binding ?? "").toLowerCase();
-  if (binding.includes("hardcover")) score += 5;
-  else if (binding.includes("paperback")) score += 4;
-  else if (binding.includes("ebook") || binding.includes("kindle")) score += 1;
+  const category = formatCategory(book.binding);
+  if (category === "hardcover") score += 5;
+  else if (category === "paperback") score += 4;
+  else if (category === "ebook") score += 1;
+  // Prefer an edition that's actually out over an upcoming one
+  const year = editionYear(book);
+  if (year && year > new Date().getFullYear()) score -= 2;
   return score;
+}
+
+/** Your language first, then blanks, then the rest; oldest first within each. */
+export function sortEditions(
+  editions: ISBNdbBook[],
+  preferred = preferredLanguage(),
+): ISBNdbBook[] {
+  return [...editions].sort((a, b) => {
+    const nonEdition = Number(isLikelyNonEdition(a)) - Number(isLikelyNonEdition(b));
+    if (nonEdition !== 0) return nonEdition;
+    const language = languageRank(a, preferred) - languageRank(b, preferred);
+    if (language !== 0) return language;
+    return (editionYear(a) ?? 9999) - (editionYear(b) ?? 9999);
+  });
+}
+
+export function editionYearRange(editions: ISBNdbBook[]): string | null {
+  const years = editions
+    .filter((e) => !isLikelyNonEdition(e))
+    .map(editionYear)
+    .filter((y): y is number => y !== null);
+  if (years.length === 0) return null;
+  const min = Math.min(...years);
+  const max = Math.max(...years);
+  return min === max ? String(min) : `${min}–${max}`;
 }
 
 export function groupEditions(
   books: ISBNdbBook[],
   query?: string,
 ): EditionGroup[] {
+  const preferred = preferredLanguage();
   const groups = new Map<string, ISBNdbBook[]>();
 
   for (const book of books) {
@@ -172,33 +356,64 @@ export function groupEditions(
     }
   }
 
+  // Listings with no author join the largest same-titled group
+  for (const [key, editions] of groups) {
+    const [title, author] = key.split("|");
+    if (author !== "unknown") continue;
+    let target: ISBNdbBook[] | null = null;
+    for (const [otherKey, other] of groups) {
+      if (otherKey === key || otherKey.split("|")[0] !== title) continue;
+      if (!target || other.length > target.length) target = other;
+    }
+    if (target) {
+      target.push(...editions);
+      groups.delete(key);
+    }
+  }
+
   const result: EditionGroup[] = [];
   for (const [key, editions] of groups) {
-    editions.sort((a, b) => editionScore(b) - editionScore(a));
+    editions.sort((a, b) => editionScore(b, preferred) - editionScore(a, preferred));
     result.push({ key, best: editions[0], editions });
   }
 
-  // Sort groups so author-match results come first (helps when searching by author name)
-  if (query) {
-    const q = query.toLowerCase().trim();
-    result.sort((a, b) => {
-      const aMatch = a.best.authors?.some(
-        (auth) =>
-          auth.toLowerCase().includes(q) || q.includes(auth.toLowerCase()),
-      )
-        ? 1
-        : 0;
-      const bMatch = b.best.authors?.some(
-        (auth) =>
-          auth.toLowerCase().includes(q) || q.includes(auth.toLowerCase()),
-      )
-        ? 1
-        : 0;
-      return bMatch - aMatch;
-    });
-  }
+  // Author matches first (helps when searching by author name), then the
+  // works with the most editions; study guides and box sets sink to the end
+  const q = query?.toLowerCase().trim();
+  const authorMatch = (group: EditionGroup) =>
+    q &&
+    group.best.authors?.some(
+      (auth) => auth.toLowerCase().includes(q) || q.includes(auth.toLowerCase()),
+    )
+      ? 1
+      : 0;
+  result.sort(
+    (a, b) =>
+      Number(isLikelyNonEdition(a.best)) - Number(isLikelyNonEdition(b.best)) ||
+      authorMatch(b) - authorMatch(a) ||
+      b.editions.length - a.editions.length,
+  );
 
   return result;
+}
+
+/** Find the editions of one book within a set of search results. */
+export function findWorkEditions(
+  books: ISBNdbBook[],
+  title: string,
+  author?: string | null,
+): ISBNdbBook[] {
+  const groups = groupEditions(books);
+  const exact = groups.find((g) => g.key === normalizeWorkKey(title, author));
+  if (exact) return exact.editions;
+  // Stored author may be spelled differently — fall back to the largest
+  // group with this title, excluding study guides and the like
+  const workTitle = normalizeWorkTitle(title);
+  return (
+    groups.find(
+      (g) => g.key.split("|")[0] === workTitle && !isLikelyNonEdition(g.best),
+    )?.editions ?? []
+  );
 }
 
 // --- Book type detection ---
@@ -233,13 +448,9 @@ export function mapToBookInsert(book: ISBNdbBook, status: string): BookInsert {
     publicationYear = parseYear(book.date_published);
   }
 
-  let pageCount: number | null = null;
-  if (book.pages && book.pages > 0) {
-    pageCount = book.pages;
-  }
-
+  const pageCount = editionPages(book);
   const publisher = book.publisher?.trim() || null;
-  const format = book.binding?.trim() || null;
+  const format = normalizeFormat(book.binding);
 
   return {
     title: book.title,
@@ -256,5 +467,21 @@ export function mapToBookInsert(book: ISBNdbBook, status: string): BookInsert {
     isbndb_enriched_at: new Date().toISOString(),
     is_favorite: false,
     is_up_next: false,
+  };
+}
+
+/** The fields that describe a specific edition, for switching a library book to it. */
+export function mapToEditionFields(book: ISBNdbBook, existing: { summary: string | null }) {
+  const mapped = mapToBookInsert(book, "unread");
+  return {
+    isbn: mapped.isbn,
+    publisher: mapped.publisher,
+    publication_year: mapped.publication_year,
+    page_count: mapped.page_count,
+    format: mapped.format,
+    isbndb_enriched_at: mapped.isbndb_enriched_at,
+    // Keep the current cover and summary when this edition has none to offer
+    ...(mapped.cover_image_url && { cover_image_url: mapped.cover_image_url }),
+    ...(!existing.summary && mapped.summary && { summary: mapped.summary }),
   };
 }

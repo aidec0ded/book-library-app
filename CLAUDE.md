@@ -27,7 +27,7 @@ npx tsx scripts/tag-vibes.ts --force            # re-tag books that already have
 npx tsx scripts/enrich-isbndb.ts               # enrich books via ISBNdb (cover images, metadata)
 npx tsx scripts/enrich-isbndb.ts --dry-run     # list books that would be enriched, no API calls
 npx tsx scripts/enrich-isbndb.ts --limit 10    # process only first 10 books
-npx tsx scripts/enrich-isbndb.ts --force       # re-enrich books already looked up
+npx tsx scripts/enrich-isbndb.ts --force       # re-check books already looked up (fills blanks only, never overwrites edits)
 npm run dev:server                             # start chat API server (port 3001, auto-restarts)
 npx tsx scripts/generate-profile.ts            # generate reader profile via Claude API
 npx tsx scripts/generate-profile.ts --dry-run  # preview prompt, no API call or DB write
@@ -127,8 +127,11 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/books.ts` — Book update helper (type-constrained to editable fields)
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
-- `src/pages/AddBook.tsx` — ISBNdb search, preview, and add-to-library flow
-- `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping)
+- `src/pages/AddBook.tsx` — ISBNdb search, edition picker, preview, and add-to-library flow
+- `src/components/EditionPicker.tsx` — Edition list with format and language filters (shared by Add Book and Change edition)
+- `src/components/ChangeEditionModal.tsx` — Switch a library book to another edition from the book page
+- `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, and publication year
+- `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping) + edition grouping and language/format normalization
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Select, Separator, Textarea)
 - `src/hooks/useChatSession.ts` — Chat state machine (shared between full page and floating panel)
 - `src/contexts/ChatContext.tsx` — React context: chat session + panel open/close state
@@ -188,7 +191,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ### What's Built
 
-**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
+**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
