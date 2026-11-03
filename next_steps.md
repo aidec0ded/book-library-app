@@ -9,10 +9,10 @@
 **Conversations get a subject**
 
 - Link a conversation to a book — `book_id` on `conversations`. Nothing connects the two today, so earlier chats about a book can't be found
-- "Discuss this book" — resume the latest chat about the book with a clear "Start new", or start one with openers based on status (focus questions while reading). Today it only fills the text box, overwrites what you typed, and lands in whatever chat is open
+- "Discuss this book" — resume the latest chat about the book with a clear "Start new" (decided), or start one with openers based on status (focus questions while reading). Today it only fills the text box, overwrites what you typed, and lands in whatever chat is open
 - Book context for the AI — send the book to the server, and give the AI a card with its summary, notes, dates, rating, excerpts, and list context. It can't see any of these today
 - Conversation links — `/chat/:id`, so "View conversation" opens the right one
-- Manage conversations — new chat and a conversation list in the panel, rename, delete, sort by latest activity, and load past the 20 most recently started. Deleting keeps excerpts (the foreign key already sets `conversation_id` to null); say plainly that memory and the profile can't be traced back to one chat
+- Manage conversations — new chat and a conversation list in the panel, rename, delete, sort by latest activity, and load past the 20 most recently started. Deleting keeps excerpts (the foreign key already sets `conversation_id` to null), and says plainly that memory and the profile can't be traced back to one chat (decided)
 - Book page conversations — list conversations about the book alongside its excerpts, and hide the empty placeholder
 
 **Quick context wins**
@@ -36,10 +36,10 @@
 **Excerpts**
 
 - "Save to book" on any message, so saving doesn't depend on the AI offering. No user has ever saved an excerpt, and only one assistant message has ever offered
-- AI proposals as a card to tap, instead of asking in prose. The prompt tells it to offer but also says never to say "Let me save that"
+- Save without announcing — the "no narration" rule is deliberate, because announcing saves felt clunky, so the AI shouldn't offer or ask in prose. Choose between saving silently during the chat and a pass after the conversation ends, then remove the prompt's "offer" and "always confirm" instructions. Chats started from a book page save to that book, with no title matching
 - Tell the reader when a save fails — a title that doesn't match is currently never mentioned, and a partial match can attach to the wrong book
 - Feed excerpts into the profile and book context — they only reach the book page today
-- Decide whether free readers can save by hand (recommended: yes, it costs nothing to run)
+- Free readers can save by hand (decided), since it costs nothing to run. Saving done by the AI stays on the paid plan, since it costs API calls
 
 **Long-term continuity**
 
@@ -49,7 +49,7 @@
 - Conversation summaries, and condensing the older parts of very long conversations — history has no limit, so a very long one will eventually fail
 - Better profile input — it reads the last 100 messages cut to 500 characters each, skips excerpts, and can take about 30 days to reflect a conversation. The first profile skips onboarding chat entirely
 - Prompt caching — the cache lasts 5 minutes, shorter than many pauses in a conversation about a book, so consider a longer one
-- Library index cost — each model call sends the whole index (about 45,000 tokens on average, 51,000 at most), and a reply averages about four calls. Check cost per reader before charging at scale
+- Library index — keep sending the whole index on every call for now (decided). Each call sends about 45,000 tokens on average, 51,000 at most, and a reply averages about four calls. A deeper look at how context gets served is planned for later
 
 ---
 
