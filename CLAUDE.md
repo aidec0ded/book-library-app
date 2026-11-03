@@ -118,7 +118,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation
 - `src/lib/posthog.ts` — PostHog analytics wrapper (init, identify, reset, capture, pageview hook). No-op when VITE_POSTHOG_KEY unset.
 - `src/contexts/AuthContext.tsx` — Supabase Auth context with session state + PostHog identify/reset, wraps entire app
-- `server/auth.ts` — Server-side auth utilities (JWT verification, per-user Supabase client creation)
+- `server/auth.ts` — Server-side auth utilities (`authenticateRequest` checks a login token with Supabase and returns the user and a per-user Supabase client)
 - `src/components/Layout.tsx` — App shell with sidebar + `<Outlet />`, wraps protected routes in ChatProvider
 - `src/components/Sidebar.tsx` — Collapsible navigation sidebar (Library, Syllabi, Shelves, Recommendations, Releases, Chat, Profile)
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
@@ -218,7 +218,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Analytics** — PostHog client-side integration tracking pageviews, auth events, onboarding funnel, chat engagement, book additions, imports, releases, checkout, and shelf creation. Graceful no-op when key unset.
 
-**Account Management** — Settings page with password reset, library CSV export, full JSON data export, subscription management via Stripe Customer Portal, and account deletion with confirmation.
+**Account Management** — Settings page with password reset, library CSV export, subscription management via Stripe Customer Portal, and account deletion with confirmation.
 
 ### Future
 

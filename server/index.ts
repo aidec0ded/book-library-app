@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
-import { createUserClient, getUserIdFromToken } from "./auth.js";
+import { authenticateRequest, type createUserClient } from "./auth.js";
 import { buildLibraryIndex } from "./library-index.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
@@ -321,9 +321,7 @@ async function handleChat(
   let supabase;
   let userId: string;
   try {
-    supabase = createUserClient(req.headers.authorization);
-    const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
-    userId = getUserIdFromToken(token);
+    ({ supabase, userId } = await authenticateRequest(req.headers.authorization));
   } catch {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -1031,7 +1029,7 @@ async function handleIsbndbProxy(
 ): Promise<void> {
   // Verify auth — ISBNdb proxy requires authenticated user
   try {
-    createUserClient(req.headers.authorization);
+    await authenticateRequest(req.headers.authorization);
   } catch {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -1110,20 +1108,18 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.method === "GET" && url === "/api/greeting") {
-      // Auth: create per-request client for greeting
-      let userSupabase;
-      let userId: string;
-      try {
-        userSupabase = createUserClient(req.headers.authorization);
-        const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
-        userId = getUserIdFromToken(token);
-      } catch {
-        res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Unauthorized" }));
-        return;
-      }
-
       void (async () => {
+        // Auth: create per-request client for greeting
+        let userSupabase;
+        let userId: string;
+        try {
+          ({ supabase: userSupabase, userId } = await authenticateRequest(req.headers.authorization));
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
         try {
           const result = await getGreeting(userSupabase, anthropic, userId);
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -1178,8 +1174,7 @@ const server = http.createServer((req, res) => {
       void (async () => {
         let userId: string;
         try {
-          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
-          userId = getUserIdFromToken(token);
+          ({ userId } = await authenticateRequest(req.headers.authorization));
         } catch {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -1205,8 +1200,7 @@ const server = http.createServer((req, res) => {
       void (async () => {
         let userId: string;
         try {
-          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
-          userId = getUserIdFromToken(token);
+          ({ userId } = await authenticateRequest(req.headers.authorization));
         } catch {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -1271,9 +1265,7 @@ const server = http.createServer((req, res) => {
         let userId: string;
         let supabase;
         try {
-          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
-          userId = getUserIdFromToken(token);
-          supabase = createUserClient(req.headers.authorization);
+          ({ supabase, userId } = await authenticateRequest(req.headers.authorization));
         } catch {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -1315,8 +1307,7 @@ const server = http.createServer((req, res) => {
       void (async () => {
         let userId: string;
         try {
-          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
-          userId = getUserIdFromToken(token);
+          ({ userId } = await authenticateRequest(req.headers.authorization));
         } catch {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -1350,8 +1341,7 @@ const server = http.createServer((req, res) => {
       void (async () => {
         let userId: string;
         try {
-          const token = req.headers.authorization?.replace("Bearer ", "") ?? "";
-          userId = getUserIdFromToken(token);
+          ({ userId } = await authenticateRequest(req.headers.authorization));
         } catch {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));

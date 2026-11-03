@@ -18,12 +18,18 @@ export function createUserClient(authHeader: string | undefined): SupabaseClient
 }
 
 /**
- * Extract user_id from a JWT without an API call.
- * The `sub` claim in a Supabase JWT is the user's UUID.
+ * Check a request's login token with Supabase and return who it belongs to. A token's
+ * contents can't be trusted on their own: anyone can write a token naming another user,
+ * and only its signature, which Supabase checks here, shows it's real.
  */
-export function getUserIdFromToken(token: string): string {
-  const payload = JSON.parse(
-    Buffer.from(token.split(".")[1], "base64").toString(),
-  );
-  return payload.sub as string;
+export async function authenticateRequest(
+  authHeader: string | undefined,
+): Promise<{ supabase: SupabaseClient; userId: string }> {
+  const supabase = createUserClient(authHeader);
+  const token = authHeader!.replace("Bearer ", "");
+
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) throw new Error("Invalid authorization token");
+
+  return { supabase, userId: data.user.id };
 }

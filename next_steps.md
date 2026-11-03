@@ -1,3 +1,58 @@
+### 💬 Chat
+
+**Security**
+
+- Verify login tokens — the server read the user ID from the token without checking its signature, so a forged token could delete another reader's account or open their billing portal, and any bearer value could use the ISBNdb proxy. Every endpoint now checks with Supabase **[DONE]**
+- Malformed chat requests — `JSON.parse` in `handleChat` sits outside any `try`, and nothing catches the rejection, so a signed-in user sending bad JSON can probably crash the server. Return a 400 instead
+- Free message counter — read then written rather than updated atomically, so requests sent at the same time can slip past the limit
+
+**Conversations get a subject**
+
+- Link a conversation to a book — `book_id` on `conversations`. Nothing connects the two today, so earlier chats about a book can't be found
+- "Discuss this book" — resume the latest chat about the book with a clear "Start new", or start one with openers based on status (focus questions while reading). Today it only fills the text box, overwrites what you typed, and lands in whatever chat is open
+- Book context for the AI — send the book to the server, and give the AI a card with its summary, notes, dates, rating, excerpts, and list context. It can't see any of these today
+- Conversation links — `/chat/:id`, so "View conversation" opens the right one
+- Manage conversations — new chat and a conversation list in the panel, rename, delete, sort by latest activity, and load past the 20 most recently started. Deleting keeps excerpts (the foreign key already sets `conversation_id` to null); say plainly that memory and the profile can't be traced back to one chat
+- Book page conversations — list conversations about the book alongside its excerpts, and hide the empty placeholder
+
+**Quick context wins**
+
+- Load memory automatically, with a size cap — today it's only read if the AI chooses to check, and there's no limit on its size
+- Refresh the library index after the AI changes a book — it can be 10 minutes out of date, even about its own changes
+- Save a short record of each AI action — only message text is saved, so in later turns the AI has no record of what it did
+- Make the prompt plan-aware — free users are told about syllabus, path, and excerpt tools they don't have
+
+**Trust and reliability**
+
+- Show AI actions in the thread — "Added *Dune* to wishlist" with a link, and refresh the page behind the panel. Today actions are invisible
+- Stop and retry — `abortRef` is set but never used, and there's no way to resend after an error
+- Stuck and lost replies — a stream that ends without `done` leaves chat "streaming" until reload, and errors lose the partial reply
+- New Chat during a reply — `newChat` isn't guarded, so the reply can land in the new chat
+- Formatting — replace the hand-written formatter with proper markdown, and link book titles
+- Free limit — show it before someone types, keep the counter current, and don't lose the typed message
+- Phone layout — `/chat` uses `100vh`, which probably runs behind mobile browser bars. Check on a device
+- Conversation titles — generated after the client refreshes its list, so a new chat probably shows no title until the next refresh
+
+**Excerpts**
+
+- "Save to book" on any message, so saving doesn't depend on the AI offering. No user has ever saved an excerpt, and only one assistant message has ever offered
+- AI proposals as a card to tap, instead of asking in prose. The prompt tells it to offer but also says never to say "Let me save that"
+- Tell the reader when a save fails — a title that doesn't match is currently never mentioned, and a partial match can attach to the wrong book
+- Feed excerpts into the profile and book context — they only reach the book page today
+- Decide whether free readers can save by hand (recommended: yes, it costs nothing to run)
+
+**Long-term continuity**
+
+- "What your companion remembers" — view, edit, and delete memory. Readers can't see it today
+- Export — conversations, memory, excerpts, and the profile. The only export is the book CSV
+- AI tools to read a book's details and search past conversations
+- Conversation summaries, and condensing the older parts of very long conversations — history has no limit, so a very long one will eventually fail
+- Better profile input — it reads the last 100 messages cut to 500 characters each, skips excerpts, and can take about 30 days to reflect a conversation. The first profile skips onboarding chat entirely
+- Prompt caching — the cache lasts 5 minutes, shorter than many pauses in a conversation about a book, so consider a longer one
+- Library index cost — each model call sends the whole index (about 45,000 tokens on average, 51,000 at most), and a reply averages about four calls. Check cost per reader before charging at scale
+
+---
+
 ### 📖 Book Page
 
 **First pass**
