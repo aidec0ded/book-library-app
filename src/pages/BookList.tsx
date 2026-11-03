@@ -16,6 +16,7 @@ import { ReadingQuote } from "@/components/ReadingQuote";
 import { ShelvesView } from "@/components/ShelvesView";
 import { TagPillBar } from "@/components/TagPillBar";
 import { BookCoverCard } from "@/components/BookCoverCard";
+import { fetchBooksByAuthor } from "@/lib/books";
 import { fetchCanonicalVibesForBooks } from "@/lib/vibes";
 import { fetchDistinctGenres } from "@/lib/filters";
 import { fetchCanonicalTags } from "@/lib/canonical-vibes";
@@ -308,6 +309,7 @@ export function BookList() {
   const initialPagesMax = searchParams.get("pages_max") ?? "";
   const initialYearMin = searchParams.get("year_min") ?? "";
   const initialYearMax = searchParams.get("year_max") ?? "";
+  const initialAuthor = searchParams.get("author") ?? "";
   const view = searchParams.get("view") === "shelves" ? "shelves" : "list";
 
   const [query, setQuery] = useState(initialQuery);
@@ -327,6 +329,7 @@ export function BookList() {
   const [pagesMax, setPagesMax] = useState(initialPagesMax);
   const [yearMin, setYearMin] = useState(initialYearMin);
   const [yearMax, setYearMax] = useState(initialYearMax);
+  const [author, setAuthor] = useState(initialAuthor);
   const [filtersOpen, setFiltersOpen] = useState(
     hasActiveFilters({
       status: initialStatus,
@@ -380,6 +383,7 @@ export function BookList() {
     if (pagesMax) params.pages_max = pagesMax;
     if (yearMin) params.year_min = yearMin;
     if (yearMax) params.year_max = yearMax;
+    if (author) params.author = author;
     if (view === "shelves") params.view = "shelves";
     setSearchParams(params, { replace: true });
   }, [
@@ -394,6 +398,7 @@ export function BookList() {
     pagesMax,
     yearMin,
     yearMax,
+    author,
     view,
     setSearchParams,
   ]);
@@ -458,6 +463,17 @@ export function BookList() {
       q = q.or(`title.ilike.${pattern},author.ilike.${pattern}`);
     }
 
+    if (author) {
+      try {
+        const authorBooks = await fetchBooksByAuthor(author);
+        q = q.in("id", authorBooks.map((b) => b.id));
+      } catch (err) {
+        console.error("Error fetching author's books:", err);
+        setLoading(false);
+        return;
+      }
+    }
+
     const { data, count: totalCount, error } = await q;
 
     if (error) {
@@ -492,6 +508,7 @@ export function BookList() {
     pagesMax,
     yearMin,
     yearMax,
+    author,
   ]);
 
   useEffect(() => {
@@ -611,6 +628,21 @@ export function BookList() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+
+            {author && (
+              <div className="flex items-center gap-2 text-sm">
+                <span>
+                  Books by <span className="font-medium">{author}</span>
+                </span>
+                <button
+                  onClick={() => { setAuthor(""); setPage(1); }}
+                  aria-label={`Stop showing only books by ${author}`}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
 
             {/* Filter toggle */}
             <button
@@ -794,9 +826,9 @@ export function BookList() {
               !loading && (
                 <div className="rounded-xl border-2 border-dashed px-8 py-12 text-center">
                   <p className="font-serif text-lg font-bold">
-                    {debouncedQuery || active ? "No books match your filters." : "Your library is empty"}
+                    {debouncedQuery || active || author ? "No books match your filters." : "Your library is empty"}
                   </p>
-                  {!debouncedQuery && !active && (
+                  {!debouncedQuery && !active && !author && (
                     <>
                       <p className="mt-2 text-sm text-muted-foreground">
                         Add books to start building your personal library.

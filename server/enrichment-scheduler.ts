@@ -34,6 +34,28 @@ function run(label: string, command: string): Promise<void> {
   });
 }
 
+/** Books of a type with no AI tag in these categories (any category if omitted), the same books the tagging scripts pick up. */
+async function countUntagged(
+  supabase: SupabaseClient,
+  bookType: string,
+  categories?: string[],
+): Promise<number> {
+  let query = supabase
+    .from("books")
+    .select("id, book_vibes!left(book_id)", { count: "exact", head: true })
+    .eq("book_type", bookType)
+    .eq("book_vibes.ai_assigned", true)
+    .eq("book_vibes.is_canonical", true);
+  if (categories) query = query.in("book_vibes.tag_category", categories);
+
+  const { count, error } = await query.is("book_vibes", null);
+  if (error) {
+    console.error(`[enrichment] Couldn't count untagged ${bookType} books:`, error.message);
+    return 0;
+  }
+  return count ?? 0;
+}
+
 async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
   if (cycleInFlight) {
     console.log("[enrichment] Previous cycle still running, skipping.");
@@ -72,60 +94,30 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
     }
 
     // Stage 2: Vibe tagging — fiction books without canonical vibes
-    // The script itself filters for fiction books without existing AI vibes
-    const { count: fictionCount } = await supabase
-      .from("books")
-      .select("id", { count: "exact", head: true })
-      .eq("book_type", "fiction");
+    const untaggedFiction = await countUntagged(supabase, "fiction");
 
-    const { count: taggedCount } = await supabase
-      .from("book_vibes")
-      .select("book_id", { count: "exact", head: true })
-      .eq("ai_assigned", true)
-      .eq("is_canonical", true)
-      .eq("tag_category", "vibe");
-
-    // Rough check: if fiction books > tagged books, there are untagged fiction books
-    if ((fictionCount ?? 0) > (taggedCount ?? 0)) {
+    if (untaggedFiction > 0) {
       await run(
-        "Vibe tagging",
+        `Vibe tagging (${untaggedFiction} pending)`,
         "npx tsx scripts/tag-vibes.ts --limit 10",
       );
     }
 
     // Stage 3: Classification tagging — nonfiction/poetry without classifications
-    // Check nonfiction
-    const { count: nfCount } = await supabase
-      .from("books")
-      .select("id", { count: "exact", head: true })
-      .eq("book_type", "nonfiction");
+    const untaggedNonfiction = await countUntagged(supabase, "nonfiction", [
+      "topic",
+      "form",
+      "depth",
+    ]);
+    const untaggedPoetry = await countUntagged(supabase, "poetry", [
+      "movement",
+      "formal_feel",
+      "accessibility",
+    ]);
 
-    const { count: nfTaggedCount } = await supabase
-      .from("book_vibes")
-      .select("book_id", { count: "exact", head: true })
-      .eq("ai_assigned", true)
-      .eq("is_canonical", true)
-      .eq("tag_category", "topic");
-
-    // Check poetry
-    const { count: poetryCount } = await supabase
-      .from("books")
-      .select("id", { count: "exact", head: true })
-      .eq("book_type", "poetry");
-
-    const { count: poetryTaggedCount } = await supabase
-      .from("book_vibes")
-      .select("book_id", { count: "exact", head: true })
-      .eq("ai_assigned", true)
-      .eq("is_canonical", true)
-      .eq("tag_category", "movement");
-
-    const nfPending = (nfCount ?? 0) > (nfTaggedCount ?? 0);
-    const poetryPending = (poetryCount ?? 0) > (poetryTaggedCount ?? 0);
-
-    if (nfPending || poetryPending) {
+    if (untaggedNonfiction > 0 || untaggedPoetry > 0) {
       await run(
-        "Classification tagging",
+        `Classification tagging (${untaggedNonfiction + untaggedPoetry} pending)`,
         "npx tsx scripts/tag-classifications.ts --limit 10",
       );
     }

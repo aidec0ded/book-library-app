@@ -1,3 +1,29 @@
+### 📖 Book Page
+
+**First pass**
+
+- Author links — author name on the book page opens the library filtered to that author, with each co-author linked separately **[DONE]**
+- "Also by" section — other books by the same author in the reader's library, unread first, with rating or status on each cover and "See all" for prolific authors **[DONE]**
+- Fix tagging — the scheduler compared book counts to tag row counts, so it stopped early (about two tags per book). The scripts also only read the first 1,000 rows, so they kept re-tagging the same books and never reached the rest **[DONE]**
+
+**Next**
+
+- "Similar to This" section — AI picks about 6 books from the reader's own library with a one-line reason for each, using summaries and reader profile. Save results after first view, leave out same-author books, start on the paid plan since each first view costs an API call. Tags alone are too thin and too broad for this
+- Show which lists a book is on — "Here, Thankful, Real, #13" with a link, and the focus questions on the book page, especially while reading
+- Make "Discuss this book" prominent — chat is the core loop, but it's a small link just above "Remove from library"
+- Order the page by status — unread leads with predicted rating and summary; read leads with rating, notes, and conversations. Notes currently sit below metadata for every book
+- "From Conversations" — hide when empty, and find out why no user has a saved excerpt (the tool is paid-only, so free users can never fill it). "View conversation" should open that conversation, not the general chat page
+- Reading dates — add a way to set start and finish dates on the book page; it can only display them today
+- Tidy the left column — move the raw cover URL and ISBN fields into "Edit details" now that "Change edition" exists
+- Small fixes — excerpt delete button only appears on hover, so touch screens can't reach it; "← Back" leaves the app when a book page was opened directly
+
+**Investigate**
+
+- Narrators and illustrators stored as authors — ISBNdb lists them with no role ("Robert Jordan, Rosamund Pike"; one audiobook lists over 100 people). The book page caps the list and only gives the first two names an "Also by" section, but a narrator can still get a section or a filter of their own. Consider cleaning the data on the way in
+- Missing data — no book from any user has a genre, series, or "when to read" month, though `CLAUDE.md` says about 917 should have timing. The library's genre filter has nothing to offer and seasonal recommendations have no data behind them. Find out when and why, then restore or remove
+
+---
+
 ### 🚀 Alpha Launch
 
 **Tier 1: Launch Blockers**

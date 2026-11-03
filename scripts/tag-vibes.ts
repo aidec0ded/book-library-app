@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
+import { fetchAllRows } from "./fetch-all.js";
 import {
   CANONICAL_VIBES,
   CANONICAL_VIBE_SET,
@@ -148,34 +149,42 @@ async function main() {
   console.log("Rekollekt AI Vibe Tagging (canonical)");
 
   // Step 1: Fetch books to tag
-  let query = supabase
-    .from("books")
-    .select(
-      "id, user_id, title, author, summary, notes, genre, category, timing_raw"
-    )
-    .eq("book_type", "fiction")
-    .order("title");
-
-  const { data: books, error: fetchError } = await query;
-
-  if (fetchError) {
-    console.error("Failed to fetch books:", fetchError.message);
+  let booksToTag: BookForTagging[];
+  try {
+    booksToTag = await fetchAllRows<BookForTagging>((from, to) =>
+      supabase
+        .from("books")
+        .select(
+          "id, user_id, title, author, summary, notes, genre, category, timing_raw"
+        )
+        .eq("book_type", "fiction")
+        .order("title")
+        .order("id")
+        .range(from, to)
+    );
+  } catch (err) {
+    console.error("Failed to fetch books:", (err as Error).message);
     process.exit(1);
   }
-
-  let booksToTag: BookForTagging[] = books ?? [];
 
   if (!force) {
     // Exclude books that already have vibes of the relevant type
     // Done in-memory to avoid URL length limits with large NOT IN clauses
-    const { data: alreadyTagged, error: tagError } = await supabase
-      .from("book_vibes")
-      .select("book_id")
-      .eq("ai_assigned", true)
-      .eq("is_canonical", true);
-
-    if (tagError) {
-      console.error("Failed to query existing AI vibes:", tagError.message);
+    let alreadyTagged: { book_id: string }[];
+    try {
+      alreadyTagged = await fetchAllRows<{ book_id: string }>((from, to) =>
+        supabase
+          .from("book_vibes")
+          .select("book_id")
+          .eq("ai_assigned", true)
+          .eq("is_canonical", true)
+          .order("book_id")
+          .order("vibe")
+          .order("tag_category")
+          .range(from, to)
+      );
+    } catch (err) {
+      console.error("Failed to query existing AI vibes:", (err as Error).message);
       process.exit(1);
     }
 

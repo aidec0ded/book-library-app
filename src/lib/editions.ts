@@ -429,23 +429,78 @@ function nameTokens(name: string): string[] {
   return tokens;
 }
 
-/** Split an author field into people, keeping "Weir, Andy" as one person. */
-function authorNames(author: string): string[][] {
-  const cleaned = author.replace(/\b\d{4}\b/g, " ");
-  const [first, second, ...rest] = cleaned.split(",").map((p) => p.trim());
-  if (
-    first &&
-    second &&
-    rest.length === 0 &&
-    (nameTokens(first).length === 1 || NAME_PARTICLES.test(`${normalizeText(first)} `)) &&
-    !/^(jr|sr|ii|iii|iv)\.?$/i.test(second)
-  ) {
-    return [nameTokens(`${first} ${second}`)];
+const NAME_SUFFIX = /^(jr|sr|ii|iii|iv)\.?$/i;
+const CREDENTIAL = /^(md|m\.d\.|phd|ph\.d\.|dr|esq)\.?$/i;
+
+/** Whether a comma-separated part reads as a surname: "Weir" or "Le Guin". */
+function isSurname(part: string): boolean {
+  return nameTokens(part).length === 1 || NAME_PARTICLES.test(`${normalizeText(part)} `);
+}
+
+/** Read one comma-separated group of names, which may be in "Last, First" order. */
+function parseNameGroup(group: string): string[] {
+  const parts: string[] = [];
+  for (const part of group.split(",").map((p) => p.trim())) {
+    if (CREDENTIAL.test(part) || (nameTokens(part).length === 0 && !NAME_SUFFIX.test(part))) continue;
+    if (NAME_SUFFIX.test(part) && parts.length > 0) parts[parts.length - 1] += ` ${part}`;
+    else parts.push(part);
   }
-  return cleaned
-    .split(/,|;|&|\band\b/i)
+
+  const inLastFirstOrder =
+    parts.length % 2 === 0 &&
+    parts.every((part, i) => i % 2 === 1 || isSurname(part)) &&
+    !parts.some((part, i) => i % 2 === 1 && NAME_SUFFIX.test(part));
+  // "Garcia Marquez, Gabriel" has a longer surname, but a person's name is never one word after a full name
+  const lastNameFirst =
+    parts.length === 2 && nameTokens(parts[0]!).length > 1 && nameTokens(parts[1]!).length === 1;
+
+  if (!inLastFirstOrder && !lastNameFirst) return parts;
+  const names: string[] = [];
+  for (let i = 0; i < parts.length; i += 2) names.push(`${parts[i + 1]} ${parts[i]}`);
+  return names;
+}
+
+/**
+ * Split an author field into people's names: "Weir, Andy" is Andy Weir,
+ * "Stephen King, Peter Straub" is two people, and so is "Holiday, Ryan, Parker, Nils".
+ */
+export function parseAuthorNames(author: string): string[] {
+  const cleaned = author.replace(/\b\d{4}\b/g, " ").replace(/\s+/g, " ");
+  const names: string[] = [];
+  for (const name of cleaned.split(/;|&|\band\b/i).flatMap(parseNameGroup)) {
+    if (normalizeText(name) === "unknown") continue;
+    if (!names.some((other) => isSameAuthor(other, name))) names.push(name);
+  }
+  return names;
+}
+
+/** Split an author field into each person's name tokens. */
+function authorNames(author: string): string[][] {
+  return parseAuthorNames(author)
     .map(nameTokens)
     .filter((tokens) => tokens.length > 0);
+}
+
+/**
+ * Whether two names are the same person. "Stephen King" is also "King, Stephen"
+ * and "Stephen Edwin King", but a surname alone isn't enough to be him.
+ */
+export function isSameAuthor(a: string, b: string): boolean {
+  const tokensA = nameTokens(a);
+  const tokensB = nameTokens(b);
+  const [shorter, longer] =
+    tokensA.length <= tokensB.length ? [tokensA, tokensB] : [tokensB, tokensA];
+  if (shorter.length === 0 || (shorter.length === 1 && longer.length > 1)) return false;
+  return sameName(shorter, longer);
+}
+
+/** A LIKE pattern to narrow a library down to rows that might include this author. */
+export function authorSearchPattern(name: string): string {
+  const tokens = nameTokens(name);
+  const surname = tokens[tokens.length - 1] ?? "";
+  // Letters that can carry accents match anything, so "Carre" finds "Carr\u00e9".
+  // This only narrows the rows; isSameAuthor decides what matches.
+  return `%${surname.replace(/[^a-z0-9]|[aeiouync]/g, "%")}%`;
 }
 
 function sameName(a: string[], b: string[]): boolean {

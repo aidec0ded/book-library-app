@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ExternalLink, Pencil, X, Check, Star, MessageSquareQuote, Trash2, MessageCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -15,14 +15,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { VibeEditor } from "@/components/VibeEditor";
-import { updateBook, deleteBook, formatRating } from "@/lib/books";
+import { AlsoByAuthor } from "@/components/AlsoByAuthor";
+import { authorLibraryPath, updateBook, deleteBook, formatRating } from "@/lib/books";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
 import { StarRating } from "@/components/StarRating";
 import { ChangeEditionModal } from "@/components/ChangeEditionModal";
 import { EditionDetailsForm, type EditionDetails } from "@/components/EditionDetailsForm";
-import { mapToEditionFields, normalizeFormat, type ISBNdbBook } from "@/lib/isbndb";
+import { mapToEditionFields, normalizeFormat, parseAuthorNames, type ISBNdbBook } from "@/lib/isbndb";
 import { useChatContext } from "@/contexts/ChatContext";
 import type { Book, BookExcerpt, BookType } from "@/lib/types";
 
@@ -37,9 +38,24 @@ function formatDate(dateStr: string | null): string {
 
 const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
 
+// Audiobooks can list a whole cast as authors, so the header stays short
+const MAX_LISTED_AUTHORS = 4;
+// Later names are often narrators or illustrators, who aren't worth a section of their own
+const MAX_AUTHOR_SECTIONS = 2;
+
 
 export function BookDetail() {
   const { id } = useParams<{ id: string }>();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
+
+  // Keyed so moving between books starts clean, with no open editors or drafts carried over
+  return <BookDetailContent key={id} id={id} />;
+}
+
+function BookDetailContent({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const { openPanel } = useChatContext();
   const [book, setBook] = useState<Book | null>(null);
@@ -63,6 +79,7 @@ export function BookDetail() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [changingEdition, setChangingEdition] = useState(false);
+  const [showAllAuthors, setShowAllAuthors] = useState(false);
 
   useEffect(() => {
     async function fetch() {
@@ -198,6 +215,9 @@ export function BookDetail() {
     );
   }
 
+  const authors = parseAuthorNames(book.author);
+  const listedAuthors = showAllAuthors ? authors : authors.slice(0, MAX_LISTED_AUTHORS);
+
   const showPredictedRating =
     book.status === "unread" || book.status === "wishlist" || book.status === null;
 
@@ -224,7 +244,32 @@ export function BookDetail() {
         {book.subtitle && (
           <p className="text-lg text-muted-foreground">{book.subtitle}</p>
         )}
-        <p className="mt-1 text-muted-foreground">{book.author}</p>
+        <p className="mt-1 text-muted-foreground">
+          {authors.length === 0
+            ? book.author
+            : listedAuthors.map((name, i) => (
+                <Fragment key={name}>
+                  {i > 0 && ", "}
+                  <Link
+                    to={authorLibraryPath(name)}
+                    className="underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    {name}
+                  </Link>
+                </Fragment>
+              ))}
+          {listedAuthors.length < authors.length && (
+            <>
+              {", "}
+              <button
+                onClick={() => setShowAllAuthors(true)}
+                className="underline-offset-2 hover:text-foreground hover:underline"
+              >
+                and {authors.length - listedAuthors.length} more
+              </button>
+            </>
+          )}
+        </p>
         {book.series && (
           <p className="text-sm text-muted-foreground">
             {book.series}
@@ -260,7 +305,12 @@ export function BookDetail() {
               />
             ) : (
               <div className="mx-auto lg:mx-0">
-                <BookCover book={book} size="lg" />
+                <BookCover
+                  title={book.title}
+                  author={book.author}
+                  coverUrl={null}
+                  size="lg"
+                />
               </div>
             )}
 
@@ -776,6 +826,10 @@ export function BookDetail() {
             </div>
           )}
         </div>
+
+        {authors.slice(0, MAX_AUTHOR_SECTIONS).map((name) => (
+          <AlsoByAuthor key={name} bookId={book.id} author={name} />
+        ))}
       </div>
     </div>
   );

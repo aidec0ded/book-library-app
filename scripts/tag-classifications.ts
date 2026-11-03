@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
+import { fetchAllRows } from "./fetch-all.js";
 
 config();
 
@@ -387,30 +388,40 @@ async function processType(
       : ["movement", "formal_feel", "accessibility"];
 
   // Fetch books of this type
-  const { data: books, error: fetchError } = await supabase
-    .from("books")
-    .select("id, user_id, title, author, summary, notes, genre, category, book_type")
-    .eq("book_type", bookType)
-    .order("title");
-
-  if (fetchError) {
-    console.error(`Failed to fetch ${bookType} books:`, fetchError.message);
+  let booksToTag: BookForTagging[];
+  try {
+    booksToTag = await fetchAllRows<BookForTagging>((from, to) =>
+      supabase
+        .from("books")
+        .select("id, user_id, title, author, summary, notes, genre, category, book_type")
+        .eq("book_type", bookType)
+        .order("title")
+        .order("id")
+        .range(from, to)
+    );
+  } catch (err) {
+    console.error(`Failed to fetch ${bookType} books:`, (err as Error).message);
     return;
   }
 
-  let booksToTag: BookForTagging[] = books ?? [];
-
   if (!force) {
     // Exclude books that already have AI tags in any of the relevant categories
-    const { data: alreadyTagged, error: tagError } = await supabase
-      .from("book_vibes")
-      .select("book_id, tag_category")
-      .eq("ai_assigned", true)
-      .eq("is_canonical", true)
-      .in("tag_category", categories);
-
-    if (tagError) {
-      console.error("Failed to query existing tags:", tagError.message);
+    let alreadyTagged: { book_id: string }[];
+    try {
+      alreadyTagged = await fetchAllRows<{ book_id: string }>((from, to) =>
+        supabase
+          .from("book_vibes")
+          .select("book_id")
+          .eq("ai_assigned", true)
+          .eq("is_canonical", true)
+          .in("tag_category", categories)
+          .order("book_id")
+          .order("vibe")
+          .order("tag_category")
+          .range(from, to)
+      );
+    } catch (err) {
+      console.error("Failed to query existing tags:", (err as Error).message);
       return;
     }
 

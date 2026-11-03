@@ -129,6 +129,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
 - `src/pages/AddBook.tsx` — ISBNdb search, edition picker, preview, and add-to-library flow
 - `src/components/EditionPicker.tsx` — Edition list with format and language filters (shared by Add Book and Change edition)
+- `src/components/AlsoByAuthor.tsx` — "Also by" section on the book page: the reader's other books by an author, in-progress and unread first
 - `src/components/ChangeEditionModal.tsx` — Switch a library book to another edition from the book page
 - `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, and publication year
 - `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping) + edition grouping and language/format normalization
@@ -144,7 +145,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
 - `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
-- `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, edition grouping and scoring, format and language normalization, field mapping
+- `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, author name parsing ("Last, First", co-authors, credentials), edition grouping and scoring, format and language normalization, field mapping
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
 - `server/list-items.ts` — Shared list entry helpers for the syllabus and reading path tools: fetch (library and external items alike), find by title, reorder, insert at a position, remove
 - `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete, reorder, update_rationale, update_syllabus) with rationale support; auto-adds missing books as wishlist items via findOrCreateBook
@@ -158,6 +159,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
 - `server/stripe-handler.ts` — Stripe webhook event processing, checkout/portal session creation
 - `scripts/grant-subscription.ts` — Admin script to grant/revoke complimentary paid subscriptions by email
+- `scripts/fetch-all.ts` — Reads every row of a query page by page (Supabase returns at most 1,000 per request, with no error)
 - `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 fiction vibes, batches of 5, retries, --dry-run/--limit/--force flags)
 - `scripts/tag-classifications.ts` — AI classification tagging for nonfiction (topics/form/depth) and poetry (movement/formal_feel/accessibility), same batch architecture
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
@@ -193,7 +195,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ### What's Built
 
-**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
+**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, author links and an "Also by" section on the book page, library filter by author, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
 
