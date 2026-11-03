@@ -37,7 +37,8 @@ import { isIsoDate } from "../src/lib/reading-dates.js";
 import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
 import { buildBookContext, type LinkedBook } from "./book-context.js";
 import { startConversationReviewScheduler } from "./conversation-review.js";
-import { isPaidAndActive } from "./subscription.js";
+import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
+import { readJsonBody } from "./request-body.js";
 import { startReleasesScheduler } from "./releases-scheduler.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
 import {
@@ -301,7 +302,9 @@ async function getOrCreateSubscription(userId: string): Promise<SubscriptionRow>
           chat_messages_used: 0,
           chat_messages_period_start: monthStart.toISOString(),
         })
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        // A request sent at the same time may have already reset this and claimed a message
+        .eq("chat_messages_period_start", data.chat_messages_period_start);
       data.chat_messages_used = 0;
       data.chat_messages_period_start = monthStart.toISOString();
     }
@@ -316,6 +319,17 @@ async function getOrCreateSubscription(userId: string): Promise<SubscriptionRow>
     .single();
 
   return created as SubscriptionRow;
+}
+
+/** Answer a request that failed unexpectedly. Left unhandled, it would take down the server. */
+function failRequest(res: http.ServerResponse, label: string, err: unknown): void {
+  console.error(`[${label}] Unexpected error:`, err instanceof Error ? err.message : err);
+  if (!res.headersSent) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Something went wrong" }));
+  } else {
+    res.end();
+  }
 }
 
 async function handleChat(
@@ -334,13 +348,16 @@ async function handleChat(
   }
 
   // Parse body
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(chunk as Buffer);
+  let body: ChatRequest;
+  try {
+    body = (await readJsonBody(req)) as ChatRequest;
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid request body" }));
+    return;
   }
-  const body = JSON.parse(Buffer.concat(chunks).toString()) as ChatRequest;
 
-  if (!body.message || typeof body.message !== "string") {
+  if (!body?.message || typeof body.message !== "string") {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "message is required" }));
     return;
@@ -377,18 +394,27 @@ async function handleChat(
 
   // Chat message gating for free users (skip for onboarding)
   const subscription = await getOrCreateSubscription(userId);
-  if (!isOnboarding && !isPaidAndActive(subscription)) {
-    if (subscription.chat_messages_used >= FREE_MESSAGE_LIMIT) {
+  const usesFreeMessage = !isOnboarding && !isPaidAndActive(subscription);
+  if (usesFreeMessage) {
+    const claimed = await claimMessage(
+      serviceSupabase,
+      userId,
+      subscription.chat_messages_used,
+      FREE_MESSAGE_LIMIT,
+    );
+    if (!claimed) {
       setCorsHeaders(req, res);
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
         error: "message_limit_reached",
-        messages_used: subscription.chat_messages_used,
+        messages_used: FREE_MESSAGE_LIMIT,
         messages_limit: FREE_MESSAGE_LIMIT,
       }));
       return;
     }
   }
+
+  let replySaved = false;
 
   // SSE headers
   setCorsHeaders(req, res);
@@ -985,16 +1011,9 @@ async function handleChat(
       .single();
 
     if (saveError) throw saveError;
+    replySaved = true;
 
     writeSSE(res, "done", { message_id: savedMsg.id });
-
-    // Increment chat message counter for free users (skip for onboarding)
-    if (!isOnboarding && !isPaidAndActive(subscription)) {
-      void serviceSupabase
-        .from("user_subscriptions")
-        .update({ chat_messages_used: subscription.chat_messages_used + 1 })
-        .eq("user_id", userId);
-    }
 
     // Title generation: if this is the first exchange (2 messages)
     const { count } = await supabase
@@ -1009,6 +1028,13 @@ async function handleChat(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     writeSSE(res, "error", { message });
+
+    // A reader isn't charged a message for a reply they didn't get
+    if (usesFreeMessage && !replySaved) {
+      void releaseMessage(serviceSupabase, userId).catch((releaseError) => {
+        console.error("[chat] Couldn't return a free message:", releaseError);
+      });
+    }
   }
 
   res.end();
@@ -1131,7 +1157,7 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.method === "POST" && url === "/api/chat") {
-      void handleChat(req, res);
+      handleChat(req, res).catch((err) => failRequest(res, "chat", err));
       return;
     }
 
@@ -1256,7 +1282,7 @@ const server = http.createServer((req, res) => {
     }
 
     if (req.method === "GET" && url.startsWith("/api/isbndb/")) {
-      void handleIsbndbProxy(req, res);
+      handleIsbndbProxy(req, res).catch((err) => failRequest(res, "isbndb", err));
       return;
     }
 
