@@ -143,7 +143,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ConversationList.tsx` — Past conversations panel (collapsible)
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
-- `server/book-lookup.ts` — `findBookByTitle` (multi-stage fuzzy match) and `findOrCreateBook` (lookup-or-insert as wishlist + auto-link external list items)
+- `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
+- `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, edition grouping and scoring, format and language normalization, field mapping
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
 - `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete) with rationale support; auto-adds missing books as wishlist items via findOrCreateBook
 - `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content) with seminar content support; auto-adds missing books as wishlist items via findOrCreateBook

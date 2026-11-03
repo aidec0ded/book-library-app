@@ -2,6 +2,12 @@ import { createClient } from "@supabase/supabase-js";
 import { writeFileSync } from "fs";
 import path from "path";
 import { config } from "dotenv";
+import {
+  baseTitle,
+  findMatchingEditions,
+  pickBestEdition,
+  type ISBNdbBook,
+} from "../src/lib/editions.js";
 
 config();
 
@@ -18,14 +24,6 @@ interface BookCandidate {
   id: string;
   title: string;
   author: string;
-}
-
-interface ISBNdbBook {
-  title: string;
-  title_long?: string;
-  isbn?: string;
-  isbn13?: string;
-  authors?: string[];
 }
 
 interface ISBNdbSearchResponse {
@@ -65,70 +63,12 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Normalize a title for comparison:
- * - lowercase
- * - strip leading "The ", "A ", "An "
- * - & → and
- * - strip parenthetical suffixes like "(The Southern Reach Trilogy)"
- * - strip punctuation
- * - collapse whitespace
- */
-function normalizeTitle(title: string): string {
-  let t = title.toLowerCase().trim();
-  // strip leading articles
-  t = t.replace(/^(the|a|an)\s+/i, "");
-  // & → and
-  t = t.replace(/&/g, "and");
-  // strip parenthetical suffixes
-  t = t.replace(/\s*\([^)]*\)\s*$/, "");
-  // strip punctuation (keep alphanumeric and spaces)
-  t = t.replace(/[^\w\s]/g, "");
-  // collapse whitespace
-  t = t.replace(/\s+/g, " ").trim();
-  return t;
-}
-
-/**
- * Extract the last name from an author string.
- * Handles "First Last", "First M. Last", etc.
- */
-function extractLastName(author: string): string {
-  const name = author.toLowerCase().trim();
-  const parts = name.split(/\s+/);
-  return parts[parts.length - 1];
-}
-
-/**
- * Normalize an author field for comparison:
- * - split on " & " or ", " to get first author
- * - extract last name
- */
-function normalizeAuthor(author: string): string {
-  // split on common multi-author delimiters, take first
-  const first = author.split(/\s+&\s+|,\s*/)[0].trim();
-  return extractLastName(first);
-}
-
-/**
- * Check if an author last name matches any of the ISBNdb result authors.
- */
-function authorLastNameMatches(
-  bookAuthorLastName: string,
-  resultAuthors: string[]
-): boolean {
-  return resultAuthors.some((a) => {
-    const resultLast = extractLastName(a);
-    return resultLast === bookAuthorLastName;
-  });
-}
-
 async function searchISBNdb(
   query: string,
   apiKey: string
 ): Promise<ISBNdbSearchResponse | null> {
   const encoded = encodeURIComponent(query);
-  const url = `${ISBNDB_BASE_URL}/books/${encoded}?page=1&pageSize=5`;
+  const url = `${ISBNDB_BASE_URL}/books/${encoded}?page=1&pageSize=100&column=title`;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -227,7 +167,7 @@ async function main() {
   for (let i = 0; i < candidates.length; i++) {
     const book = candidates[i];
     const progress = `[${String(i + 1).padStart(String(candidates.length).length)}/${candidates.length}]`;
-    const searchQuery = `${book.title} ${book.author}`;
+    const searchQuery = baseTitle(book.title);
 
     try {
       const response = await searchISBNdb(searchQuery, apiKey);
@@ -248,25 +188,11 @@ async function main() {
           });
         }
       } else {
-        // Step 3: Score results for match confidence
-        const normalizedBookTitle = normalizeTitle(book.title);
-        const bookAuthorLastName = normalizeAuthor(book.author);
-
-        let bestMatch: ISBNdbBook | null = null;
-
-        for (const result of response.books) {
-          const normalizedResultTitle = normalizeTitle(result.title);
-          const titleMatch = normalizedBookTitle === normalizedResultTitle;
-          const authorMatch = authorLastNameMatches(
-            bookAuthorLastName,
-            result.authors ?? []
-          );
-
-          if (titleMatch && authorMatch) {
-            bestMatch = result;
-            break;
-          }
-        }
+        // Step 3: Pick the likeliest edition among those matching title and author
+        const bestMatch = pickBestEdition(
+          findMatchingEditions(book.title, book.author, response.books),
+          "en",
+        );
 
         if (bestMatch) {
           const isbn = bestMatch.isbn13 || bestMatch.isbn || null;

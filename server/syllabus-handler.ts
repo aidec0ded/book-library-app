@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findBookByTitle, findOrCreateBook } from "./book-lookup.js";
+import { describeSimilarBooks, findBookByTitle, findOrCreateBook, type FoundBook } from "./book-lookup.js";
 
 interface SyllabusBook {
   title: string;
@@ -15,7 +15,7 @@ export interface SyllabusCommand {
 }
 
 interface ResolvedBooks {
-  found: { title: string; id: string; created: boolean }[];
+  found: FoundBook[];
 }
 
 /** Normalize mixed input — tool may send strings or objects */
@@ -28,7 +28,7 @@ async function resolveBooks(
   rawBooks: SyllabusBook[] | string[],
 ): Promise<ResolvedBooks> {
   const books = normalizeBooksInput(rawBooks);
-  const found: { title: string; id: string; created: boolean }[] = [];
+  const found: FoundBook[] = [];
 
   for (const book of books) {
     const result = await findOrCreateBook(supabase, book.title, book.author);
@@ -110,7 +110,7 @@ export async function executeSyllabusCommand(
         if (created > 0) {
           msg += ` ${created} added to your library as wishlist item${created === 1 ? "" : "s"}.`;
         }
-        return msg;
+        return msg + describeSimilarBooks(found);
       }
 
       return `Created syllabus '${command.list_name}'.`;
@@ -240,7 +240,7 @@ export async function executeSyllabusCommand(
       if (skipped > 0) {
         msg += ` ${skipped} already in the syllabus.`;
       }
-      return msg;
+      return msg + describeSimilarBooks(found);
     }
 
     case "remove_books": {

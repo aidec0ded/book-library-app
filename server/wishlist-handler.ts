@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findBookByTitle } from "./book-lookup.js";
+import { describeSimilarBooks, findBookByTitle, findOrCreateBook } from "./book-lookup.js";
 
 export interface WishlistCommand {
   action: "add" | "view" | "remove";
@@ -17,32 +17,16 @@ export async function executeWishlistCommand(
         throw new Error("'add' requires a title");
       }
 
-      // Search for existing book by title
-      const existing = await findBookByTitle<{ status: string | null }>(
-        supabase,
-        command.title,
-        "id, title, status",
-      );
+      const book = await findOrCreateBook(supabase, command.title, command.author);
 
-      if (existing) {
-        if (existing.status === "wishlist") {
-          return `'${existing.title}' is already on your wishlist.`;
+      if (!book.created) {
+        if (book.status === "wishlist") {
+          return `'${book.title}' is already on your wishlist.`;
         }
-        return `'${existing.title}' is already in your library with status '${existing.status}'.`;
+        return `'${book.title}' is already in your library with status '${book.status}'.`;
       }
 
-      // Insert new book as wishlist
-      const { error: insertError } = await supabase.from("books").insert({
-        title: command.title,
-        author: command.author ?? "Unknown",
-        status: "wishlist",
-        is_favorite: false,
-        is_up_next: false,
-      });
-
-      if (insertError) throw insertError;
-
-      return `Added '${command.title}' to your wishlist.`;
+      return `Added '${book.title}' to your wishlist.${describeSimilarBooks([book])}`;
     }
 
     case "view": {

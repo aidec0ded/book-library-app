@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findOrCreateBook } from "./book-lookup.js";
+import { describeSimilarBooks, findOrCreateBook, type FoundBook } from "./book-lookup.js";
 
 interface SeminarContent {
   pre_reading_context: string;
@@ -80,7 +80,7 @@ export async function executeReadingPathCommand(
 
       if (command.books && command.books.length > 0) {
         // Resolve each book — creates wishlist entries for books not in library
-        const resolved: { id: string; title: string; created: boolean }[] = [];
+        const resolved: FoundBook[] = [];
         for (const book of command.books) {
           const result = await findOrCreateBook(supabase, book.title, book.author);
           resolved.push(result);
@@ -123,6 +123,7 @@ export async function executeReadingPathCommand(
           msg += ` (${created} added to your library as wishlist item${created === 1 ? "" : "s"})`;
         }
         msg += ".";
+        msg += describeSimilarBooks(resolved);
         return msg;
       }
 
@@ -262,7 +263,7 @@ export async function executeReadingPathCommand(
       }
 
       // Resolve each book — creates wishlist entries for books not in library
-      const resolved: { id: string; title: string; created: boolean }[] = [];
+      const resolved: FoundBook[] = [];
       for (const book of command.books) {
         const result = await findOrCreateBook(supabase, book.title, book.author);
         resolved.push(result);
@@ -311,7 +312,7 @@ export async function executeReadingPathCommand(
       if (created > 0) {
         msg += ` ${created} added to your library as wishlist item${created === 1 ? "" : "s"}.`;
       }
-      return msg;
+      return msg + describeSimilarBooks(resolved);
     }
 
     case "update_progress": {

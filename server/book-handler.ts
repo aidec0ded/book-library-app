@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findBookByTitle } from "./book-lookup.js";
+import { describeSimilarBooks, findBookByTitle, findOrCreateBook } from "./book-lookup.js";
 
 export interface BookCommand {
   action: "update_status" | "update_rating" | "toggle_favorite" | "delete" | "add";
@@ -21,27 +21,12 @@ export async function executeBookCommand(
 
   // "add" action doesn't require an existing book
   if (command.action === "add") {
-    // Check if already in library
-    const existing = await findBookByTitle<{ status: string | null }>(
-      supabase,
-      command.book_title,
-      "id, title, status",
-    );
-    if (existing) {
-      return `'${existing.title}' is already in the library with status '${existing.status}'.`;
-    }
-
     const status = command.status && VALID_STATUSES.includes(command.status) ? command.status : "read";
-    const { error } = await supabase.from("books").insert({
-      title: command.book_title,
-      author: command.author ?? "Unknown",
-      status,
-      is_favorite: false,
-      is_up_next: false,
-    });
-
-    if (error) throw error;
-    return `Added '${command.book_title}' to the library with status '${status}'.`;
+    const added = await findOrCreateBook(supabase, command.book_title, command.author, status);
+    if (!added.created) {
+      return `'${added.title}' is already in the library with status '${added.status}'.`;
+    }
+    return `Added '${added.title}' to the library with status '${status}'.${describeSimilarBooks([added])}`;
   }
 
   // Look up book by title with fuzzy fallback
