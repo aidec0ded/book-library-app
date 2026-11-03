@@ -1,17 +1,22 @@
 import { useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Send, Loader2, AlertCircle } from "lucide-react";
+import { ChatEmptyState } from "@/components/ChatEmptyState";
 import { ChatMessage } from "@/components/ChatMessage";
 import { ConversationList } from "@/components/ConversationList";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 
 export function Chat() {
+  const { id: linkedId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const {
     conversationId,
+    book,
     messages,
     conversations,
     conversationsLoading,
+    hasMoreConversations,
     input,
     streaming,
     streamingContent,
@@ -22,6 +27,10 @@ export function Chat() {
     send,
     selectConversation,
     newChat,
+    loadMoreConversations,
+    renameConversation,
+    deleteConversation,
+    notifyExcerptSaved,
     closePanel,
   } = useChatContext();
   const { isPaid, chatMessagesUsed, chatMessagesLimit } = useSubscription();
@@ -39,9 +48,29 @@ export function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
-  function handleNewChat() {
-    newChat();
+  // The link decides which conversation opens
+  useEffect(() => {
+    if (linkedId) selectConversation(linkedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedId]);
+
+  // And follows along once a new conversation has an ID
+  useEffect(() => {
+    if (conversationId && conversationId !== linkedId) {
+      navigate(`/chat/${conversationId}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
+
+  function handleNewChat(nextBook: typeof book = null) {
+    newChat(nextBook);
+    navigate("/chat");
     textareaRef.current?.focus();
+  }
+
+  async function handleDelete(id: string) {
+    await deleteConversation(id);
+    if (id === linkedId) navigate("/chat");
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -58,30 +87,47 @@ export function Chat() {
       <ConversationList
         conversations={conversations}
         activeId={conversationId}
-        onSelect={selectConversation}
-        onNewChat={handleNewChat}
+        onSelect={(id) => navigate(`/chat/${id}`)}
+        onNewChat={() => handleNewChat()}
         loading={conversationsLoading}
+        hasMore={hasMoreConversations}
+        onLoadMore={loadMoreConversations}
+        onRename={renameConversation}
+        onDelete={handleDelete}
       />
+
+      {book && messages.length > 0 && (
+        <div className="flex items-center justify-between gap-3 border-b px-4 py-1.5 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate">
+            About{" "}
+            <Link to={`/books/${book.id}`} className="underline underline-offset-2 hover:text-foreground">
+              {book.title}
+            </Link>
+          </span>
+          <button className="shrink-0 hover:text-foreground" onClick={() => handleNewChat(book)}>
+            Start new
+          </button>
+        </div>
+      )}
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 && !streaming && (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center">
-              <p className="text-lg font-medium text-muted-foreground">
-                What are you reading?
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Talk about your books, get recommendations, or explore your
-                reading life.
-              </p>
-            </div>
-          </div>
+          <ChatEmptyState book={book} onSend={send} />
         )}
 
         <div className="mx-auto max-w-2xl space-y-4">
           {messages.map((msg) => (
-            <ChatMessage key={msg.id} role={msg.role} content={msg.content} />
+            <ChatMessage
+              key={msg.id}
+              role={msg.role}
+              content={msg.content}
+              save={
+                msg.id.startsWith("temp-")
+                  ? undefined
+                  : { conversationId, book, onSaved: notifyExcerptSaved }
+              }
+            />
           ))}
 
           {streaming && streamingContent && (

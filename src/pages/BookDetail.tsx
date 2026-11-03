@@ -19,6 +19,7 @@ import { BookListsSection } from "@/components/BookListsSection";
 import { ReadingDates } from "@/components/ReadingDates";
 import { authorLibraryPath, updateBook, deleteBook, formatRating } from "@/lib/books";
 import { datesForStatusChange, localToday } from "@/lib/reading-dates";
+import { fetchConversationsForBook } from "@/lib/chat";
 import { fetchExcerptsForBook, deleteExcerpt } from "@/lib/excerpts";
 import { fetchAwardsForBook, type BookAward } from "@/lib/awards";
 import { BookCover } from "@/components/BookCover";
@@ -27,7 +28,7 @@ import { ChangeEditionModal } from "@/components/ChangeEditionModal";
 import { EditionDetailsForm, type EditionDetails } from "@/components/EditionDetailsForm";
 import { mapToEditionFields, normalizeFormat, parseAuthorNames, type ISBNdbBook } from "@/lib/isbndb";
 import { useChatContext } from "@/contexts/ChatContext";
-import type { Book, BookExcerpt, BookType } from "@/lib/types";
+import type { Book, BookExcerpt, BookType, Conversation } from "@/lib/types";
 
 const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
 
@@ -47,21 +48,14 @@ type BookSection =
   | "conversations";
 
 /** What's most useful first depends on where the reader is with the book. */
-function sectionOrder(
-  status: string | null,
-  hasExcerpts: boolean,
-): { main: BookSection[]; below: BookSection[] } {
-  // The empty "From Conversations" placeholder shouldn't push the reader's own writing down
-  const conversations: { lead: BookSection[]; below: BookSection[] } = hasExcerpts
-    ? { lead: ["conversations"], below: [] }
-    : { lead: [], below: ["conversations"] };
+function sectionOrder(status: string | null): { main: BookSection[]; below: BookSection[] } {
   const reference: BookSection[] = ["summary", "classification", "awards", "metadata"];
 
   if (status === "reading") {
-    return { main: ["lists", "notes", ...conversations.lead, ...reference], below: conversations.below };
+    return { main: ["lists", "notes", "conversations", ...reference], below: [] };
   }
   if (status === "read" || status === "unfinished") {
-    return { main: ["notes", ...conversations.lead, "lists", ...reference], below: conversations.below };
+    return { main: ["notes", "conversations", "lists", ...reference], below: [] };
   }
   return {
     main: ["predicted", "summary", "lists", "classification", "awards", "metadata"],
@@ -84,7 +78,7 @@ export function BookDetail() {
 function BookDetailContent({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { openPanel } = useChatContext();
+  const { openPanel, excerptsVersion, conversations: allConversations } = useChatContext();
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +91,7 @@ function BookDetailContent({ id }: { id: string | undefined }) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
   const [excerpts, setExcerpts] = useState<BookExcerpt[]>([]);
-  const [excerptsLoading, setExcerptsLoading] = useState(true);
+  const [bookConversations, setBookConversations] = useState<Conversation[]>([]);
   const [awards, setAwards] = useState<BookAward[]>([]);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
@@ -125,12 +119,18 @@ function BookDetailContent({ id }: { id: string | undefined }) {
 
   useEffect(() => {
     if (!id) return;
-    setExcerptsLoading(true);
     fetchExcerptsForBook(id)
       .then(setExcerpts)
-      .catch(() => setExcerpts([]))
-      .finally(() => setExcerptsLoading(false));
-  }, [id]);
+      .catch(() => setExcerpts([]));
+  }, [id, excerptsVersion]);
+
+  // The list changes as conversations start, get renamed, or get deleted
+  useEffect(() => {
+    if (!id) return;
+    fetchConversationsForBook(id)
+      .then(setBookConversations)
+      .catch(() => setBookConversations([]));
+  }, [id, allConversations]);
 
   useEffect(() => {
     if (!id) return;
@@ -481,18 +481,10 @@ function BookDetailContent({ id }: { id: string | undefined }) {
         )}
       </div>
     ),
-    conversations: (
-      <div>
-        <h2 className="mb-2 font-semibold">From Conversations</h2>
-        {excerptsLoading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : excerpts.length === 0 ? (
-          <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Insights from your AI reading companion conversations will appear here.
-            </p>
-          </div>
-        ) : (
+    conversations: (excerpts.length > 0 || bookConversations.length > 0) && (
+      <div className="space-y-3">
+        <h2 className="font-semibold">From Conversations</h2>
+        {excerpts.length > 0 && (
           <div className="space-y-3">
             {excerpts.map((excerpt) => (
               <div
@@ -514,7 +506,7 @@ function BookDetailContent({ id }: { id: string | undefined }) {
                       <>
                         <span>·</span>
                         <Link
-                          to="/chat"
+                          to={`/chat/${excerpt.conversation_id}`}
                           className="hover:text-foreground hover:underline"
                         >
                           View conversation
@@ -535,11 +527,41 @@ function BookDetailContent({ id }: { id: string | undefined }) {
             ))}
           </div>
         )}
+        {bookConversations.length > 0 && (
+          <ul className="divide-y rounded-md border">
+            {bookConversations.map((conversation) => (
+              <li key={conversation.id}>
+                <Link
+                  to={`/chat/${conversation.id}`}
+                  className="block px-4 py-2.5 text-sm hover:bg-muted/50"
+                >
+                  <span className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 truncate font-medium">
+                      {conversation.title ?? "Untitled conversation"}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {new Date(conversation.last_message_at).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </span>
+                  {conversation.summary && (
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {conversation.summary}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     ),
   };
 
-  const order = sectionOrder(book.status, excerpts.length > 0);
+  const order = sectionOrder(book.status);
   const renderSections = (ids: BookSection[]) =>
     ids.map((section) => <Fragment key={section}>{sections[section]}</Fragment>);
 
@@ -712,7 +734,9 @@ function BookDetailContent({ id }: { id: string | undefined }) {
 
           {/* Discuss this book */}
           <button
-            onClick={() => openPanel({ bookTitle: book.title })}
+            onClick={() =>
+              openPanel({ book: { id: book.id, title: book.title, status: book.status } })
+            }
             className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
           >
             <MessageCircle className="h-3.5 w-3.5" />

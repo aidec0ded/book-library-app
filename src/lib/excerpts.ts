@@ -12,6 +12,20 @@ export async function fetchExcerptsForBook(bookId: string): Promise<BookExcerpt[
   return data;
 }
 
+export async function saveExcerpt(excerpt: {
+  bookId: string;
+  conversationId: string | null;
+  content: string;
+}): Promise<void> {
+  const { error } = await supabase.from("book_excerpts").insert({
+    book_id: excerpt.bookId,
+    conversation_id: excerpt.conversationId,
+    content: excerpt.content,
+  });
+
+  if (error) throw error;
+}
+
 export async function deleteExcerpt(excerptId: string): Promise<void> {
   const { error } = await supabase
     .from("book_excerpts")

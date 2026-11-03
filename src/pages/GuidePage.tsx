@@ -109,7 +109,7 @@ const SECTIONS: Section[] = [
         </P>
         <P>
           <Bold>Reading Companion</Bold> ($7/month or $60/year) — Everything in Free, plus unlimited
-          chat, AI-created syllabi and reading paths, saved conversation excerpts, and on-demand
+          chat, AI-created syllabi and reading paths, insights saved automatically from book conversations, and on-demand
           profile regeneration.
         </P>
       </>
@@ -176,7 +176,7 @@ const SECTIONS: Section[] = [
         </ul>
         <P>
           AI features include <Bold>predicted ratings</Bold> with rationale for unread books,
-          saved <Bold>conversation excerpts</Bold>, and a "Discuss this book" button that opens a focused chat.
+          saved <Bold>conversation excerpts</Bold>, and a "Discuss this book" button that picks up your latest conversation about the book or starts a new one.
         </P>
         <P>
           Additional info: synopsis, classification tags (with editor), literary awards, metadata, and Bookshop.org purchase links for wishlist books.
@@ -252,7 +252,7 @@ const SECTIONS: Section[] = [
           <Li><Bold>Create syllabi</Bold> — Themed reading lists with rationale for each selection</Li>
           <Li><Bold>Build reading paths</Bold> — Structured journeys with seminar content</Li>
           <Li><Bold>Manage wishlist</Bold> — Add books you want to read</Li>
-          <Li><Bold>Save insights</Bold> — Polished excerpts to book detail pages</Li>
+          <Li><Bold>Save insights</Bold> — "Save to book" under any message keeps it on a book's page, and on the paid plan what's worth keeping from book conversations is saved automatically</Li>
           <Li><Bold>Browse releases</Bold> — Search upcoming books scored against your profile</Li>
           <Li><Bold>Remember you</Bold> — Persistent memory across conversations</Li>
         </ul>

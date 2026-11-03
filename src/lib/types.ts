@@ -79,6 +79,17 @@ export interface Conversation {
   title: string | null;
   archived_at: string | null;
   is_onboarding: boolean;
+  book_id: string | null;
+  summary: string | null;
+  last_message_at: string;
+  book: ConversationBook | null;
+}
+
+/** The book a conversation is about. */
+export interface ConversationBook {
+  id: string;
+  title: string;
+  status: string | null;
 }
 
 export interface Message {

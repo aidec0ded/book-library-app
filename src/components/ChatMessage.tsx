@@ -1,7 +1,17 @@
+import { useRef } from "react";
+import { SaveToBook } from "@/components/SaveToBook";
+import type { ConversationBook } from "@/lib/types";
+
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  /** Offers "Save to book" under the message. */
+  save?: {
+    conversationId: string | null;
+    book: ConversationBook | null;
+    onSaved: () => void;
+  };
 }
 
 /**
@@ -79,12 +89,14 @@ function inlineMarkdown(text: string): React.ReactNode[] {
   return nodes;
 }
 
-export function ChatMessage({ role, content, isStreaming }: ChatMessageProps) {
+export function ChatMessage({ role, content, isStreaming, save }: ChatMessageProps) {
   const isUser = role === "user";
+  const bubbleRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`group flex flex-col ${isUser ? "items-end" : "items-start"}`}>
       <div
+        ref={bubbleRef}
         className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
           isUser
             ? "bg-primary text-primary-foreground"
@@ -104,6 +116,7 @@ export function ChatMessage({ role, content, isStreaming }: ChatMessageProps) {
           </div>
         )}
       </div>
+      {save && <SaveToBook content={content} bubbleRef={bubbleRef} {...save} />}
     </div>
   );
 }

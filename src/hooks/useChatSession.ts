@@ -1,29 +1,47 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type Dispatch, type SetStateAction } from "react";
 import {
+  CONVERSATION_PAGE_SIZE,
+  deleteConversation,
+  fetchConversation,
   fetchConversations,
+  fetchConversationsForBook,
   fetchMessages,
+  renameConversation,
   sendMessage,
 } from "@/lib/chat";
-import type { Conversation, Message } from "@/lib/types";
+import type { Conversation, ConversationBook, Message } from "@/lib/types";
 import { capture } from "@/lib/posthog";
 
 const SESSION_KEY = "moodlib_conversation_id";
+// Titles are written just after a reply finishes, so the list is checked again a moment later
+const TITLE_REFRESH_DELAY_MS = 5000;
 
 export interface UseChatSessionReturn {
   conversationId: string | null;
+  /** The book this conversation is about, including one about to start. */
+  book: ConversationBook | null;
+  title: string | null;
   messages: Message[];
   conversations: Conversation[];
   conversationsLoading: boolean;
+  hasMoreConversations: boolean;
+  excerptsVersion: number;
   input: string;
   streaming: boolean;
   thinking: boolean;
   streamingContent: string;
   error: string | null;
   messageLimitReached: boolean;
-  setInput: (text: string) => void;
+  setInput: Dispatch<SetStateAction<string>>;
   send: (text?: string) => void;
   selectConversation: (id: string) => void;
-  newChat: () => void;
+  newChat: (book?: ConversationBook | null) => void;
+  /** Resume the latest conversation about a book, or start one. Returns whether it resumed. */
+  openBookConversation: (book: ConversationBook) => Promise<boolean>;
+  loadMoreConversations: () => void;
+  renameConversation: (id: string, title: string) => Promise<void>;
+  deleteConversation: (id: string) => Promise<void>;
+  notifyExcerptSaved: () => void;
 }
 
 export interface UseChatSessionOptions {
@@ -34,6 +52,10 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
   const isOnboarding = options?.onboarding ?? false;
 
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [book, setBook] = useState<ConversationBook | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
+  const [conversationLimit, setConversationLimit] = useState(CONVERSATION_PAGE_SIZE);
+  const [excerptsVersion, setExcerptsVersion] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(!isOnboarding);
@@ -48,13 +70,16 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
   const abortRef = useRef<AbortController | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   conversationIdRef.current = conversationId;
+  // Replies and loads that were left behind by moving to another conversation are ignored
+  const activeStreamRef = useRef(0);
+  const activeLoadRef = useRef(0);
 
-  // Load conversations on mount (skip for onboarding)
+  // Load conversations on mount and as more are asked for (skip for onboarding)
   useEffect(() => {
     if (isOnboarding) return;
     void (async () => {
       try {
-        const convs = await fetchConversations();
+        const convs = await fetchConversations(conversationLimit);
         setConversations(convs);
       } catch {
         // Non-critical
@@ -62,11 +87,13 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
         setConversationsLoading(false);
       }
     })();
-  }, [isOnboarding]);
+  }, [isOnboarding, conversationLimit]);
 
   // Restore session on mount (skip for onboarding)
   useEffect(() => {
     if (isOnboarding) return;
+    // A conversation's own link takes priority over the one left open
+    if (window.location.pathname.startsWith("/chat/")) return;
     const savedId = sessionStorage.getItem(SESSION_KEY);
     if (savedId) {
       void loadConversation(savedId);
@@ -74,37 +101,126 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnboarding]);
 
-  const loadConversation = useCallback(async (id: string) => {
-    try {
-      const msgs = await fetchMessages(id);
-      setMessages(msgs);
-      setConversationId(id);
-      if (!isOnboarding) {
-        sessionStorage.setItem(SESSION_KEY, id);
-      }
-    } catch {
-      setError("Failed to load conversation.");
-    }
-  }, [isOnboarding]);
-
-  const newChat = useCallback(() => {
-    if (!isOnboarding) {
-      sessionStorage.removeItem(SESSION_KEY);
-    }
-    setConversationId(null);
-    setMessages([]);
+  /** Stop following a reply in progress. The server still finishes and saves it. */
+  const leaveStream = useCallback(() => {
+    activeStreamRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamingContentRef.current = "";
+    setStreaming(false);
+    setThinking(false);
     setStreamingContent("");
-    setError(null);
-  }, [isOnboarding]);
+  }, []);
+
+  const clearConversation = useCallback(
+    (nextBook: ConversationBook | null) => {
+      activeLoadRef.current += 1;
+      if (!isOnboarding) {
+        sessionStorage.removeItem(SESSION_KEY);
+      }
+      leaveStream();
+      setConversationId(null);
+      setBook(nextBook);
+      setTitle(null);
+      setMessages([]);
+      setError(null);
+    },
+    [isOnboarding, leaveStream],
+  );
+
+  const loadConversation = useCallback(
+    async (id: string) => {
+      const load = ++activeLoadRef.current;
+      leaveStream();
+      setError(null);
+      try {
+        const [conversation, msgs] = await Promise.all([fetchConversation(id), fetchMessages(id)]);
+        if (load !== activeLoadRef.current) return;
+
+        if (!conversation) {
+          clearConversation(null);
+          setError("That conversation isn't available anymore.");
+          return;
+        }
+
+        setMessages(msgs);
+        setConversationId(id);
+        setBook(conversation.book);
+        setTitle(conversation.title);
+        if (!isOnboarding) {
+          sessionStorage.setItem(SESSION_KEY, id);
+        }
+      } catch {
+        if (load === activeLoadRef.current) setError("Failed to load conversation.");
+      }
+    },
+    [isOnboarding, leaveStream, clearConversation],
+  );
+
+  const newChat = useCallback(
+    (nextBook: ConversationBook | null = null) => clearConversation(nextBook),
+    [clearConversation],
+  );
 
   const selectConversation = useCallback(
     (id: string) => {
       if (id === conversationId) return;
-      if (streaming) return;
       void loadConversation(id);
     },
-    [conversationId, streaming, loadConversation],
+    [conversationId, loadConversation],
   );
+
+  const openBookConversation = useCallback(
+    async (nextBook: ConversationBook) => {
+      // Already there, whether that's a conversation in progress or one about to start
+      if (book?.id === nextBook.id && (conversationId || streaming || messages.length === 0)) {
+        return Boolean(conversationId);
+      }
+      const [latest] = await fetchConversationsForBook(nextBook.id).catch(() => []);
+      if (latest) {
+        await loadConversation(latest.id);
+        return true;
+      }
+      clearConversation(nextBook);
+      return false;
+    },
+    [book, conversationId, streaming, messages.length, loadConversation, clearConversation],
+  );
+
+  const refreshConversations = useCallback(() => {
+    if (isOnboarding) return;
+    void fetchConversations(conversationLimit)
+      .then((convs) => {
+        setConversations(convs);
+        const current = convs.find((c) => c.id === conversationIdRef.current);
+        if (current) setTitle(current.title);
+      })
+      .catch(() => {});
+  }, [isOnboarding, conversationLimit]);
+
+  const loadMoreConversations = useCallback(() => {
+    setConversationLimit((limit) => limit + CONVERSATION_PAGE_SIZE);
+  }, []);
+
+  const renameCurrent = useCallback(async (id: string, nextTitle: string) => {
+    await renameConversation(id, nextTitle);
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: nextTitle } : c)));
+    if (id === conversationIdRef.current) setTitle(nextTitle);
+  }, []);
+
+  const deleteAndLeave = useCallback(
+    async (id: string) => {
+      await deleteConversation(id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (id === conversationIdRef.current) clearConversation(null);
+      capture("chat_conversation_deleted");
+    },
+    [clearConversation],
+  );
+
+  const notifyExcerptSaved = useCallback(() => {
+    setExcerptsVersion((version) => version + 1);
+  }, []);
 
   const send = useCallback(
     (text?: string) => {
@@ -113,6 +229,8 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
 
       capture("chat_message_sent");
       setError(null);
+      // Sending commits to this conversation, so one still loading shouldn't replace it
+      activeLoadRef.current += 1;
 
       const tempMessage: Message = {
         id: `temp-${Date.now()}`,
@@ -127,11 +245,15 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
       setStreamingContent("");
       streamingContentRef.current = "";
 
+      const stream = ++activeStreamRef.current;
+      const isNewConversation = !conversationId;
+
       const controller = sendMessage(
         conversationId,
         content,
         {
           onMeta: ({ conversation_id }) => {
+            if (stream !== activeStreamRef.current) return;
             if (!conversationIdRef.current) {
               capture("chat_conversation_started", { is_onboarding: isOnboarding });
             }
@@ -141,6 +263,7 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
             }
           },
           onText: ({ content: chunk }) => {
+            if (stream !== activeStreamRef.current) return;
             setThinking(false);
             streamingContentRef.current += chunk;
             setStreamingContent(streamingContentRef.current);
@@ -148,15 +271,20 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
           onThinking: () => {
             // Server is processing tool calls — keep any text already streamed
             // (it's part of the reply) and show the thinking indicator.
+            if (stream !== activeStreamRef.current) return;
             setThinking(true);
           },
           onDone: ({ message_id }) => {
+            if (stream !== activeStreamRef.current) {
+              refreshConversations();
+              return;
+            }
             const finalContent = streamingContentRef.current;
             setMessages((prev) => [
               ...prev,
               {
                 id: message_id,
-                conversation_id: conversationId ?? "",
+                conversation_id: conversationIdRef.current ?? "",
                 role: "assistant" as const,
                 content: finalContent,
                 created_at: new Date().toISOString(),
@@ -167,11 +295,13 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
             setStreaming(false);
             setThinking(false);
 
-            if (!isOnboarding) {
-              void fetchConversations().then(setConversations).catch(() => {});
+            refreshConversations();
+            if (isNewConversation) {
+              setTimeout(refreshConversations, TITLE_REFRESH_DELAY_MS);
             }
           },
           onError: ({ message }) => {
+            if (stream !== activeStreamRef.current) return;
             if (message === "message_limit_reached") {
               setMessageLimitReached(true);
               // Remove the optimistic user message
@@ -183,19 +313,23 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
             setThinking(false);
           },
         },
-        isOnboarding ? { isOnboarding: true } : undefined,
+        isOnboarding ? { isOnboarding: true } : { bookId: book?.id },
       );
 
       abortRef.current = controller;
     },
-    [input, streaming, conversationId, isOnboarding],
+    [input, streaming, conversationId, book, isOnboarding, refreshConversations],
   );
 
   return {
     conversationId,
+    book,
+    title,
     messages,
     conversations,
     conversationsLoading,
+    hasMoreConversations: conversations.length >= conversationLimit,
+    excerptsVersion,
     input,
     streaming,
     thinking,
@@ -206,5 +340,10 @@ export function useChatSession(options?: UseChatSessionOptions): UseChatSessionR
     send,
     selectConversation,
     newChat,
+    openBookConversation,
+    loadMoreConversations,
+    renameConversation: renameCurrent,
+    deleteConversation: deleteAndLeave,
+    notifyExcerptSaved,
   };
 }

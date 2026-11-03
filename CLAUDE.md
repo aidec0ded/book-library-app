@@ -102,7 +102,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/onboarding` (OnboardingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/import` (ImportBooks), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/settings` (Settings), `/guide` (GuidePage), `/chat` (Chat), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth via OnboardingGate; public pages standalone.
+- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/onboarding` (OnboardingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/import` (ImportBooks), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/settings` (Settings), `/guide` (GuidePage), `/chat` and `/chat/:id` (Chat), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth via OnboardingGate; public pages standalone.
 - `src/pages/LandingPage.tsx` — Public landing page (standalone, no sidebar/Layout wrapper)
 - `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth
 - `src/pages/PhilosophyPage.tsx` — Public editorial essay on Rekollekt's reading philosophy
@@ -144,7 +144,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ChatPanel.tsx` — Floating chat panel + FAB button (accessible from every page, auto-hides on /chat)
 - `src/lib/chat.ts` — Conversation CRUD + SSE streaming client
 - `src/components/ChatMessage.tsx` — Chat message bubble component (user/assistant)
-- `src/components/ConversationList.tsx` — Past conversations panel (collapsible)
+- `src/components/ConversationList.tsx` — Past conversations panel on the full chat page (collapsible)
+- `src/components/ConversationItems.tsx` — Conversation rows with switch, rename, and delete, used by the full page and the floating panel
+- `src/components/ChatEmptyState.tsx` — New conversation screen, with openers based on the book's status and its focus questions
+- `src/components/SaveToBook.tsx` — "Save to book" under a chat message, for keeping all or a selected part on a book's page by hand
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
 - `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
 - `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
@@ -155,7 +158,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content, update_seminar_content, reorder, remove_path_books, update_path, delete_path) with seminar content support; auto-adds missing books as wishlist items via findOrCreateBook
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
-- `server/excerpt-handler.ts` — Excerpt tool command executor (save, view)
+- `server/excerpt-handler.ts` — Excerpt tool command executor (save, view). In a conversation about a book, saves go to that book
+- `server/book-context.ts` — What the AI gets in a conversation about a book: its status, dates, notes, excerpts, list context, summary, and earlier conversations
+- `server/conversation-review.ts` — After a book conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation
+- `server/subscription.ts` — Paid plan check shared by the chat and the review step
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/onboarding-prompt.ts` — Onboarding-specific system prompt builder (empty library vs. imported library paths)
@@ -200,7 +206,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, author links and an "Also by" section on the book page, editable reading dates, library filter by author, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
-**Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversation excerpts saved to book detail pages
+**Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversations linked to books with that book's context for the AI, excerpts saved to book pages by hand or automatically after a book conversation
 
 **AI Output** — Predicted ratings for unread books, AI-managed syllabi + reading paths + wishlist via chat tools (books not in library are auto-added as wishlist items), personalized home page with AI greeting, personalized recommendations page, reading paths with seminar-style scaffolding (thesis, pre-reading context, focus questions, post-reading prompts, progress tracking)
 
@@ -214,7 +220,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Onboarding** — Two-phase flow: welcome gate (chat, Goodreads import, or skip) + AI chat that populates library through conversation. Onboarding gate redirects new users until complete. Goodreads CSV import with shelf selection, duplicate detection, and batch insert.
 
-**Monetization** — Stripe-based subscription (free tier: 5 chat messages/month + full library; paid: $7/month or $60/year for unlimited chat + syllabi + reading paths + excerpts). Stripe Checkout + Customer Portal, webhook handler for subscription lifecycle, chat message gating, tool filtering for free users, subscription context + UI (message counters, lock icons, upgrade CTAs), public pricing + FAQ pages, subscription management in Settings. Admin script for granting complimentary subscriptions.
+**Monetization** — Stripe-based subscription (free tier: 5 chat messages/month + full library; paid: $7/month or $60/year for unlimited chat + syllabi + reading paths + automatic excerpts; saving by hand is free). Stripe Checkout + Customer Portal, webhook handler for subscription lifecycle, chat message gating, tool filtering for free users, subscription context + UI (message counters, lock icons, upgrade CTAs), public pricing + FAQ pages, subscription management in Settings. Admin script for granting complimentary subscriptions.
 
 **Analytics** — PostHog client-side integration tracking pageviews, auth events, onboarding funnel, chat engagement, book additions, imports, releases, checkout, and shelf creation. Graceful no-op when key unset.
 
@@ -255,8 +261,12 @@ Fifteen tables in Supabase:
 - `display_order` — controls rendering order within a category
 
 **conversations** — Chat conversations. Key fields:
-- `title` — AI-generated after first exchange (3-6 words)
+- `title` — AI-generated after first exchange (3-6 words), and the reader can rename it
 - `archived_at` — null means active; set to archive
+- `book_id` — the book it's about, FK to books, SET NULL on delete. Set when a conversation starts from a book page
+- `summary` — one line on what it explored, from the review step
+- `last_message_at` — latest activity, updated by a trigger on `messages`; the conversation list sorts by it
+- `needs_review` — set by the same trigger on book-linked conversations, cleared by the review step
 
 **messages** — Chat messages within conversations. Key fields:
 - `conversation_id` — FK to conversations, CASCADE delete
@@ -273,10 +283,10 @@ Fifteen tables in Supabase:
 - `profile_data` (jsonb) — structured profile: reader_identity, thematic_pillars, taste_evolution, emotional_patterns, reading_life_snapshot, personal_canon
 - `generation_context` (jsonb) — metadata: model, book count, message count, token usage, `activity_snapshot` (6 counters used by the profile scheduler for delta checking)
 
-**book_excerpts** — AI-curated insights saved from chat conversations to specific books. Key fields:
+**book_excerpts** — What's worth keeping from chat conversations, saved to specific books by the review step, the AI when asked, or the reader by hand. Key fields:
 - `book_id` — FK to books, CASCADE delete
-- `conversation_id` — FK to conversations (nullable)
-- `content` — polished 1-3 sentence insight
+- `conversation_id` — FK to conversations, SET NULL on delete, so excerpts outlive their conversation
+- `content` — the saved text, usually a polished 1-3 sentence insight
 
 **lists** — User-created syllabi and reading paths. Key fields:
 - `name` — required, non-empty

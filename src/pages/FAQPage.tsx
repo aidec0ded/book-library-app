@@ -61,7 +61,7 @@ const SECTIONS: FAQSection[] = [
     items: [
       {
         q: "What do I get with a subscription?",
-        a: "Everything in the free tier, plus unlimited AI chat, curated syllabi, structured reading paths with seminar-style scaffolding, conversation excerpts saved to book pages, and on-demand profile regeneration.",
+        a: "Everything in the free tier, plus unlimited AI chat, curated syllabi, structured reading paths with seminar-style scaffolding, insights from book conversations saved to book pages automatically, and on-demand profile regeneration.",
       },
       {
         q: "What are reading paths and syllabi?",

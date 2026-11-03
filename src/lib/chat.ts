@@ -2,17 +2,57 @@ import { localToday } from "@/lib/reading-dates";
 import { supabase } from "@/lib/supabase";
 import type { Conversation, Message } from "@/lib/types";
 
-export async function fetchConversations(): Promise<Conversation[]> {
+const CONVERSATION_FIELDS = "*, book:books(id, title, status)";
+
+export const CONVERSATION_PAGE_SIZE = 20;
+
+export async function fetchConversations(
+  limit = CONVERSATION_PAGE_SIZE,
+): Promise<Conversation[]> {
   const { data, error } = await supabase
     .from("conversations")
-    .select("*")
+    .select(CONVERSATION_FIELDS)
     .is("archived_at", null)
     .eq("is_onboarding", false)
-    .order("started_at", { ascending: false })
-    .limit(20);
+    .order("last_message_at", { ascending: false })
+    .limit(limit);
 
   if (error) throw error;
-  return data;
+  return data as Conversation[];
+}
+
+export async function fetchConversation(id: string): Promise<Conversation | null> {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select(CONVERSATION_FIELDS)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as Conversation | null;
+}
+
+/** The reader's conversations about a book, latest first. */
+export async function fetchConversationsForBook(bookId: string): Promise<Conversation[]> {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select(CONVERSATION_FIELDS)
+    .eq("book_id", bookId)
+    .is("archived_at", null)
+    .order("last_message_at", { ascending: false });
+
+  if (error) throw error;
+  return data as Conversation[];
+}
+
+export async function renameConversation(id: string, title: string): Promise<void> {
+  const { error } = await supabase.from("conversations").update({ title }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  const { error } = await supabase.from("conversations").delete().eq("id", id);
+  if (error) throw error;
 }
 
 export async function fetchMessages(
@@ -38,6 +78,7 @@ export interface ChatCallbacks {
 
 export interface SendMessageOptions {
   isOnboarding?: boolean;
+  bookId?: string;
 }
 
 export function sendMessage(
@@ -60,6 +101,10 @@ export function sendMessage(
       // Only send is_onboarding for new conversations
       if (options?.isOnboarding && !conversationId) {
         body.is_onboarding = true;
+      }
+      // A conversation's book is set when it starts
+      if (options?.bookId && !conversationId) {
+        body.book_id = options.bookId;
       }
 
       const response = await fetch("/api/chat", {

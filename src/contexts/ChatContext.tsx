@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useCallback } from "react";
 import { useChatSession } from "@/hooks/useChatSession";
 import type { UseChatSessionReturn } from "@/hooks/useChatSession";
+import type { ConversationBook } from "@/lib/types";
 
 interface OpenPanelOptions {
-  bookTitle?: string;
-  pathName?: string;
-  pathBookTitle?: string;
+  book?: ConversationBook;
+  /** Suggested first message, for a conversation that's just starting. */
+  prefill?: string;
 }
 
 interface ChatContextValue extends UseChatSessionReturn {
@@ -24,13 +25,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const openPanel = useCallback(
     (options?: OpenPanelOptions) => {
       setPanelOpen(true);
-      if (options?.pathName && options?.pathBookTitle) {
-        session.setInput(
-          `Let's discuss "${options.pathBookTitle}" from my reading path "${options.pathName}"`,
-        );
-      } else if (options?.bookTitle) {
-        session.setInput(`Let's discuss "${options.bookTitle}"`);
-      }
+      if (!options?.book) return;
+
+      void session.openBookConversation(options.book).then((resumed) => {
+        // Never replaces something the reader has already typed
+        if (!resumed && options.prefill) {
+          const prefill = options.prefill;
+          session.setInput((typed) => (typed.trim() ? typed : prefill));
+        }
+      });
     },
     [session],
   );

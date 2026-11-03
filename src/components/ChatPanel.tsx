@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
-import { MessageCircle, X, Maximize2, Send, Loader2, AlertCircle } from "lucide-react";
+import { MessageCircle, X, Maximize2, Send, Loader2, AlertCircle, List, Plus } from "lucide-react";
+import { ChatEmptyState } from "@/components/ChatEmptyState";
 import { ChatMessage } from "@/components/ChatMessage";
+import { ConversationItems } from "@/components/ConversationItems";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 
@@ -10,7 +12,12 @@ export function ChatPanel() {
   const navigate = useNavigate();
   const {
     conversationId,
+    book,
+    title,
     messages,
+    conversations,
+    conversationsLoading,
+    hasMoreConversations,
     input,
     streaming,
     streamingContent,
@@ -19,6 +26,12 @@ export function ChatPanel() {
     messageLimitReached,
     setInput,
     send,
+    newChat,
+    selectConversation,
+    loadMoreConversations,
+    renameConversation,
+    deleteConversation,
+    notifyExcerptSaved,
     panelOpen,
     openPanel,
     closePanel,
@@ -29,11 +42,17 @@ export function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mounted, setMounted] = useState(false);
+  const [showingList, setShowingList] = useState(false);
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
+
+  // Back to the conversation whenever it changes or the panel reopens
+  useEffect(() => {
+    setShowingList(false);
+  }, [conversationId, book, panelOpen]);
 
   // Focus textarea when panel opens
   useEffect(() => {
@@ -64,7 +83,7 @@ export function ChatPanel() {
   }, [panelOpen, closePanel]);
 
   // Hide entirely on the /chat page
-  if (pathname === "/chat") return null;
+  if (pathname === "/chat" || pathname.startsWith("/chat/")) return null;
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -75,16 +94,10 @@ export function ChatPanel() {
 
   function handleExpand() {
     closePanel();
-    navigate("/chat");
+    navigate(conversationId ? `/chat/${conversationId}` : "/chat");
   }
 
   const canSend = input.trim().length > 0 && !streaming;
-
-  // Conversations lookup for title
-  const conversations = useChatContext().conversations;
-  const activeConv = conversationId
-    ? conversations.find((c) => c.id === conversationId)
-    : null;
 
   // FAB only when panel is closed
   if (!panelOpen) {
@@ -118,8 +131,27 @@ export function ChatPanel() {
         {/* Header */}
         <div className="flex items-center gap-2 border-b px-3 py-2.5">
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {activeConv?.title ?? "Chat"}
+            {showingList ? "Conversations" : (title ?? book?.title ?? "Chat")}
           </span>
+          <button
+            onClick={() => setShowingList((showing) => !showing)}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={showingList ? "Back to conversation" : "Show conversations"}
+            aria-pressed={showingList}
+          >
+            <List className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => {
+              newChat();
+              setShowingList(false);
+              textareaRef.current?.focus();
+            }}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="New chat"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
           <button
             onClick={handleExpand}
             className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -136,25 +168,62 @@ export function ChatPanel() {
           </button>
         </div>
 
+        {showingList && (
+          <div className="flex-1 overflow-y-auto px-2 py-2">
+            <ConversationItems
+              conversations={conversations}
+              activeId={conversationId}
+              loading={conversationsLoading}
+              hasMore={hasMoreConversations}
+              onSelect={(id) => {
+                selectConversation(id);
+                setShowingList(false);
+              }}
+              onLoadMore={loadMoreConversations}
+              onRename={renameConversation}
+              onDelete={deleteConversation}
+            />
+          </div>
+        )}
+
+        {!showingList && book && messages.length > 0 && (
+          <div className="flex items-center justify-between gap-3 border-b px-3 py-1.5 text-xs text-muted-foreground">
+            <span className="min-w-0 truncate">
+              About{" "}
+              <Link to={`/books/${book.id}`} className="underline underline-offset-2 hover:text-foreground">
+                {book.title}
+              </Link>
+            </span>
+            <button
+              className="shrink-0 hover:text-foreground"
+              onClick={() => {
+                newChat(book);
+                textareaRef.current?.focus();
+              }}
+            >
+              Start new
+            </button>
+          </div>
+        )}
+
         {/* Messages area */}
-        <div className="flex-1 overflow-y-auto px-3 py-3">
+        <div className={`flex-1 overflow-y-auto px-3 py-3 ${showingList ? "hidden" : ""}`}>
           {messages.length === 0 && !streaming && (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center">
-                <p className="text-sm font-medium text-muted-foreground">
-                  What are you reading?
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Talk about your books, get recommendations, or explore your
-                  reading life.
-                </p>
-              </div>
-            </div>
+            <ChatEmptyState book={book} compact onSend={send} />
           )}
 
           <div className="space-y-3">
             {messages.map((msg) => (
-              <ChatMessage key={msg.id} role={msg.role} content={msg.content} />
+              <ChatMessage
+                key={msg.id}
+                role={msg.role}
+                content={msg.content}
+                save={
+                  msg.id.startsWith("temp-")
+                    ? undefined
+                    : { conversationId, book, onSaved: notifyExcerptSaved }
+                }
+              />
             ))}
 
             {streaming && streamingContent && (
@@ -185,7 +254,7 @@ export function ChatPanel() {
         </div>
 
         {/* Input area */}
-        <div className="border-t px-3 py-2">
+        <div className={`border-t px-3 py-2 ${showingList ? "hidden" : ""}`}>
           {messageLimitReached ? (
             <div className="py-2 text-center">
               <p className="text-sm text-muted-foreground">

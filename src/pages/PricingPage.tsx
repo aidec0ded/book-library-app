@@ -21,7 +21,7 @@ const PAID_FEATURES = [
   "Unlimited AI chat",
   "Curated syllabi via chat",
   "Structured reading paths",
-  "Conversation excerpts saved to books",
+  "Insights from book conversations saved automatically",
   "On-demand profile regeneration",
 ];
 

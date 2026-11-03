@@ -8,12 +8,12 @@
 
 **Conversations get a subject**
 
-- Link a conversation to a book — `book_id` on `conversations`. Nothing connects the two today, so earlier chats about a book can't be found
-- "Discuss this book" — resume the latest chat about the book with a clear "Start new" (decided), or start one with openers based on status (focus questions while reading). Today it only fills the text box, overwrites what you typed, and lands in whatever chat is open
-- Book context for the AI — send the book to the server, and give the AI a card with its summary, notes, dates, rating, excerpts, and list context. It can't see any of these today
-- Conversation links — `/chat/:id`, so "View conversation" opens the right one
-- Manage conversations — new chat and a conversation list in the panel, rename, delete, sort by latest activity, and load past the 20 most recently started. Deleting keeps excerpts (the foreign key already sets `conversation_id` to null), and says plainly that memory and the profile can't be traced back to one chat (decided)
-- Book page conversations — list conversations about the book alongside its excerpts, and hide the empty placeholder
+- Link a conversation to a book — `book_id` on `conversations`. Nothing connects the two today, so earlier chats about a book can't be found **[DONE]**
+- "Discuss this book" — resume the latest chat about the book with a clear "Start new" (decided), or start one with openers based on status (focus questions while reading). Today it only fills the text box, overwrites what you typed, and lands in whatever chat is open **[DONE]**
+- Book context for the AI — send the book to the server, and give the AI a card with its summary, notes, dates, rating, excerpts, and list context. It can't see any of these today **[DONE]**
+- Conversation links — `/chat/:id`, so "View conversation" opens the right one **[DONE]**
+- Manage conversations — new chat and a conversation list in the panel, rename, delete, sort by latest activity, and load past the 20 most recently started. Deleting keeps excerpts (the foreign key already sets `conversation_id` to null), and says plainly that memory and the profile can't be traced back to one chat (decided) **[DONE]**
+- Book page conversations — list conversations about the book alongside its excerpts, and hide the empty placeholder **[DONE]**
 
 **Quick context wins**
 
@@ -27,19 +27,21 @@
 - Show AI actions in the thread — "Added *Dune* to wishlist" with a link, and refresh the page behind the panel. Today actions are invisible
 - Stop and retry — `abortRef` is set but never used, and there's no way to resend after an error
 - Stuck and lost replies — a stream that ends without `done` leaves chat "streaming" until reload, and errors lose the partial reply
-- New Chat during a reply — `newChat` isn't guarded, so the reply can land in the new chat
+- New Chat during a reply — `newChat` isn't guarded, so the reply can land in the new chat **[DONE]**
 - Formatting — replace the hand-written formatter with proper markdown, and link book titles
 - Free limit — show it before someone types, keep the counter current, and don't lose the typed message
 - Phone layout — `/chat` uses `100vh`, which probably runs behind mobile browser bars. Check on a device
-- Conversation titles — generated after the client refreshes its list, so a new chat probably shows no title until the next refresh
+- Conversation titles — generated after the client refreshes its list, so a new chat probably shows no title until the next refresh **[DONE]**
 
 **Excerpts**
 
-- "Save to book" on any message, so saving doesn't depend on the AI offering. No user has ever saved an excerpt, and only one assistant message has ever offered
-- Save without announcing — the "no narration" rule is deliberate, because announcing saves felt clunky, so the AI shouldn't offer or ask in prose. Choose between saving silently during the chat and a pass after the conversation ends, then remove the prompt's "offer" and "always confirm" instructions. Chats started from a book page save to that book, with no title matching
-- Tell the reader when a save fails — a title that doesn't match is currently never mentioned, and a partial match can attach to the wrong book
-- Feed excerpts into the profile and book context — they only reach the book page today
-- Free readers can save by hand (decided), since it costs nothing to run. Saving done by the AI stays on the paid plan, since it costs API calls
+- "Save to book" on any message, so saving doesn't depend on the AI offering. No user has ever saved an excerpt, and only one assistant message has ever offered **[DONE]**
+- Save without announcing — the "no narration" rule is deliberate, because announcing saves felt clunky. What's worth keeping is saved after a book conversation goes quiet, and the live chat only saves when asked. Chats started from a book page save to that book, with no title matching **[DONE]**
+- Automatic saving for general chats — only conversations started from a book page are reviewed. Extend it to general chats that discuss a book once this has proven itself
+- Deleted excerpts can come back — resuming a conversation reviews it again, and the review can't see what the reader deleted. Keep deleted text as a tombstone if this happens in practice
+- Tell the reader when a save fails — a title that doesn't match is currently never mentioned, and a partial match can attach to the wrong book **[DONE]** for the AI, which is now told to say so
+- Feed excerpts into the profile — book context has them now **[DONE]**, but profile generation still doesn't read them
+- Free readers can save by hand (decided), since it costs nothing to run. Saving done by the AI stays on the paid plan, since it costs API calls **[DONE]**
 
 **Long-term continuity**
 

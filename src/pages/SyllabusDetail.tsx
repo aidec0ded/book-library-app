@@ -729,9 +729,12 @@ export function SyllabusDetail() {
                       onClick={(e) => {
                         e.preventDefault();
                         openPanel({
-                          bookTitle: item.book!.title,
-                          pathName: syllabus.name,
-                          pathBookTitle: item.book!.title,
+                          book: {
+                            id: item.book!.id,
+                            title: item.book!.title,
+                            status: item.book!.status,
+                          },
+                          prefill: `Let's discuss "${item.book!.title}" from my reading path "${syllabus.name}"`,
                         });
                       }}
                       className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-accent"

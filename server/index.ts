@@ -35,6 +35,9 @@ import { getGreeting } from "./greeting-handler.js";
 import { startProfileScheduler } from "./profile-scheduler.js";
 import { isIsoDate } from "../src/lib/reading-dates.js";
 import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
+import { buildBookContext, type LinkedBook } from "./book-context.js";
+import { startConversationReviewScheduler } from "./conversation-review.js";
+import { isPaidAndActive } from "./subscription.js";
 import { startReleasesScheduler } from "./releases-scheduler.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
 import {
@@ -111,6 +114,7 @@ function buildSystemPrompt(
   libraryIndex: string,
   readerProfile: string | null,
   syllabusIndex: string | null,
+  isPaid: boolean,
 ): string {
   let prompt = `You are the reading companion for Rekollekt, a personal book library app.
 You are a sharp, well-read literary mind — think engaged seminar leader,
@@ -162,12 +166,16 @@ When the reader mentions a book they want to read that isn't in their
 library, offer to add it to their wishlist. You can also view and
 remove books from the wishlist.
 
-You can save curated insights and observations to specific books using your
-save_excerpt tool. When a conversation surfaces a compelling interpretation,
-emotional reaction, or thematic connection about a book, offer to save it.
-The content should be a polished, self-contained 1-3 sentence insight —
-not raw conversation text. These excerpts appear on the book's detail page
-under "From Conversations." Always confirm with the reader before saving.
+${
+  isPaid
+    ? `What's worth keeping from a conversation about a book is saved to that book's
+page automatically after the conversation ends, so don't offer to save anything.
+When the reader asks you to save something, use your save_excerpt tool right away:
+a polished, self-contained 1-3 sentence version addressed to them as "you", keeping
+their own words where you can.`
+    : `The reader can save anything from this chat to a book's page using "Save to book"
+under a message. If they ask you to save something, point them to that.`
+}
 
 You can update books in the library using your manage_book tool. When the
 reader says they started, finished, or gave up on a book, update its status.
@@ -226,6 +234,7 @@ interface ChatRequest {
   message: string;
   is_onboarding?: boolean;
   today?: string;
+  book_id?: string;
 }
 
 function writeSSE(
@@ -307,10 +316,6 @@ async function getOrCreateSubscription(userId: string): Promise<SubscriptionRow>
     .single();
 
   return created as SubscriptionRow;
-}
-
-function isPaidAndActive(sub: SubscriptionRow): boolean {
-  return sub.plan !== "free" && (sub.status === "active" || sub.status === "trialing");
 }
 
 async function handleChat(
@@ -399,15 +404,31 @@ async function handleChat(
     const today = isIsoDate(body.today) ? body.today : new Date().toISOString().slice(0, 10);
 
     let conversationId = body.conversation_id;
+    let bookId: string | null = null;
     if (!conversationId) {
       const { data: conv, error: convError } = await supabase
         .from("conversations")
-        .insert(isOnboarding ? { is_onboarding: true } : {})
-        .select("id")
+        .insert({
+          ...(isOnboarding && { is_onboarding: true }),
+          ...(!isOnboarding && body.book_id && { book_id: body.book_id }),
+        })
+        .select("id, book_id")
         .single();
 
       if (convError) throw convError;
       conversationId = conv.id as string;
+      bookId = conv.book_id as string | null;
+    } else {
+      // Row-level security means this only finds the reader's own conversation
+      const { data: conv, error: convError } = await supabase
+        .from("conversations")
+        .select("book_id")
+        .eq("id", conversationId)
+        .maybeSingle();
+
+      if (convError) throw convError;
+      if (!conv) throw new Error("This conversation no longer exists.");
+      bookId = conv.book_id as string | null;
     }
 
     writeSSE(res, "meta", { conversation_id: conversationId });
@@ -429,6 +450,8 @@ async function handleChat(
 
     if (histError) throw histError;
 
+    const isPaid = isPaidAndActive(subscription);
+
     // Build system prompt — onboarding uses a simpler prompt
     let systemPrompt: string;
     if (isOnboarding) {
@@ -444,9 +467,13 @@ async function handleChat(
         loadReaderProfile(supabase, userId),
         buildSyllabusIndex(supabase, userId),
       ]);
-      systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex);
+      systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex, isPaid);
     }
     systemPrompt += `\n\nToday's date is ${today}.`;
+
+    // Kept apart from the prompt above so conversations about other books still reuse its cache
+    const bookContext = bookId ? await buildBookContext(supabase, bookId, conversationId) : null;
+    const linkedBook: LinkedBook | null = bookContext?.book ?? null;
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
@@ -456,7 +483,6 @@ async function handleChat(
       }));
 
     // Build tool list — free users get a subset
-    const isPaid = isPaidAndActive(subscription);
     const chatTools: Anthropic.Beta.Messages.BetaToolUnion[] = [
       { type: "memory_20250818" as const, name: "memory" },
       {
@@ -567,7 +593,7 @@ async function handleChat(
           {
             name: "save_excerpt",
             description:
-              "Save a curated insight or observation from the current conversation to a specific book. Use when conversation surfaces a compelling interpretation, emotional reaction, or thematic connection worth preserving.",
+              "Save an insight from the current conversation to a book's page when the reader asks you to, or view what's saved for a book. Don't use it unprompted: what's worth keeping is saved automatically after the conversation ends.",
             input_schema: {
               type: "object" as const,
               properties: {
@@ -580,7 +606,7 @@ async function handleChat(
                 book_title: {
                   type: "string",
                   description:
-                    "Exact book title as shown in the library",
+                    "Exact book title as shown in the library. Leave it out in a conversation about one book to use that book.",
                 },
                 content: {
                   type: "string",
@@ -588,7 +614,7 @@ async function handleChat(
                     "Polished 1-3 sentence insight to save (required for save)",
                 },
               },
-              required: ["action", "book_title"],
+              required: ["action"],
             },
           },
           {
@@ -821,6 +847,7 @@ async function handleChat(
             text: systemPrompt,
             cache_control: { type: "ephemeral" },
           },
+          ...(bookContext ? [{ type: "text" as const, text: bookContext.text }] : []),
         ],
         messages: apiMessages,
         tools,
@@ -892,6 +919,7 @@ async function handleChat(
               supabase,
               block.input as ExcerptCommand,
               conversationId,
+              linkedBook,
             );
           } else if (block.name === "manage_book") {
             result = await executeBookCommand(
@@ -1403,5 +1431,6 @@ server.listen(PORT, () => {
   console.log(`Rekollekt chat server listening on http://localhost:${PORT}`);
   startProfileScheduler(serviceSupabase);
   startEnrichmentScheduler(serviceSupabase);
+  startConversationReviewScheduler(serviceSupabase, anthropic, MODEL);
   startReleasesScheduler(serviceSupabase);
 });
