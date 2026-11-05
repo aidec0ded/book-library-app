@@ -6,6 +6,8 @@ import type {
   ThematicPillar,
   TasteShift,
 } from "../src/lib/types.js";
+import { SCORABLE_RELEASES } from "../src/lib/release-scoring.js";
+import { fetchAllRows } from "./fetch-all.js";
 
 config();
 
@@ -46,6 +48,7 @@ const BATCH_POLL_INTERVAL_MS = 30_000; // 30s between batch status polls
 // --- Types ---
 
 interface ReleaseForScoring {
+  id: string;
   isbn13: string;
   title: string;
   authors: string[];
@@ -53,6 +56,7 @@ interface ReleaseForScoring {
   synopsis: string | null;
   subjects: string[];
   page_count: number | null;
+  general_signal_score: number | null;
 }
 
 interface CalibratedBook {
@@ -300,24 +304,64 @@ function getTargetMonth(): { year: number; month: number } {
   return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
+/**
+ * The month's releases that need scoring. Without --user-id, those with no general
+ * score. With --user-id, also those this reader has no personal score for, so a
+ * reader whose profile arrives after the month was scored still gets scored.
+ * --force takes every scorable release.
+ */
 async function fetchReleasesToScore(
   year: number,
   month: number,
 ): Promise<ReleaseForScoring[]> {
-  let query = supabase
-    .from("new_releases")
-    .select("isbn13, title, authors, publisher, synopsis, subjects, page_count")
-    .eq("pub_year", year)
-    .eq("pub_month", month)
-    .order("title");
+  const releases = await fetchAllRows<ReleaseForScoring>((from, to) =>
+    supabase
+      .from("new_releases")
+      .select("id, isbn13, title, authors, publisher, synopsis, subjects, page_count, general_signal_score")
+      .eq("pub_year", year)
+      .eq("pub_month", month)
+      .or(SCORABLE_RELEASES)
+      .order("title")
+      .order("id")
+      .range(from, to),
+  );
 
-  if (!force) {
-    query = query.is("general_signal_score", null);
+  if (force) return releases;
+
+  const personallyScored = new Set<string>();
+  if (userId) {
+    const rows = await fetchAllRows<{ release_id: string }>((from, to) =>
+      supabase
+        .from("user_release_scores")
+        .select("release_id, new_releases!inner(id)")
+        .eq("user_id", userId)
+        .not("personal_score", "is", null)
+        .eq("new_releases.pub_year", year)
+        .eq("new_releases.pub_month", month)
+        .order("release_id")
+        .range(from, to),
+    );
+    for (const row of rows) personallyScored.add(row.release_id);
   }
 
-  const { data, error } = await query;
-  if (error) throw new Error(`fetchReleasesToScore: ${error.message}`);
-  return (data ?? []) as ReleaseForScoring[];
+  return releases.filter(
+    (r) => r.general_signal_score == null || (userId != null && !personallyScored.has(r.id)),
+  );
+}
+
+async function countUnscorable(year: number, month: number): Promise<number> {
+  const count = async (scorableOnly: boolean) => {
+    let query = supabase
+      .from("new_releases")
+      .select("id", { count: "exact", head: true })
+      .eq("pub_year", year)
+      .eq("pub_month", month);
+    if (scorableOnly) query = query.or(SCORABLE_RELEASES);
+    const { count, error } = await query;
+    if (error) throw new Error(`countUnscorable: ${error.message}`);
+    return count ?? 0;
+  };
+  return (await count(false)) - (await count(true));
 }
 
 // --- Tag formatting ---
@@ -544,54 +588,52 @@ async function writeScoreResults(
   const scores: number[] = [];
 
   for (const result of results) {
-    const aiScore = computeAiScore(result.general_signal, result.personal_match);
+    const release = releasesByIsbn.get(result.isbn);
+    if (!release) continue;
 
-    // Always update general_signal_score on new_releases (shared)
-    const { error: generalError } = await supabase
-      .from("new_releases")
-      .update({
-        general_signal_score: result.general_signal,
-      })
-      .eq("isbn13", result.isbn);
+    // The general score is shared by every reader. Keep the one already there, so
+    // scoring a second reader doesn't rewrite it, unless --force asked for a rescore.
+    const keepGeneral = release.general_signal_score != null && !force;
+    const generalSignal = keepGeneral ? release.general_signal_score! : result.general_signal;
+    const aiScore = computeAiScore(generalSignal, result.personal_match);
 
-    if (generalError) {
-      console.log(
-        `  ${label} \u2717 DB error for ${result.isbn}: ${generalError.message}`,
-      );
-      errors++;
-      continue;
+    if (!keepGeneral) {
+      const { error: generalError } = await supabase
+        .from("new_releases")
+        .update({ general_signal_score: result.general_signal })
+        .eq("id", release.id);
+
+      if (generalError) {
+        console.log(
+          `  ${label} \u2717 DB error for ${result.isbn}: ${generalError.message}`,
+        );
+        errors++;
+        continue;
+      }
     }
 
     // Write personal scores to user_release_scores if --user-id provided
     if (userId && result.personal_match != null) {
-      const { data: releaseRow } = await supabase
-        .from("new_releases")
-        .select("id")
-        .eq("isbn13", result.isbn)
-        .single();
+      const { error: userScoreError } = await supabase
+        .from("user_release_scores")
+        .upsert(
+          {
+            user_id: userId,
+            release_id: release.id,
+            personal_score: result.personal_match,
+            ai_score: aiScore,
+            ai_rationale: result.rationale,
+            scored_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,release_id" },
+        );
 
-      if (releaseRow) {
-        const { error: userScoreError } = await supabase
-          .from("user_release_scores")
-          .upsert(
-            {
-              user_id: userId,
-              release_id: releaseRow.id,
-              personal_score: result.personal_match,
-              ai_score: aiScore,
-              ai_rationale: result.rationale,
-              scored_at: new Date().toISOString(),
-            },
-            { onConflict: "user_id,release_id" },
-          );
-
-        if (userScoreError) {
-          console.log(
-            `  ${label} \u2717 User score error for ${result.isbn}: ${userScoreError.message}`,
-          );
-          errors++;
-          continue;
-        }
+      if (userScoreError) {
+        console.log(
+          `  ${label} \u2717 User score error for ${result.isbn}: ${userScoreError.message}`,
+        );
+        errors++;
+        continue;
       }
     }
 
@@ -624,6 +666,9 @@ function printSummary(
     `Distribution: 8-10: ${dist.high} | 6-7: ${dist.midHigh} | 4-5: ${dist.mid} | 1-3: ${dist.low}`,
   );
 }
+
+/** The releases being scored this run, for writing results back by ISBN. */
+const releasesByIsbn = new Map<string, ReleaseForScoring>();
 
 // --- Batch Mode ---
 
@@ -853,18 +898,15 @@ async function main() {
   }
 
   // Fetch releases to score
+  // Releases with no synopsis and no subjects are left out: there's nothing to judge.
   let releases = await fetchReleasesToScore(target.year, target.month);
-
-  // Filter out releases with no synopsis AND no subjects (insufficient data)
-  const beforeFilter = releases.length;
-  releases = releases.filter(
-    (r) => (r.synopsis && r.synopsis.trim().length > 0) || r.subjects.length > 0,
-  );
-  const insufficientData = beforeFilter - releases.length;
+  const insufficientData = await countUnscorable(target.year, target.month);
 
   if (limit && limit > 0) {
     releases = releases.slice(0, limit);
   }
+
+  for (const release of releases) releasesByIsbn.set(release.isbn13, release);
 
   const totalBatches = Math.ceil(releases.length / BATCH_SIZE);
   const modeLabel = dryRun ? "dry-run" : batchMode ? "batch" : "sequential";

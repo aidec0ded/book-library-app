@@ -1,9 +1,14 @@
 import { exec } from "node:child_process";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { SCORABLE_RELEASES } from "../src/lib/release-scoring.js";
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const STARTUP_DELAY_MS = 2 * 60 * 1000; // 2 minutes after server start
 const TRIGGER_DAY = 25; // Day of month to start targeting next month
+// Readers get personal release scores while their profile is recent. Profiles only
+// regenerate after reading activity, so an older one means the reader has gone quiet,
+// and scoring a whole month of releases for them would be wasted.
+const ACTIVE_PROFILE_DAYS = 90;
 
 const inFlight = {
   ingestion: false,
@@ -19,8 +24,7 @@ function formatMonth(year: number, month: number): string {
  * - Always check that the current month has releases (safety net for fresh deploys)
  * - On day >= 25, also target next month (the primary trigger)
  */
-function getTargetMonths(): { year: number; month: number; label: string }[] {
-  const now = new Date();
+function getTargetMonths(now: Date): { year: number; month: number; label: string }[] {
   const targets: { year: number; month: number; label: string }[] = [];
 
   // Current month — ensure it's covered
@@ -60,98 +64,113 @@ function spawn(label: string, command: string, guard: keyof typeof inFlight): vo
   });
 }
 
-async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
-  try {
-    const targets = getTargetMonths();
-    console.log(`[releases] Checking ${targets.map((t) => t.label).join(", ")}...`);
+export interface ReleasesJob {
+  label: string;
+  command: string;
+  guard: keyof typeof inFlight;
+}
 
-    for (const { year, month, label } of targets) {
-      // Check how many releases exist for this month
-      const { count: totalReleases } = await supabase
-        .from("new_releases")
-        .select("id", { count: "exact", head: true })
-        .eq("pub_year", year)
-        .eq("pub_month", month);
+function monthReleases(supabase: SupabaseClient, year: number, month: number) {
+  return supabase
+    .from("new_releases")
+    .select("id", { count: "exact", head: true })
+    .eq("pub_year", year)
+    .eq("pub_month", month);
+}
 
-      if ((totalReleases ?? 0) === 0) {
-        // No releases for this month — ingest
-        spawn(
-          `Ingestion for ${label}`,
-          `npx tsx scripts/ingest-releases.ts --month ${label} --language en`,
-          "ingestion",
-        );
-        // Don't try to score this month until next cycle (ingestion needs to finish first)
-        continue;
-      }
+/**
+ * The next job the releases pipeline needs, or null when every target month is
+ * imported and scored for every reader with a profile. Reads only; spawns nothing.
+ *
+ * Imports come first: any target month with no releases is imported, so unfinished
+ * scoring never holds up next month. Then, per month: score releases with no general
+ * score, then give personal scores to each reader whose profile is recent
+ * (ACTIVE_PROFILE_DAYS). Releases with nothing to judge (no synopsis or subjects)
+ * are left out of every count, as the scorer leaves them out.
+ */
+export async function planReleasesJob(
+  supabase: SupabaseClient,
+  now: Date = new Date(),
+): Promise<ReleasesJob | null> {
+  const targets = getTargetMonths(now);
+  console.log(`[releases] Checking ${targets.map((t) => t.label).join(", ")}...`);
 
-      // Releases exist — check if scoring is needed
-      if (!inFlight.ingestion && !inFlight.scoring) {
-        // Check 1: General signal scoring (shared, runs once)
-        const { count: unscoredCount } = await supabase
-          .from("new_releases")
-          .select("id", { count: "exact", head: true })
-          .eq("pub_year", year)
-          .eq("pub_month", month)
-          .is("general_signal_score", null);
+  // Readers with a recent profile, most recently generated first
+  const activeSince = new Date(now.getTime() - ACTIVE_PROFILE_DAYS * 24 * 60 * 60 * 1000);
+  const { data: profiles, error: profilesError } = await supabase
+    .from("reader_profile")
+    .select("user_id")
+    .gte("generated_at", activeSince.toISOString())
+    .order("generated_at", { ascending: false });
+  if (profilesError) throw new Error(`reader_profile: ${profilesError.message}`);
+  const profileUserIds = [...new Set((profiles ?? []).map((p) => p.user_id as string))];
 
-        if ((unscoredCount ?? 0) > 0) {
-          // Pick any profile user for the first scoring pass (general + personal)
-          const { data: anyProfile } = await supabase
-            .from("reader_profile")
-            .select("user_id")
-            .order("generated_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          const userIdFlag = anyProfile ? ` --user-id ${anyProfile.user_id}` : "";
-          spawn(
-            `Scoring for ${label} (${unscoredCount} unscored)`,
-            `npx tsx scripts/score-releases.ts --month ${label} --batch${userIdFlag}`,
-            "scoring",
-          );
-          break;
-        }
+  // Imports first, for every target month, so unfinished scoring never holds up next month
+  for (const { year, month, label } of targets) {
+    const { count: totalReleases } = await monthReleases(supabase, year, month);
+    if ((totalReleases ?? 0) === 0) {
+      return {
+        label: `Ingestion for ${label}`,
+        command: `npx tsx scripts/ingest-releases.ts --month ${label} --language en`,
+        guard: "ingestion",
+      };
+    }
+  }
 
-        // Check 2: Personal scoring — find ANY user with a profile but no scores
-        const { data: allProfiles } = await supabase
-          .from("reader_profile")
-          .select("user_id")
-          .order("generated_at", { ascending: false });
+  for (const { year, month, label } of targets) {
+    const { count: unscored } = await monthReleases(supabase, year, month)
+      .or(SCORABLE_RELEASES)
+      .is("general_signal_score", null);
 
-        // Deduplicate user IDs (a user may have multiple profile generations)
-        const profileUserIds = [...new Set((allProfiles ?? []).map((p) => p.user_id))];
-
-        if (profileUserIds.length > 0) {
-          const { count: scoredReleases } = await supabase
-            .from("new_releases")
-            .select("id", { count: "exact", head: true })
-            .eq("pub_year", year)
-            .eq("pub_month", month)
-            .not("general_signal_score", "is", null);
-
-          if ((scoredReleases ?? 0) > 0) {
-            for (const uid of profileUserIds) {
-              const { count: userScores } = await supabase
-                .from("user_release_scores")
-                .select("id", { count: "exact", head: true })
-                .eq("user_id", uid);
-
-              if ((userScores ?? 0) === 0) {
-                spawn(
-                  `Personal scoring for ${label} (${scoredReleases} releases, user ${uid.slice(0, 8)}...)`,
-                  `npx tsx scripts/score-releases.ts --month ${label} --batch --force --user-id ${uid}`,
-                  "scoring",
-                );
-                break;
-              }
-            }
-          }
-        }
-
-        if (inFlight.scoring) break; // A scoring job was spawned above
-      }
+    if ((unscored ?? 0) > 0) {
+      // General and personal scores together, for the reader with the newest profile
+      const userIdFlag = profileUserIds[0] ? ` --user-id ${profileUserIds[0]}` : "";
+      return {
+        label: `Scoring for ${label} (${unscored} unscored)`,
+        command: `npx tsx scripts/score-releases.ts --month ${label} --batch${userIdFlag}`,
+        guard: "scoring",
+      };
     }
 
-    if (!inFlight.ingestion && !inFlight.scoring) {
+    const { count: scored } = await monthReleases(supabase, year, month)
+      .or(SCORABLE_RELEASES)
+      .not("general_signal_score", "is", null);
+
+    for (const uid of profileUserIds) {
+      const { count: userScores, error } = await supabase
+        .from("user_release_scores")
+        .select("release_id, new_releases!inner(id)", { count: "exact", head: true })
+        .eq("user_id", uid)
+        .not("personal_score", "is", null)
+        .eq("new_releases.pub_year", year)
+        .eq("new_releases.pub_month", month)
+        .or(SCORABLE_RELEASES, { referencedTable: "new_releases" });
+      if (error) throw new Error(`user_release_scores: ${error.message}`);
+
+      const missing = (scored ?? 0) - (userScores ?? 0);
+      if (missing > 0) {
+        return {
+          label: `Personal scoring for ${label} (${missing} releases, user ${uid.slice(0, 8)}...)`,
+          command: `npx tsx scripts/score-releases.ts --month ${label} --batch --user-id ${uid}`,
+          guard: "scoring",
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
+  try {
+    if (inFlight.ingestion || inFlight.scoring) {
+      console.log("[releases] A releases job is still running, skipping this check.");
+      return;
+    }
+    const job = await planReleasesJob(supabase);
+    if (job) {
+      spawn(job.label, job.command, job.guard);
+    } else {
       console.log("[releases] All months covered, nothing to do.");
     }
   } catch (err) {
