@@ -45,7 +45,11 @@ npx tsx scripts/ingest-releases.ts --months 6  # adjust window size (default 3)
 npx tsx scripts/ingest-releases.ts --language en  # English-language books only
 npx tsx scripts/ingest-releases.ts --binding hardcover  # hardcover binding only
 npx tsx scripts/ingest-releases.ts --fiction   # fiction genres only (subject-based filter)
-npx tsx scripts/score-releases.ts              # AI score releases for current month
+npx tsx scripts/triage-releases.ts --month 2026-11  # drop non-books, reprints, academic etc. before scoring (rules + Haiku 5.5)
+npx tsx scripts/triage-releases.ts --month 2026-11 --dry-run --report triage.json  # preview outcomes, no DB writes
+npx tsx scripts/triage-releases.ts --month 2026-11 --rules-only --dry-run  # free rules only, no AI calls
+npx tsx scripts/triage-releases.ts --month 2026-11 --force  # re-triage releases already triaged
+npx tsx scripts/score-releases.ts              # AI score releases for current month (triaged and kept only)
 npx tsx scripts/score-releases.ts --dry-run    # preview prompt, no API calls or DB writes
 npx tsx scripts/score-releases.ts --limit 10   # process only first 10 releases
 npx tsx scripts/score-releases.ts --month 2026-02  # score a specific month
@@ -194,6 +198,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, score badges, sort toggle, rationale display, dismiss, pagination
 - `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference, dismiss/undismiss)
 - `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
+- `scripts/triage-releases.ts` — Triages a month of releases before scoring: free rules (non-book formats, academic publishers, children's/education subjects, activity books, special editions, very short books, other formats of the same book) then a Haiku 5.5 check on the listing (new / reprint / not for general readers). Sets `triaged_at` and `skip_reason`. Drops about 60% of a month
+- `src/lib/release-scoring.ts` — `scorableOnly`, the one filter for which releases get scored, shared by the scorer and the releases scheduler so they agree on what's left to do
+- `server/releases-scheduler.ts` — Every 4 hours: imports any target month with no releases (current month, plus next month from the 25th), then per month triages, scores, and gives personal scores to each reader whose profile is from the last 90 days. `planReleasesJob` decides the next job and only reads
 - `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 5.5, --dry-run/--limit/--month/--force flags)
 - `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 5.5, --dry-run/--limit/--force/--output/--apply flags)
 - `scripts/ingest-awards.ts` — Wikidata SPARQL ingestion of literary awards (17 awards, 4 query patterns) + library matching (--dry-run/--match-only/--force/--limit flags)
@@ -211,7 +218,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **AI Output** — Predicted ratings for unread books, AI-managed syllabi + reading paths + wishlist via chat tools (books not in library are auto-added as wishlist items), personalized home page with AI greeting, personalized recommendations page, reading paths with seminar-style scaffolding (thesis, pre-reading context, focus questions, post-reading prompts, progress tracking)
 
-**Discovery** — New releases ingestion from ISBNdb + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases, literary awards via Wikidata (17 awards, winner/shortlist/longlist/nominee)
+**Discovery** — New releases ingestion from ISBNdb + triage (rules and a Haiku check drop non-books, reprints, and academic titles before scoring) + AI scoring (general signal + personal match), releases browse page with inline detail, wishlist integration from releases, literary awards via Wikidata (17 awards, winner/shortlist/longlist/nominee)
 
 **Library as Space** — Visual bookshelf with manual + auto shelves, coverflow carousel, Bookshop.org purchase links
 
@@ -320,6 +327,8 @@ Fifteen tables in Supabase:
 - `ai_rationale` — 1-sentence explanation of score
 - `scored_at` — timestamp of last scoring (null = never scored)
 - `dismissed` — boolean, user can dismiss uninteresting releases (default false)
+- `triaged_at` — when `triage-releases.ts` triaged it (null = not yet; untriaged releases aren't scored)
+- `skip_reason` — why triage dropped it (`format`, `academic_publisher`, `children_or_education`, `activity_book`, `special_edition`, `too_short`, `duplicate_format`, `reprint`, `not_for_general_readers`); null = kept. Dropped releases are hidden on the Releases page and from the chat releases tool (migration 028)
 - No FK to `books` — cross-referenced by ISBN at query time for "In Library" badges
 
 **shelves** — User-created shelf groupings for visual bookshelf view. Key fields:

@@ -209,7 +209,8 @@ function normalizeWorkTitle(title: string): string {
   return normalizeText(t);
 }
 
-function normalizeWorkKey(title: string, author?: string | null): string {
+/** One key per work: the same for every edition and format of a book. */
+export function normalizeWorkKey(title: string, author?: string | null): string {
   return `${normalizeWorkTitle(title)}|${normalizeAuthorKey(author)}`;
 }
 

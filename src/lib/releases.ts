@@ -85,7 +85,9 @@ export async function fetchReleasesByMonth(
     .from("new_releases")
     .select("*, user_release_scores(*)", { count: "exact" })
     .eq("pub_year", year)
-    .eq("pub_month", month);
+    .eq("pub_month", month)
+    // Hide what triage dropped: other formats, reprints, activity and academic books
+    .is("skip_reason", null);
 
   if (category === "fiction") {
     query = query.eq("is_fiction", true);

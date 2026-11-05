@@ -1,6 +1,6 @@
 import { exec } from "node:child_process";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SCORABLE_RELEASES } from "../src/lib/release-scoring.js";
+import { scorableOnly } from "../src/lib/release-scoring.js";
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const STARTUP_DELAY_MS = 2 * 60 * 1000; // 2 minutes after server start
@@ -12,6 +12,7 @@ const ACTIVE_PROFILE_DAYS = 90;
 
 const inFlight = {
   ingestion: false,
+  triage: false,
   scoring: false,
 };
 
@@ -83,10 +84,10 @@ function monthReleases(supabase: SupabaseClient, year: number, month: number) {
  * imported and scored for every reader with a profile. Reads only; spawns nothing.
  *
  * Imports come first: any target month with no releases is imported, so unfinished
- * scoring never holds up next month. Then, per month: score releases with no general
- * score, then give personal scores to each reader whose profile is recent
- * (ACTIVE_PROFILE_DAYS). Releases with nothing to judge (no synopsis or subjects)
- * are left out of every count, as the scorer leaves them out.
+ * scoring never holds up next month. Then, per month: triage releases not yet
+ * triaged; score kept releases with no general score; then give personal scores to
+ * each reader whose profile is recent (ACTIVE_PROFILE_DAYS). Counts use the same
+ * filter as the scorer (scorableOnly), so they agree on what's left to do.
  */
 export async function planReleasesJob(
   supabase: SupabaseClient,
@@ -118,8 +119,17 @@ export async function planReleasesJob(
   }
 
   for (const { year, month, label } of targets) {
-    const { count: unscored } = await monthReleases(supabase, year, month)
-      .or(SCORABLE_RELEASES)
+    // Triage before scoring, so only new books for adult readers get scored
+    const { count: untriaged } = await monthReleases(supabase, year, month).is("triaged_at", null);
+    if ((untriaged ?? 0) > 0) {
+      return {
+        label: `Triage for ${label} (${untriaged} releases)`,
+        command: `npx tsx scripts/triage-releases.ts --month ${label}`,
+        guard: "triage",
+      };
+    }
+
+    const { count: unscored } = await scorableOnly(monthReleases(supabase, year, month))
       .is("general_signal_score", null);
 
     if ((unscored ?? 0) > 0) {
@@ -132,19 +142,20 @@ export async function planReleasesJob(
       };
     }
 
-    const { count: scored } = await monthReleases(supabase, year, month)
-      .or(SCORABLE_RELEASES)
+    const { count: scored } = await scorableOnly(monthReleases(supabase, year, month))
       .not("general_signal_score", "is", null);
 
     for (const uid of profileUserIds) {
-      const { count: userScores, error } = await supabase
-        .from("user_release_scores")
-        .select("release_id, new_releases!inner(id)", { count: "exact", head: true })
-        .eq("user_id", uid)
-        .not("personal_score", "is", null)
-        .eq("new_releases.pub_year", year)
-        .eq("new_releases.pub_month", month)
-        .or(SCORABLE_RELEASES, { referencedTable: "new_releases" });
+      const { count: userScores, error } = await scorableOnly(
+        supabase
+          .from("user_release_scores")
+          .select("release_id, new_releases!inner(id)", { count: "exact", head: true })
+          .eq("user_id", uid)
+          .not("personal_score", "is", null)
+          .eq("new_releases.pub_year", year)
+          .eq("new_releases.pub_month", month),
+        "new_releases",
+      );
       if (error) throw new Error(`user_release_scores: ${error.message}`);
 
       const missing = (scored ?? 0) - (userScores ?? 0);

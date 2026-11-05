@@ -6,7 +6,7 @@ import type {
   ThematicPillar,
   TasteShift,
 } from "../src/lib/types.js";
-import { SCORABLE_RELEASES } from "../src/lib/release-scoring.js";
+import { scorableOnly } from "../src/lib/release-scoring.js";
 import { fetchAllRows } from "./fetch-all.js";
 
 config();
@@ -315,12 +315,13 @@ async function fetchReleasesToScore(
   month: number,
 ): Promise<ReleaseForScoring[]> {
   const releases = await fetchAllRows<ReleaseForScoring>((from, to) =>
-    supabase
-      .from("new_releases")
-      .select("id, isbn13, title, authors, publisher, synopsis, subjects, page_count, general_signal_score")
-      .eq("pub_year", year)
-      .eq("pub_month", month)
-      .or(SCORABLE_RELEASES)
+    scorableOnly(
+      supabase
+        .from("new_releases")
+        .select("id, isbn13, title, authors, publisher, synopsis, subjects, page_count, general_signal_score")
+        .eq("pub_year", year)
+        .eq("pub_month", month),
+    )
       .order("title")
       .order("id")
       .range(from, to),
@@ -349,19 +350,24 @@ async function fetchReleasesToScore(
   );
 }
 
-async function countUnscorable(year: number, month: number): Promise<number> {
-  const count = async (scorableOnly: boolean) => {
-    let query = supabase
+/** How many of the month's releases aren't scored: not yet triaged, or dropped or with nothing to judge. */
+async function countNotScored(year: number, month: number): Promise<{ untriaged: number; left_out: number }> {
+  const month_ = () =>
+    supabase
       .from("new_releases")
       .select("id", { count: "exact", head: true })
       .eq("pub_year", year)
       .eq("pub_month", month);
-    if (scorableOnly) query = query.or(SCORABLE_RELEASES);
-    const { count, error } = await query;
-    if (error) throw new Error(`countUnscorable: ${error.message}`);
-    return count ?? 0;
-  };
-  return (await count(false)) - (await count(true));
+  const [all, untriaged, scorable] = await Promise.all([
+    month_(),
+    month_().is("triaged_at", null),
+    scorableOnly(month_()),
+  ]);
+  for (const r of [all, untriaged, scorable]) {
+    if (r.error) throw new Error(`countNotScored: ${r.error.message}`);
+  }
+  const u = untriaged.count ?? 0;
+  return { untriaged: u, left_out: (all.count ?? 0) - (scorable.count ?? 0) - u };
 }
 
 // --- Tag formatting ---
@@ -898,9 +904,9 @@ async function main() {
   }
 
   // Fetch releases to score
-  // Releases with no synopsis and no subjects are left out: there's nothing to judge.
+  // Only releases kept by triage, with a synopsis or subjects to judge from
   let releases = await fetchReleasesToScore(target.year, target.month);
-  const insufficientData = await countUnscorable(target.year, target.month);
+  const notScored = await countNotScored(target.year, target.month);
 
   if (limit && limit > 0) {
     releases = releases.slice(0, limit);
@@ -912,7 +918,10 @@ async function main() {
   const modeLabel = dryRun ? "dry-run" : batchMode ? "batch" : "sequential";
 
   console.log(`  Mode: ${modeLabel} | Model: ${MODEL}`);
-  console.log(`  Month: ${monthLabel} | Releases: ${releases.length} (${insufficientData} skipped, insufficient data)`);
+  console.log(`  Month: ${monthLabel} | Releases: ${releases.length} (${notScored.left_out} left out by triage or with nothing to judge)`);
+  if (notScored.untriaged > 0) {
+    console.log(`  ${notScored.untriaged} releases aren't triaged yet and won't be scored: run scripts/triage-releases.ts --month ${target.year}-${String(target.month).padStart(2, "0")}`);
+  }
   console.log(`  Scoring: ${hasProfile ? "general + personal" : "general signal only (no reader profile)"}`);
   console.log(`  Batches: ${totalBatches} (${BATCH_SIZE} per batch)`);
   if (hasProfile) {

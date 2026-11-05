@@ -79,6 +79,7 @@ export async function executeReleasesCommand(
       const { data, error, count } = await supabase
         .from("new_releases")
         .select("title, authors, general_signal_score, publisher, date_published", { count: "exact" })
+        .is("skip_reason", null) // hide what triage dropped
         .eq("pub_year", year)
         .eq("pub_month", month)
         .order("general_signal_score", { ascending: false, nullsFirst: false })
@@ -110,6 +111,7 @@ export async function executeReleasesCommand(
       let query = supabase
         .from("new_releases")
         .select("title, authors, general_signal_score, publisher, date_published")
+        .is("skip_reason", null) // hide what triage dropped
         .gte("general_signal_score", 7)
         .order("general_signal_score", { ascending: false, nullsFirst: false })
         .limit(resultLimit);
@@ -141,6 +143,7 @@ export async function executeReleasesCommand(
       const { data, error } = await supabase
         .from("new_releases")
         .select("title, authors, general_signal_score, publisher, date_published, pub_year, pub_month")
+        .is("skip_reason", null) // hide what triage dropped
         .or(`title.ilike.%${q}%,authors.cs.{"${q}"}`)
         .order("general_signal_score", { ascending: false, nullsFirst: false })
         .limit(resultLimit);
