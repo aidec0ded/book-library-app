@@ -12,10 +12,19 @@
 /** Has a synopsis or subjects. The import stores a blank synopsis as null. */
 export const HAS_SOMETHING_TO_JUDGE = "synopsis.not.is.null,subjects.neq.{}";
 
+/**
+ * The general score a release needs to be "notable": listed on the Releases page's
+ * Notable view, and personally scored for readers who ask for curation. About a
+ * quarter of kept releases. Personal scoring every release cost about $3 a month
+ * per reader; this keeps about 88% of the picks a reader scored 7 or more.
+ */
+export const NOTABLE_MIN_GENERAL = 6;
+
 interface FilterBuilder<Q> {
   or(filters: string, options?: { referencedTable?: string }): Q;
   is(column: string, value: null): Q;
   not(column: string, operator: string, value: unknown): Q;
+  gte(column: string, value: unknown): Q;
 }
 
 /**
@@ -28,4 +37,13 @@ export function scorableOnly<Q extends FilterBuilder<Q>>(query: Q, referencedTab
     .or(HAS_SOMETHING_TO_JUDGE, referencedTable ? { referencedTable } : undefined)
     .not(column("triaged_at"), "is", null)
     .is(column("skip_reason"), null);
+}
+
+/**
+ * Narrow a new_releases query to the releases a curating reader gets personal
+ * scores for: scorable, with a general score of NOTABLE_MIN_GENERAL or more.
+ */
+export function personallyScorableOnly<Q extends FilterBuilder<Q>>(query: Q, referencedTable?: string): Q {
+  const column = referencedTable ? `${referencedTable}.general_signal_score` : "general_signal_score";
+  return scorableOnly(query, referencedTable).gte(column, NOTABLE_MIN_GENERAL);
 }

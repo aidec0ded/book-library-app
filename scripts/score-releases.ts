@@ -6,8 +6,17 @@ import type {
   ThematicPillar,
   TasteShift,
 } from "../src/lib/types.js";
-import { scorableOnly } from "../src/lib/release-scoring.js";
+import { personallyScorableOnly, scorableOnly } from "../src/lib/release-scoring.js";
 import { fetchAllRows } from "./fetch-all.js";
+
+/*
+ * Two kinds of run:
+ * - Without --user-id: general scores for the month's scorable releases that have none,
+ *   judged without any reader's profile.
+ * - With --user-id: personal scores for one reader, on the month's notable releases
+ *   (general score of NOTABLE_MIN_GENERAL or more) they have none for. The releases
+ *   scheduler runs these for readers who asked for curation on the Releases page.
+ */
 
 config();
 
@@ -159,18 +168,16 @@ async function fetchLatestProfile(): Promise<{
   profile: ReaderProfileData;
   generatedAt: string;
 } | null> {
-  let query = supabase
+  // General scores are judged without a profile, so no one reader's taste shapes them
+  if (!userId) return null;
+
+  const { data, error } = await supabase
     .from("reader_profile")
     .select("profile_data, generated_at")
+    .eq("user_id", userId)
     .order("generated_at", { ascending: false })
-    .limit(1);
-
-  // When --user-id is provided, filter to that user's profile
-  if (userId) {
-    query = query.eq("user_id", userId);
-  }
-
-  const { data, error } = await query.maybeSingle();
+    .limit(1)
+    .maybeSingle();
 
   if (error) throw new Error(`fetchLatestProfile: ${error.message}`);
   if (!data) return null;
@@ -305,17 +312,18 @@ function getTargetMonth(): { year: number; month: number } {
 }
 
 /**
- * The month's releases that need scoring. Without --user-id, those with no general
- * score. With --user-id, also those this reader has no personal score for, so a
- * reader whose profile arrives after the month was scored still gets scored.
- * --force takes every scorable release.
+ * The month's releases that need scoring. Without --user-id, scorable releases with
+ * no general score. With --user-id, notable releases (general score of
+ * NOTABLE_MIN_GENERAL or more) this reader has no personal score for. --force takes
+ * every release of that kind, scored or not.
  */
 async function fetchReleasesToScore(
   year: number,
   month: number,
 ): Promise<ReleaseForScoring[]> {
+  const narrow = userId ? personallyScorableOnly : scorableOnly;
   const releases = await fetchAllRows<ReleaseForScoring>((from, to) =>
-    scorableOnly(
+    narrow(
       supabase
         .from("new_releases")
         .select("id, isbn13, title, authors, publisher, synopsis, subjects, page_count, general_signal_score")
@@ -328,26 +336,21 @@ async function fetchReleasesToScore(
   );
 
   if (force) return releases;
+  if (!userId) return releases.filter((r) => r.general_signal_score == null);
 
-  const personallyScored = new Set<string>();
-  if (userId) {
-    const rows = await fetchAllRows<{ release_id: string }>((from, to) =>
-      supabase
-        .from("user_release_scores")
-        .select("release_id, new_releases!inner(id)")
-        .eq("user_id", userId)
-        .not("personal_score", "is", null)
-        .eq("new_releases.pub_year", year)
-        .eq("new_releases.pub_month", month)
-        .order("release_id")
-        .range(from, to),
-    );
-    for (const row of rows) personallyScored.add(row.release_id);
-  }
-
-  return releases.filter(
-    (r) => r.general_signal_score == null || (userId != null && !personallyScored.has(r.id)),
+  const rows = await fetchAllRows<{ release_id: string }>((from, to) =>
+    supabase
+      .from("user_release_scores")
+      .select("release_id, new_releases!inner(id)")
+      .eq("user_id", userId)
+      .not("personal_score", "is", null)
+      .eq("new_releases.pub_year", year)
+      .eq("new_releases.pub_month", month)
+      .order("release_id")
+      .range(from, to),
   );
+  const personallyScored = new Set(rows.map((row) => row.release_id));
+  return releases.filter((r) => !personallyScored.has(r.id));
 }
 
 /** How many of the month's releases aren't scored: not yet triaged, or dropped or with nothing to judge. */
@@ -883,6 +886,10 @@ async function main() {
   // Fetch profile (optional)
   const profileResult = await fetchLatestProfile();
   const hasProfile = profileResult != null;
+  if (userId && !hasProfile) {
+    console.log(`No reader profile for ${userId}, so there's nothing to score personally against.`);
+    return;
+  }
 
   let systemPrompt: string;
   let canonBooks: { title: string; author: string; rating: number | null }[] = [];

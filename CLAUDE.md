@@ -55,6 +55,7 @@ npx tsx scripts/score-releases.ts --dry-run    # preview prompt, no API calls or
 npx tsx scripts/score-releases.ts --limit 10   # process only first 10 releases
 npx tsx scripts/score-releases.ts --month 2026-02  # score a specific month
 npx tsx scripts/score-releases.ts --force      # re-score already-scored releases
+npx tsx scripts/score-releases.ts --month 2026-11 --user-id <uuid>  # personal scores for one reader, on notable releases (general 6+) only
 npx tsx scripts/reclassify-genres.ts              # generate genre-review.json via Claude API
 npx tsx scripts/reclassify-genres.ts --dry-run    # list books to process, no API calls
 npx tsx scripts/reclassify-genres.ts --limit 20   # process first 20 books only
@@ -196,12 +197,12 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/BookCover.tsx` — Cover image with styled placeholder fallback (sm/lg sizes)
 - `src/components/DonutChart.tsx` — Pure SVG donut chart for library stats
 - `server/greeting-handler.ts` — AI greeting generation via Claude API with 1hr cache
-- `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, score badges, sort toggle, rationale display, dismiss, pagination
-- `src/lib/releases.ts` — Release query functions (by month, available months, library ISBN cross-reference, dismiss/undismiss)
+- `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, Recommended view (the reader's personal picks, after they ask with "Curate for me") and Notable view (general score 6+), score badges, rationale display, dismiss, pagination
+- `src/lib/releases.ts` — Release query functions (Recommended and Notable lists by month, available months, library ISBN cross-reference, dismiss/undismiss, curation request and visit tracking)
 - `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
 - `scripts/triage-releases.ts` — Triages a month of releases before scoring: free rules (non-book formats, academic publishers, children's/education subjects, activity books, special editions, very short books, other formats of the same book) then a Haiku 5.5 check on the listing (new / reprint / not for general readers). Sets `triaged_at` and `skip_reason`. Drops about 60% of a month
-- `src/lib/release-scoring.ts` — `scorableOnly`, the one filter for which releases get scored, shared by the scorer and the releases scheduler so they agree on what's left to do
-- `server/releases-scheduler.ts` — Every 4 hours: imports any target month with no releases (current month, plus next month from the 25th), then per month triages, scores, and gives personal scores to each reader whose profile is from the last 90 days. `planReleasesJob` decides the next job and only reads
+- `src/lib/release-scoring.ts` — `scorableOnly` (which releases get general scores) and `personallyScorableOnly` (which get personal scores: general score of `NOTABLE_MIN_GENERAL`, 6, or more), shared by the scorer and the releases scheduler so they agree on what's left to do
+- `server/releases-scheduler.ts` — Every 4 hours: imports any target month with no releases (current month, plus next month from the 25th), then per month triages, gives general scores, and gives personal scores on notable releases to each reader who asked for curation and visited Releases in the last 60 days. Starts the next job as soon as one finishes, and right away when a reader asks (`POST /api/releases/curate`). `planReleasesJob` decides the next job and only reads
 - `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 5.5, --dry-run/--limit/--month/--force flags)
 - `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 5.5, --dry-run/--limit/--force/--output/--apply flags)
 - `scripts/ingest-awards.ts` — Wikidata SPARQL ingestion of literary awards (17 awards, 4 query patterns) + library matching (--dry-run/--match-only/--force/--limit flags)
@@ -243,7 +244,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Fifteen tables in Supabase:
+Sixteen tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -331,6 +332,11 @@ Fifteen tables in Supabase:
 - `triaged_at` — when `triage-releases.ts` triaged it (null = not yet; untriaged releases aren't scored)
 - `skip_reason` — why triage dropped it (`format`, `academic_publisher`, `children_or_education`, `activity_book`, `special_edition`, `too_short`, `duplicate_format`, `reprint`, `not_for_general_readers`); null = kept. Dropped releases are hidden on the Releases page and from the chat releases tool (migration 028)
 - No FK to `books` — cross-referenced by ISBN at query time for "In Library" badges
+
+**release_curation** — Readers who asked for personal release picks ("Curate for me" on the Releases page), one row per reader (migration 029). Key fields:
+- `requested_at` — when they last asked
+- `last_visited_at` — when they last opened Releases, recorded at most daily. Curation of new months continues while this is within 60 days
+- Readers can read and update their own row; the server writes requests with the service role
 
 **shelves** — User-created shelf groupings for visual bookshelf view. Key fields:
 - `name` — required, non-empty

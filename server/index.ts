@@ -39,7 +39,7 @@ import { buildBookContext, type LinkedBook } from "./book-context.js";
 import { startConversationReviewScheduler } from "./conversation-review.js";
 import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
 import { readJsonBody } from "./request-body.js";
-import { startReleasesScheduler } from "./releases-scheduler.js";
+import { requestReleasesCheck, startReleasesScheduler } from "./releases-scheduler.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
 import {
   handleStripeWebhook,
@@ -1276,6 +1276,51 @@ const server = http.createServer((req, res) => {
           console.error("[onboarding/complete] Error:", msg);
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Failed to complete onboarding" }));
+        }
+      })();
+      return;
+    }
+
+    // A reader asks for their releases to be curated: personal scores on each month's
+    // notable releases, from now on while they keep visiting Releases
+    if (req.method === "POST" && url === "/api/releases/curate") {
+      void (async () => {
+        let userId: string;
+        try {
+          ({ userId } = await authenticateRequest(req.headers.authorization));
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+
+        try {
+          // Personal scores are judged against the reader profile, so one has to exist
+          const { count, error: profileError } = await serviceSupabase
+            .from("reader_profile")
+            .select("user_id", { count: "exact", head: true })
+            .eq("user_id", userId);
+          if (profileError) throw profileError;
+          if (!count) {
+            res.writeHead(409, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "no_profile" }));
+            return;
+          }
+
+          const now = new Date().toISOString();
+          const { error } = await serviceSupabase
+            .from("release_curation")
+            .upsert({ user_id: userId, requested_at: now, last_visited_at: now }, { onConflict: "user_id" });
+          if (error) throw error;
+
+          requestReleasesCheck();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ requested_at: now }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[releases/curate] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to request curation" }));
         }
       })();
       return;

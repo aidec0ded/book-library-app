@@ -7,8 +7,11 @@ import {
   dismissRelease,
   undismissRelease,
   addReleaseToWishlist,
+  fetchCuration,
+  recordReleasesVisit,
+  requestCuration,
 } from "@/lib/releases";
-import type { ReleaseSort, ReleaseCategory } from "@/lib/releases";
+import type { ReleaseView, ReleaseCategory, ReleaseCuration } from "@/lib/releases";
 import { ExternalLink } from "lucide-react";
 import { BookCover } from "@/components/BookCover";
 import { Badge } from "@/components/ui/badge";
@@ -334,6 +337,42 @@ function ReleaseGrid({
   );
 }
 
+function CurateInvite({
+  state,
+  onCurate,
+}: {
+  state: "idle" | "requesting" | "no_profile" | "error";
+  onCurate: () => void;
+}) {
+  return (
+    <div className="mx-auto max-w-xl rounded-xl border-2 border-dashed px-8 py-12 text-center">
+      <p className="font-serif text-xl font-bold">Have your companion curate new releases</p>
+      <p className="mt-3 text-sm text-muted-foreground">
+        Your companion reads through each month's notable releases and picks the ones that fit
+        your reading. Your first picks usually arrive within the hour, and new months are curated
+        as they come out while you keep visiting.
+      </p>
+      {state === "no_profile" ? (
+        <p className="mt-6 text-sm">
+          Your companion needs to know your taste first. Add a few more books to your library and
+          rate at least five, and your reader profile will be ready within a few hours.
+        </p>
+      ) : (
+        <button
+          onClick={onCurate}
+          disabled={state === "requesting"}
+          className="mt-6 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+        >
+          {state === "requesting" ? "Asking..." : "Curate for me"}
+        </button>
+      )}
+      {state === "error" && (
+        <p className="mt-3 text-sm text-destructive">That didn't go through. Please try again.</p>
+      )}
+    </div>
+  );
+}
+
 export function ReleasesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -348,7 +387,7 @@ export function ReleasesPage() {
   const [year, setYear] = useState(initialYear);
   const [month, setMonth] = useState(initialMonth);
   const [page, setPage] = useState(initialPage);
-  const [sort, setSort] = useState<ReleaseSort>("score");
+  const [view, setView] = useState<ReleaseView>("notable");
   const [category, setCategory] = useState<ReleaseCategory>("all");
   const [showDismissed, setShowDismissed] = useState(false);
 
@@ -363,13 +402,26 @@ export function ReleasesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addedIsbns, setAddedIsbns] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
+  const [curation, setCuration] = useState<ReleaseCuration | null>(null);
+  const [curateState, setCurateState] = useState<"idle" | "requesting" | "no_profile" | "error">("idle");
 
-  // Fetch available months + library ISBNs once
+  // Fetch available months, library ISBNs, and curation once
   useEffect(() => {
-    Promise.all([fetchAvailableMonths(), fetchLibraryIsbns()])
-      .then(([months, isbns]) => {
+    // A failed curation lookup leaves the page usable, as if the reader hadn't asked
+    const curationOrNone = fetchCuration().catch((err) => {
+      console.error("Error fetching curation:", err);
+      return null;
+    });
+    Promise.all([fetchAvailableMonths(), fetchLibraryIsbns(), curationOrNone])
+      .then(([months, isbns, curationRow]) => {
         setAvailableMonths(months);
         setLibraryIsbns(isbns);
+        // Readers who asked for curation land on their picks
+        setCuration(curationRow);
+        if (curationRow) {
+          setView("recommended");
+          recordReleasesVisit(curationRow).catch(console.error);
+        }
 
         // If the default month isn't in the available data, fall back to the
         // closest available month so the Select always has a matching value.
@@ -411,22 +463,23 @@ export function ReleasesPage() {
     setSearchParams(params, { replace: true });
   }, [year, month, page, defaultYear, defaultMonth, setSearchParams]);
 
-  // Fetch releases when year/month/page/sort/showDismissed changes
+  // Fetch releases when year/month/page/view/showDismissed changes
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await fetchReleasesByMonth(year, month, page, sort, showDismissed, category);
+      const result = await fetchReleasesByMonth(year, month, page, view, showDismissed, category);
       setReleases(result.releases);
       setTotal(result.total);
     } catch (err) {
       console.error("Error fetching releases:", err);
     }
     setLoading(false);
-  }, [year, month, page, sort, showDismissed, category]);
+  }, [year, month, page, view, showDismissed, category]);
 
+  // Wait for the initial month and view, so the first fetch is the right one
   useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
+    if (initialized) void fetchData();
+  }, [fetchData, initialized]);
 
   // Reset page + collapse when month changes
   function handleMonthChange(value: string) {
@@ -437,10 +490,29 @@ export function ReleasesPage() {
     setExpandedId(null);
   }
 
-  function handleSortChange(newSort: ReleaseSort) {
-    setSort(newSort);
+  function handleViewChange(newView: ReleaseView) {
+    setView(newView);
     setPage(1);
     setExpandedId(null);
+  }
+
+  async function handleCurate() {
+    setCurateState("requesting");
+    try {
+      const result = await requestCuration();
+      if (result === "no_profile") {
+        setCurateState("no_profile");
+        return;
+      }
+      capture("release_curation_requested");
+      const now = result.requested_at;
+      setCuration({ requested_at: now, last_visited_at: now });
+      setCurateState("idle");
+      handleViewChange("recommended");
+    } catch (err) {
+      console.error("Error requesting curation:", err);
+      setCurateState("error");
+    }
   }
 
   function toggleExpanded(id: string) {
@@ -490,8 +562,11 @@ export function ReleasesPage() {
 
   const totalPages = Math.ceil(total / 24);
   const selectedMonthKey = `${year}-${month}`;
-  const scoredCount = releases.filter((r) => r.ai_score != null).length;
-  const anyScored = scoredCount > 0 || releases.length === 0;
+  const monthLabel = formatMonthLabel(year, month);
+  // Picks are on their way for a couple of hours after asking
+  const curationPending =
+    curation != null && Date.now() - new Date(curation.requested_at).getTime() < 2 * 60 * 60 * 1000;
+  const showCurateInvite = view === "recommended" && curation == null;
 
   // No data at all
   if (initialized && availableMonths.length === 0) {
@@ -520,9 +595,9 @@ export function ReleasesPage() {
           {/* Sort toggle */}
           <div className="flex rounded-md border">
             <button
-              onClick={() => handleSortChange("score")}
+              onClick={() => handleViewChange("recommended")}
               className={`px-3 py-1.5 text-sm transition-colors ${
-                sort === "score"
+                view === "recommended"
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-muted"
               }`}
@@ -530,14 +605,14 @@ export function ReleasesPage() {
               Recommended
             </button>
             <button
-              onClick={() => handleSortChange("title")}
+              onClick={() => handleViewChange("notable")}
               className={`px-3 py-1.5 text-sm transition-colors ${
-                sort === "title"
+                view === "notable"
                   ? "bg-primary text-primary-foreground"
                   : "hover:bg-muted"
               }`}
             >
-              All
+              Notable
             </button>
           </div>
 
@@ -582,15 +657,20 @@ export function ReleasesPage() {
       {/* Count + scoring status */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {loading
-            ? "Loading..."
-            : `${total.toLocaleString()} release${total !== 1 ? "s" : ""} in ${formatMonthLabel(year, month)}`}
+          {loading || showCurateInvite
+            ? showCurateInvite ? "" : "Loading..."
+            : view === "recommended"
+              ? `${total.toLocaleString()} pick${total !== 1 ? "s" : ""} for you in ${monthLabel}`
+              : `${total.toLocaleString()} notable release${total !== 1 ? "s" : ""} in ${monthLabel}`}
         </p>
         <div className="flex items-center gap-3">
-          {!loading && !anyScored && (
-            <p className="text-xs text-muted-foreground">
-              Releases not yet scored for this month.
-            </p>
+          {view === "notable" && curation == null && (
+            <button
+              onClick={() => handleViewChange("recommended")}
+              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Get picks for you
+            </button>
           )}
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <input
@@ -608,8 +688,13 @@ export function ReleasesPage() {
         </div>
       </div>
 
+      {/* Invitation to curate, before the reader has asked */}
+      {showCurateInvite && (
+        <CurateInvite state={curateState} onCurate={handleCurate} />
+      )}
+
       {/* Grid with inline detail */}
-      {!loading && releases.length > 0 && (
+      {!showCurateInvite && !loading && releases.length > 0 && (
         <ReleaseGrid
           releases={releases}
           expandedId={expandedId}
@@ -625,14 +710,18 @@ export function ReleasesPage() {
       )}
 
       {/* Empty state for selected month */}
-      {!loading && releases.length === 0 && (
-        <p className="py-8 text-center text-muted-foreground">
-          No releases found for {formatMonthLabel(year, month)}.
+      {!showCurateInvite && !loading && releases.length === 0 && (
+        <p className="mx-auto max-w-xl py-8 text-center text-muted-foreground">
+          {view === "notable"
+            ? `No notable releases for ${monthLabel} yet. New months are scored within a few hours of arriving.`
+            : curationPending
+              ? "Your companion is reading through this month's notable releases. Your picks usually arrive within the hour."
+              : `No picks for you in ${monthLabel}. Your companion curates the current month, and next month from the 25th, so months before you asked aren't curated.`}
         </p>
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {!showCurateInvite && totalPages > 1 && (
         <Pagination
           page={page}
           totalPages={totalPages}
