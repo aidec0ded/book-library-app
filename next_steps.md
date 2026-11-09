@@ -1,6 +1,6 @@
 ### 🎟️ Free Launch
 
-Everything free until 1 January 2027, announced publicly, then pricing starts. The risk is less someone breaking in than AI spend and load with nothing to cap them. Measured November 2026: a chat reply costs about 17 cents (4.4 API calls of about 45,000 tokens, mostly the library index), and personal release scoring about $3–5 a month for each reader with a profile from the last 90 days. A reader who imports from Goodreads and chats 20 times a month costs about $7–8, the monthly price.
+Everything free until 1 January 2027, announced publicly, then pricing starts. The risk is less someone breaking in than AI spend and load with nothing to cap them. Measured November 2026: a chat reply costs about 15 cents (4.4 API calls, each resending a prompt of about 57,000 tokens, two-thirds of it the library index), and personal release scoring about $3–5 a month for each reader with a profile from the last 90 days. A reader who imports from Goodreads and chats 20 times a month costs about $7–8, the monthly price.
 
 **Before announcing**
 
@@ -23,6 +23,18 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - ISBNdb quota — every reader's imports share one key at 1 request a second. Check the plan's daily quota against, say, 50 readers importing 500 books each
 - Supabase plan — check connection, bandwidth, and database size limits for the plan in use
 - Long conversations — each reply resends the whole history 4 or more times, so cost per reply grows with length. See "Conversation summaries" under Long-term continuity
+
+**Cost efficiencies** (ranked by possible saving; measured from `chat_token_usage` where noted)
+
+- Personal release scoring only above a general score — measured on the owner's scores: a general score of 5 or more is 45% of releases and keeps 679 of 699 personal 7+ picks; 6 or more is 23% and keeps 617. Personal scores only show on the Releases page, and its default view already shows general 7+ only. Decide between this and on-demand curation: "All" becomes a list above a general score, and a "Curate for me" button scores it for the reader (once a month, then automatically while they keep visiting). Scoring single titles on click was considered and judged not worth it: it costs almost nothing, but personal scores exist to surface the few picks among thousands, and on-click scoring can't do that
+- Chat cache rewrites (measured: 58% of chat cost) — 14 of 17 replies began by rewriting the whole prompt into the cache. The syllabus index, profile, and date share one cached block with the library index, so any change rewrites all of it; the 5-minute cache also lapses in ordinary reading pauses. Split the prompt into blocks by how often they change, with a 1-hour cache on the library index. The index query also has no `ORDER BY`, so its order can shift after an update and break the cache on its own
+- Cache the conversation, not only the system prompt (measured: 17% of chat cost) — each of a reply's tool calls resends the whole conversation and tool results at full price. Add automatic caching for the conversation tail
+- Batch API for tagging and predicted ratings — 50% off, and faster for imports, which today tag 10 books per 5-minute cycle
+- Load memory into the prompt — the AI checks memory as an extra call at the start of almost every reply (about 5% of chat, and one round trip). Same as "Load memory automatically" under Quick context wins
+- Release scoring requests — 25 releases per request instead of 10, and cache the system prompt (about 20–30% of scoring input)
+- Haiku 5.5 for vibe and classification tagging — about a twentieth of the price. Changes quality: test first against the tags readers have confirmed
+- Chat effort `medium` → `low` — 5–10% of chat. Changes quality: needs a small test set of real messages first
+- Not worth it now: the library index behind a tool (decided; about 1.5 cents a reply once cached), summarizing or clearing long conversations (they're short), tool search (too few tool definitions), a cheaper chat model
 
 ---
 
