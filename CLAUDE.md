@@ -49,6 +49,7 @@ npx tsx scripts/triage-releases.ts --month 2026-11  # drop non-books, reprints, 
 npx tsx scripts/triage-releases.ts --month 2026-11 --dry-run --report triage.json  # preview outcomes, no DB writes
 npx tsx scripts/triage-releases.ts --month 2026-11 --rules-only --dry-run  # free rules only, no AI calls
 npx tsx scripts/triage-releases.ts --month 2026-11 --force  # re-triage releases already triaged
+npx tsx scripts/triage-releases.ts --month 2026-11 --redo not_for_general_readers  # re-triage only releases dropped for these reasons (after a rules or prompt change)
 npx tsx scripts/score-releases.ts              # AI score releases for current month (triaged and kept only)
 npx tsx scripts/score-releases.ts --dry-run    # preview prompt, no API calls or DB writes
 npx tsx scripts/score-releases.ts --limit 10   # process only first 10 releases

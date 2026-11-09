@@ -14,10 +14,12 @@
  *   npx tsx scripts/triage-releases.ts --month 2026-11
  *   npx tsx scripts/triage-releases.ts --month 2026-11 --dry-run --report triage.json
  *   npx tsx scripts/triage-releases.ts --month 2026-11 --rules-only --dry-run
+ *   npx tsx scripts/triage-releases.ts --month 2026-11 --redo not_for_general_readers,academic_publisher
  *
  * --dry-run triages every release in the month and writes nothing to the database
  * (the AI check still runs unless --rules-only). --force re-triages releases
- * already triaged. --report writes each release's outcome to a JSON file.
+ * already triaged. --redo re-triages only releases dropped for the given reasons,
+ * after the rules or prompt change. --report writes each release's outcome to a JSON file.
  */
 import { writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
@@ -42,6 +44,7 @@ const force = args.includes("--force");
 const rulesOnly = args.includes("--rules-only");
 const reportPath = argValue("--report");
 const monthArg = argValue("--month");
+const redo = argValue("--redo")?.split(",").map((s) => s.trim()).filter(Boolean) ?? null;
 
 // --- Constants ---
 
@@ -74,6 +77,8 @@ interface Release {
   subjects: string[];
   synopsis: string | null;
   general_signal_score: number | null;
+  triaged_at: string | null;
+  skip_reason: SkipReason | null;
 }
 
 // --- Rules ---
@@ -93,12 +98,22 @@ const ACTIVITY_TITLE =
   /\b(activity book|colou?ring book|workbook|planner|sticker book|study guide|test prep|practice tests?|flash ?cards|log ?book|sketchbook|word search|sudoku|crosswords?|puzzle book|(guided|gratitude|prompt) journal)\b/i;
 
 const SPECIAL_EDITION_TITLE =
-  /\b(anniversary|deluxe|collector'?s|large print|annotated|limited|special|compact comics|clearview) edition\b|\bclassics\)|\breissue\b/i;
+  /\b(anniversary|deluxe|collector'?s|annotated|limited|special|compact comics|clearview) edition\b|\bclassics\)|\breissue\b/i;
+
+// Large print editions of trade books. Thorndike belongs to Cengage, so without this
+// its novels would be dropped as academic. ISBNdb often lists only the large print
+// edition of a new book, so it isn't dropped by itself: it loses to any other format
+// of the same book, and the AI check decides whether it's new or a reprint.
+const LARGE_PRINT = /large print|thorndike|center point/i;
+
+function isLargePrint(r: Release): boolean {
+  return LARGE_PRINT.test(`${r.publisher ?? ""} | ${r.binding ?? ""} | ${r.title}`);
+}
 
 function ruleReason(r: Release): SkipReason | null {
   const binding = (r.binding ?? "").replace(/_/g, " ");
   if (formatCategory(binding) !== "ebook" && NON_BOOK_FORMAT.test(binding)) return "format";
-  if (r.publisher && ACADEMIC_PUBLISHER.test(r.publisher)) return "academic_publisher";
+  if (r.publisher && ACADEMIC_PUBLISHER.test(r.publisher) && !isLargePrint(r)) return "academic_publisher";
   if (r.subjects.some((s) => CHILDREN_OR_EDUCATION_SUBJECT.test(s))) return "children_or_education";
   if (ACTIVITY_TITLE.test(r.title)) return "activity_book";
   if (SPECIAL_EDITION_TITLE.test(r.title)) return "special_edition";
@@ -108,21 +123,31 @@ function ruleReason(r: Release): SkipReason | null {
 
 // Which format to keep when a book comes out in several in the same month
 const FORMAT_RANK: Record<string, number> = { hardcover: 0, paperback: 1, other: 2, ebook: 3, audiobook: 4 };
+const formatRank = (r: Release) => (isLargePrint(r) ? 5 : FORMAT_RANK[formatCategory(r.binding)]);
 
-/** Mark every format of a book but one as a duplicate. */
-function markDuplicateFormats(releases: Release[], reasons: Map<string, SkipReason>): void {
+const workKey = (r: Release) => normalizeWorkKey(r.title, r.authors[0]);
+
+/**
+ * Mark every format of a book but one as a duplicate. `keptWorks` holds books
+ * already kept by an earlier run, whose other formats are all duplicates.
+ */
+function markDuplicateFormats(releases: Release[], reasons: Map<string, SkipReason>, keptWorks: Set<string>): void {
   const works = new Map<string, Release[]>();
   for (const r of releases) {
     if (reasons.has(r.id)) continue;
-    const key = normalizeWorkKey(r.title, r.authors[0]);
+    const key = workKey(r);
+    if (keptWorks.has(key)) {
+      reasons.set(r.id, "duplicate_format");
+      continue;
+    }
     works.set(key, [...(works.get(key) ?? []), r]);
   }
   for (const editions of works.values()) {
     if (editions.length < 2) continue;
-    // Keep a hardcover over a paperback over an ebook, then one with a synopsis
+    // Keep a hardcover over a paperback over an ebook over large print, then one with a synopsis
     const [, ...rest] = [...editions].sort(
       (a, b) =>
-        FORMAT_RANK[formatCategory(a.binding)] - FORMAT_RANK[formatCategory(b.binding)] ||
+        formatRank(a) - formatRank(b) ||
         Number(!a.synopsis) - Number(!b.synopsis) ||
         a.isbn13.localeCompare(b.isbn13),
     );
@@ -138,11 +163,11 @@ const SYSTEM_PROMPT = `You sort a month of upcoming book releases for a reading 
 
 Give each listing one verdict:
 
-new: a first publication of this work for adult general readers. Includes new fiction and poetry, narrative and popular nonfiction (including from university presses when written for general readers), new volumes in an ongoing series, graphic novels and manga volumes, young adult fiction, and the first English translation of a work.
+new: a first publication of this work for adult readers. Includes new fiction and poetry, narrative and popular nonfiction, new volumes in an ongoing series, graphic novels and manga volumes, young adult fiction, and the first English translation of a work. Also includes serious books of ideas from university presses and technical publishers (on science, technology, AI, philosophy, mind, history, culture, law, and economics) and hands-on technical books on a subject, since some readers seek these out. When unsure between new and not_general, say new.
 
 reprint: this work was published before and this is a later edition. A paperback of a book whose hardcover came out in an earlier year, a reissue or repackaging, a new translation or edition of a classic, a collected edition of earlier comics, an omnibus or box set of earlier books. Use what you know about the title and author. Only say reprint when you recognize the work as published earlier or the listing itself says so; if you don't recognize a title, judge it new.
 
-not_general: not a book for adult general readers. Textbooks, academic monographs and edited scholarly volumes, reference works, professional and technical manuals, children's books (picture books through middle grade), activity, coloring, puzzle, journal and gift books, study guides and summaries, test prep, and calendars.
+not_general: a book only a student, specialist, or child would read. Textbooks and course readers, handbooks, companions, encyclopedias and other reference works, conference proceedings, edited scholarly collections, narrow specialist monographs (a dissertation-style study of one case, text, or method), clinical and job-specific professional manuals (nursing, accounting, legal practice, certification), children's books (picture books through middle grade), activity, coloring, puzzle, journal and gift books, study guides and summaries, test prep, and calendars.
 
 Each listing is one line: isbn | title | authors | publisher | format | pages | publication date | subjects. Return a verdict for every isbn.`;
 
@@ -285,30 +310,28 @@ async function main() {
   const all = await fetchAllRows<Release>((from, to) =>
     supabase
       .from("new_releases")
-      .select("id, isbn13, title, authors, publisher, binding, page_count, date_published, subjects, synopsis, general_signal_score")
+      .select(
+        "id, isbn13, title, authors, publisher, binding, page_count, date_published, subjects, synopsis, general_signal_score, triaged_at, skip_reason",
+      )
       .eq("pub_year", year)
       .eq("pub_month", month)
       .order("id")
       .range(from, to),
   );
 
-  // Which still need triage. A dry run, or --force, triages them all.
-  let pending = all;
-  if (!dryRun && !force) {
-    const triaged = await fetchAllRows<{ id: string }>((from, to) =>
-      supabase
-        .from("new_releases")
-        .select("id")
-        .eq("pub_year", year)
-        .eq("pub_month", month)
-        .not("triaged_at", "is", null)
-        .order("id")
-        .range(from, to),
-    );
-    const triagedIds = new Set(triaged.map((r) => r.id));
-    pending = all.filter((r) => !triagedIds.has(r.id));
-  }
-  console.log(`  Releases: ${all.length} | To triage: ${pending.length}\n`);
+  // Which to triage: those dropped for the --redo reasons, every release for a dry
+  // run or --force, otherwise the ones not yet triaged
+  const pending = redo
+    ? all.filter((r) => r.skip_reason && redo.includes(r.skip_reason))
+    : dryRun || force
+      ? all
+      : all.filter((r) => !r.triaged_at);
+  const pendingIds = new Set(pending.map((r) => r.id));
+  // Books already kept, so a release triaged now doesn't become a second copy of one
+  const keptWorks = new Set(
+    all.filter((r) => !pendingIds.has(r.id) && r.triaged_at && !r.skip_reason).map(workKey),
+  );
+  console.log(`  Releases: ${all.length} | To triage: ${pending.length}${redo ? ` (redo: ${redo.join(", ")})` : ""}\n`);
   if (pending.length === 0) {
     console.log("Nothing to triage.");
     return;
@@ -319,7 +342,7 @@ async function main() {
     const reason = ruleReason(r);
     if (reason) reasons.set(r.id, reason);
   }
-  markDuplicateFormats(pending, reasons);
+  markDuplicateFormats(pending, reasons, keptWorks);
   const afterRules = pending.filter((r) => !reasons.has(r.id));
   console.log(`Rules: dropped ${reasons.size}, ${afterRules.length} left`);
 
@@ -363,6 +386,7 @@ async function main() {
       page_count: r.page_count,
       general_signal_score: r.general_signal_score,
       skip_reason: reasons.get(r.id) ?? null,
+      previous_skip_reason: r.skip_reason,
       ai_verdict: verdicts.get(r.id) ?? null,
       untriaged: failed.has(r.isbn13),
     }));
