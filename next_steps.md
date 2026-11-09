@@ -1,6 +1,34 @@
+### 🎟️ Free Launch
+
+Everything free until 1 January 2027, announced publicly, then pricing starts. The risk is less someone breaking in than AI spend and load with nothing to cap them. Measured November 2026: a chat reply costs about 17 cents (4.4 API calls of about 45,000 tokens, mostly the library index), and personal release scoring about $3–5 a month for each reader with a profile from the last 90 days. A reader who imports from Goodreads and chats 20 times a month costs about $7–8, the monthly price.
+
+**Before announcing**
+
+- Anthropic spend limit and alerts — set in the Console (owner). The backstop for everything below
+- Daily spending stop — `chat_token_usage` already records every chat call. Past a daily total, chat answers "busy, try again later" instead of calling the API
+- Per-reader cap during the free period — a monthly or daily reply limit, and keep a fair-use cap on the paid plan after, since "unlimited" at $7 doesn't cover heavy use at today's cost per reply
+- Request size limit and onboarding cap — the two open chat security items below
+- Profile generation one at a time — the scheduler starts an Opus process for every new reader at once, about 100MB each on a 512MB server, so a handful of signups in one check takes chat down with it
+- Profile scheduler misses readers — it finds new readers by reading the first 1,000 `books` rows with no order (1,683 today). No one is missed yet, but it will as libraries grow. Use `scripts/fetch-all.ts` or a distinct query
+- How "free" works — a launch promotion that treats everyone as paid until 1 January 2027, with the caps above. Decide what free readers see on 1 January (syllabi and reading paths locked?), and say it plainly on the pricing page
+
+**First weeks**
+
+- Signup abuse — free chat makes scripted accounts worth creating. Email confirmation is on, but nothing limits signups or requests and there's no captcha. Turn on Cloudflare Turnstile in Supabase Auth
+- Per-IP rate limits — on `/api/chat`, and on `/api/contact`, which needs no login and writes straight to the database
+- Personal release scoring per reader — every reader with a recent profile gets the whole month scored, about 2,700–3,700 releases, whether or not they open Releases. Scoring only releases with a general score of 6 or more for each reader would cut it by about 80%. It's also a ceiling: one job per 4-hour check is about 180 reader-months a month
+- Background jobs off the web server — a Render background worker, or a 2GB instance, so a job can't take chat down
+- Separate API keys for chat and background jobs — background scripts don't record usage, so the Console is the only place to see where money goes
+- Record profile generation cost — Opus 5.5 monthly per reader, not recorded anywhere
+- ISBNdb quota — every reader's imports share one key at 1 request a second. Check the plan's daily quota against, say, 50 readers importing 500 books each
+- Supabase plan — check connection, bandwidth, and database size limits for the plan in use
+- Long conversations — each reply resends the whole history 4 or more times, so cost per reply grows with length. See "Conversation summaries" under Long-term continuity
+
+---
+
 ### 💬 Chat
 
-**Security**
+**Security** (both open items are launch blockers, see Free Launch)
 
 - Verify login tokens — the server read the user ID from the token without checking its signature, so a forged token could delete another reader's account or open their billing portal, and any bearer value could use the ISBNdb proxy. Every endpoint now checks with Supabase **[DONE]**
 - Malformed chat requests — `JSON.parse` in `handleChat` sat outside any `try`, and nothing caught the rejection, so a signed-in user sending bad JSON could crash the server for everyone. It now returns a 400, and unexpected failures in chat and the ISBNdb proxy return an error instead of reaching the top level **[DONE]**
