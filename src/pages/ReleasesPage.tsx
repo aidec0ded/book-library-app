@@ -402,26 +402,36 @@ export function ReleasesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addedIsbns, setAddedIsbns] = useState<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
+  const [monthsLoaded, setMonthsLoaded] = useState(false);
   const [curation, setCuration] = useState<ReleaseCuration | null>(null);
   const [curateState, setCurateState] = useState<"idle" | "requesting" | "no_profile" | "error">("idle");
 
-  // Fetch available months, library ISBNs, and curation once
+  // Curation first: it decides the starting view, and it's quick. A failed lookup
+  // leaves the page usable, as if the reader hadn't asked.
   useEffect(() => {
-    // A failed curation lookup leaves the page usable, as if the reader hadn't asked
-    const curationOrNone = fetchCuration().catch((err) => {
-      console.error("Error fetching curation:", err);
-      return null;
-    });
-    Promise.all([fetchAvailableMonths(), fetchLibraryIsbns(), curationOrNone])
-      .then(([months, isbns, curationRow]) => {
-        setAvailableMonths(months);
-        setLibraryIsbns(isbns);
-        // Readers who asked for curation land on their picks
+    fetchCuration()
+      .catch((err) => {
+        console.error("Error fetching curation:", err);
+        return null;
+      })
+      .then((curationRow) => {
         setCuration(curationRow);
+        // Readers who asked for curation land on their picks
         if (curationRow) {
           setView("recommended");
           recordReleasesVisit(curationRow).catch(console.error);
         }
+        setInitialized(true);
+      });
+  }, []);
+
+  // Months and library ISBNs load alongside the list
+  useEffect(() => {
+    Promise.all([fetchAvailableMonths(), fetchLibraryIsbns()])
+      .then(([months, isbns]) => {
+        setAvailableMonths(months);
+        setLibraryIsbns(isbns);
+        setMonthsLoaded(true);
 
         // If the default month isn't in the available data, fall back to the
         // closest available month so the Select always has a matching value.
@@ -446,8 +456,6 @@ export function ReleasesPage() {
             setPage(1);
           }
         }
-
-        setInitialized(true);
       })
       .catch(console.error);
   }, []);
@@ -476,7 +484,7 @@ export function ReleasesPage() {
     setLoading(false);
   }, [year, month, page, view, showDismissed, category]);
 
-  // Wait for the initial month and view, so the first fetch is the right one
+  // Wait for the starting view, so the first fetch is the right one
   useEffect(() => {
     if (initialized) void fetchData();
   }, [fetchData, initialized]);
@@ -569,7 +577,7 @@ export function ReleasesPage() {
   const showCurateInvite = view === "recommended" && curation == null;
 
   // No data at all
-  if (initialized && availableMonths.length === 0) {
+  if (monthsLoaded && availableMonths.length === 0) {
     return (
       <div className="-mx-4 -mt-6">
         <div className="w-screen ml-[calc(-50vw+50%)] lg:w-[calc(100vw-15rem)] lg:ml-[calc(-50vw+50%+7.5rem)] px-6 sm:px-10 lg:px-14 xl:px-20 pb-16 pt-8 lg:pt-12">
@@ -672,7 +680,7 @@ export function ReleasesPage() {
               Get picks for you
             </button>
           )}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {!showCurateInvite && <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <input
               type="checkbox"
               checked={showDismissed}
@@ -684,7 +692,7 @@ export function ReleasesPage() {
               className="rounded"
             />
             Show dismissed
-          </label>
+          </label>}
         </div>
       </div>
 
