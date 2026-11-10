@@ -244,44 +244,21 @@ export async function undismissRelease(releaseId: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Months with releases, oldest first, each with how many notable releases it has. */
 export async function fetchAvailableMonths(): Promise<
   { year: number; month: number; count: number }[]
 > {
-  // Paginate to avoid Supabase's default 1000-row limit
-  const PAGE = 1000;
-  const allRows: { pub_year: number; pub_month: number }[] = [];
-  let offset = 0;
+  // Counted in the database (migration 030), not by downloading every release
+  const { data, error } = await supabase.rpc("release_month_counts", {
+    min_general: NOTABLE_MIN_GENERAL,
+  });
+  if (error) throw error;
 
-  for (;;) {
-    const { data, error } = await supabase
-      .from("new_releases")
-      .select("pub_year, pub_month")
-      .not("pub_year", "is", null)
-      .not("pub_month", "is", null)
-      .range(offset, offset + PAGE - 1);
-
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    allRows.push(...(data as { pub_year: number; pub_month: number }[]));
-    if (data.length < PAGE) break;
-    offset += PAGE;
-  }
-
-  const counts = new Map<string, { year: number; month: number; count: number }>();
-
-  for (const row of allRows) {
-    const key = `${row.pub_year}-${row.pub_month}`;
-    const existing = counts.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      counts.set(key, { year: row.pub_year, month: row.pub_month, count: 1 });
-    }
-  }
-
-  return Array.from(counts.values()).sort(
-    (a, b) => a.year - b.year || a.month - b.month
-  );
+  return ((data ?? []) as { pub_year: number; pub_month: number; notable: number }[]).map((row) => ({
+    year: row.pub_year,
+    month: row.pub_month,
+    count: Number(row.notable),
+  }));
 }
 
 export async function addReleaseToWishlist(release: NewRelease): Promise<string> {
