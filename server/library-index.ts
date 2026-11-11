@@ -50,6 +50,7 @@ export interface IndexBook {
   is_favorite: boolean | null;
   predicted_rating?: number | null;
   date_finished?: string | null;
+  page_count?: number | null;
 }
 
 const STATUS_ABBR: Record<string, string> = {
@@ -66,7 +67,7 @@ const TYPE_ABBR: Record<string, string> = {
 };
 
 export const INDEX_LEGEND =
-  "[Format: title / author; [nf|p] status [★rating] [♥ favorite] [~predicted rating]; genre; tags. Status: r=read u=unread rg=reading uf=unfinished w=wishlist. Type omitted=fiction, nf=nonfiction, p=poetry]";
+  "[Format: title / author; [nf|p] status [★rating] [♥ favorite] [~predicted rating] [pages]; genre; tags. Status: r=read u=unread rg=reading uf=unfinished w=wishlist. Type omitted=fiction, nf=nonfiction, p=poetry]";
 
 /** One book as a compact index line, shared by the index and search_library. */
 export function formatBookLine(book: IndexBook, tags: BookTag[] | undefined): string {
@@ -82,6 +83,7 @@ export function formatBookLine(book: IndexBook, tags: BookTag[] | undefined): st
   if (book.is_favorite) meta.push("♥");
   if (book.predicted_rating != null && book.rating == null) meta.push(`~${book.predicted_rating}`);
   if (book.date_finished) meta.push(`finished ${book.date_finished}`);
+  if (book.page_count) meta.push(`${book.page_count}p`);
   if (meta.length > 0) parts.push(meta.join(" "));
 
   if (book.genre) parts.push(book.genre);

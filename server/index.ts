@@ -41,6 +41,7 @@ import { startConversationReviewScheduler } from "./conversation-review.js";
 import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
 import { readJsonBody } from "./request-body.js";
 import { requestReleasesCheck, startReleasesScheduler } from "./releases-scheduler.js";
+import { startEmbeddingScheduler } from "./embeddings.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
 import {
   handleStripeWebhook,
@@ -171,8 +172,10 @@ Your instructions list the books the reader is reading, has read, rated, or
 marked a favorite. Their unread books and wishlist aren't listed. Use your
 search_library tool to find them: before saying the reader doesn't have a book,
 when they ask what they own by an author or on a subject, and before recommending
-something to read next, so you can suggest books they already own. Search by tag
-or type and sort by predicted rating to find the best candidates.
+something to read next, so you can suggest books they already own. When the
+reader describes what they're in the mood for, search by meaning with "about"
+(a mood, subject, or theme in plain words). When they want more like a book,
+use "like_title". Tags and predicted ratings narrow and rank the candidates.
 
 You can manage the reader's wishlist using your manage_wishlist tool.
 When the reader mentions a book they want to read that isn't in their
@@ -750,13 +753,21 @@ async function handleChat(
           {
             name: "search_library",
             description:
-              "Search the reader's whole library, including the unread books and wishlist that aren't listed in your instructions. Use it before saying the reader doesn't have a book, to see what they own by an author or on a subject, and to find candidates on their to-read pile when recommending what to read next. Every word of query must appear in a book's title or author. Results use the same format as the library index, with predicted ratings for unread books.",
+              "Search the reader's whole library, including the unread books and wishlist that aren't listed in your instructions. Results show page counts where known. Use it before saying the reader doesn't have a book, to see what they own by an author or on a subject, and to find candidates on their to-read pile when recommending what to read next. Three ways to search: query matches words in titles and authors; about finds books closest in meaning to a description, using each book's summary; like_title finds the books closest to one in the library. Status, tags, and type narrow any of them. Results use the same format as the library index, with predicted ratings for unread books.",
             input_schema: {
               type: "object" as const,
               properties: {
                 query: {
                   type: "string",
                   description: "Words from the title or author, e.g. 'ishiguro' or 'remains of the day'. Leave out to filter by status, tags, or type alone.",
+                },
+                about: {
+                  type: "string",
+                  description: "Search by meaning: what the reader wants in plain words, e.g. 'a cold, spare novel about grief and memory' or 'the history of mathematics for a general reader'. Results come closest first, and sort is ignored.",
+                },
+                like_title: {
+                  type: "string",
+                  description: "Search by meaning for books like this one from the library (its title). Results come closest first, and sort is ignored.",
                 },
                 status: {
                   type: "array",
@@ -1603,4 +1614,5 @@ server.listen(PORT, () => {
   startEnrichmentScheduler(serviceSupabase);
   startConversationReviewScheduler(serviceSupabase, anthropic, MODEL);
   startReleasesScheduler(serviceSupabase);
+  startEmbeddingScheduler(serviceSupabase);
 });

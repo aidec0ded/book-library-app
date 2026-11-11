@@ -73,6 +73,9 @@ npx tsx scripts/ingest-awards.ts --dry-run     # preview queries and counts, no 
 npx tsx scripts/ingest-awards.ts --match-only  # skip Wikidata, only re-run library matching
 npx tsx scripts/ingest-awards.ts --force       # re-fetch all from Wikidata (default skips existing)
 npx tsx scripts/ingest-awards.ts --limit 5     # process only first N awards
+npx tsx scripts/embed-books.ts                 # embed books with no embedding for their current text (the server also does this every 10 minutes)
+npx tsx scripts/embed-books.ts --dry-run       # count pending books and estimate tokens, no API calls
+npx tsx scripts/embed-books.ts --limit 50      # embed at most 50 books
 npx tsx scripts/grant-subscription.ts user@example.com           # grant complimentary paid subscription
 npx tsx scripts/grant-subscription.ts user@example.com --revoke  # revoke back to free tier
 ```
@@ -156,7 +159,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/SaveToBook.tsx` — "Save to book" under a chat message, for keeping all or a selected part on a book's page by hand
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
 - `server/library-index.ts` — Builds the library index for the chat system prompt (cached 10min): what the reader is reading, has read, rated, or marked a favorite, plus a summary of the unread books and wishlist, which the AI finds with `search_library`. Onboarding gets every book. Stable ordering keeps the prompt cache valid
-- `server/library-search.ts` — `search_library` tool executor: the reader's whole library by title/author words, status, tags, and type, sortable by predicted rating
+- `server/library-search.ts` — `search_library` tool executor: the reader's whole library by title/author words, status, tags, and type, sortable by predicted rating; or by meaning (`about`, a description, or `like_title`, books like one in the library) through the `match_books` database function. Results include page counts
+- `server/embeddings.ts` — Voyage AI embeddings (`voyage-4`, 1024 dimensions, through MongoDB Atlas): the client, the text a book is embedded from (title, author, type, genre, summary; nothing that differs between readers, so it's shared), and the job that embeds new and changed books every 10 minutes
+- `scripts/embed-books.ts` — Embeds every pending book in one go (first fill, or catching up by hand)
 - `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
 - `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, author name parsing ("Last, First", co-authors, credentials), edition grouping and scoring, format and language normalization, field mapping
 - `server/memory-handler.ts` — `update_memory` tool executor against the memory_files table (create, append, str_replace, delete; 12,000-character limit across a reader's files), and `loadCoreMemory`, which puts all of a reader's memory in every chat prompt as its own cached block
@@ -245,7 +250,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Sixteen tables in Supabase:
+Eighteen tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -288,6 +293,10 @@ Sixteen tables in Supabase:
 - `path` (PK) — virtual file path, must start with `/memories/`
 - `content` — file contents, managed by Claude via `update_memory`. A reader's files together hold at most 12,000 characters
 - `updated_at` — auto-updated via trigger
+
+**text_embeddings** — One vector per distinct text, keyed by `content_hash` (SHA-256 of model, dimensions, and text), so a book in many libraries is embedded once (migration 031). Holds no text and no reader. `embedding` is `halfvec(1024)`. Signed-in readers can read it; only the service role writes.
+
+**book_embeddings** — Links each library book to the vector of its current text: `book_id` (PK, CASCADE delete), `user_id`, `content_hash`. A trigger deletes a book's row when its title, subtitle, author, genre, summary, or type changes, so the embedding job picks it up again. Readers can read their own rows. `match_books(query_embedding, like_book_id, statuses, only_type, match_count)` runs as the caller, so it only searches their books; it scans the reader's books without an index, which is fast at library sizes
 
 **reader_profile** — Periodic AI-generated reader profiles. Each generation inserts a new row; latest fetched with `ORDER BY generated_at DESC LIMIT 1`. Key fields:
 - `generated_at` — when this profile was generated
@@ -394,6 +403,8 @@ Requires `.env` (not committed) with:
 - `SUPABASE_ANON_KEY` — anon key used by the chat server to create per-user Supabase clients (with RLS)
 - `ANTHROPIC_API_KEY` — for AI vibe tagging script + chat server
 - `ISBNDB_API_KEY` — for ISBNdb enrichment, new releases ingestion, and Add Book search (server-side only)
+- `VOYAGE_AI_API_KEY` — Voyage AI embeddings key, created in MongoDB Atlas (AI Model APIs). Search by meaning is off without it. The account needs a payment method, or it's limited to 3 requests a minute
+- `VOYAGE_AI_ENDPOINT` — embeddings host (`ai.mongodb.com`)
 - `STRIPE_SECRET_KEY` — Stripe API secret key (server-side only)
 - `STRIPE_WEBHOOK_SECRET` — Stripe webhook signing secret
 - `STRIPE_MONTHLY_PRICE_ID` — Stripe Price ID for $7/month plan
