@@ -159,7 +159,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/library-search.ts` — `search_library` tool executor: the reader's whole library by title/author words, status, tags, and type, sortable by predicted rating
 - `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
 - `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, author name parsing ("Last, First", co-authors, credentials), edition grouping and scoring, format and language normalization, field mapping
-- `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table
+- `server/memory-handler.ts` — `update_memory` tool executor against the memory_files table (create, append, str_replace, delete; 12,000-character limit across a reader's files), and `loadCoreMemory`, which puts all of a reader's memory in every chat prompt as its own cached block
 - `server/list-items.ts` — Shared list entry helpers for the syllabus and reading path tools: fetch (library and external items alike), find by title, reorder, insert at a position, remove
 - `server/syllabus-handler.ts` — Syllabus tool command executor (create, view, add_books, remove_books, delete, reorder, update_rationale, update_syllabus) with rationale support; auto-adds missing books as wishlist items via findOrCreateBook
 - `server/reading-path-handler.ts` — Reading path tool command executor (create_path, view_path, add_path_books, update_progress, get_seminar_content, update_seminar_content, reorder, remove_path_books, update_path, delete_path) with seminar content support; auto-adds missing books as wishlist items via findOrCreateBook
@@ -284,9 +284,9 @@ Sixteen tables in Supabase:
 - `role` — 'user' or 'assistant'
 - `content` — message text
 
-**memory_files** — Persistent memory for the AI reading companion (Claude memory tool). Key fields:
+**memory_files** — Persistent memory for the AI reading companion, loaded into every chat prompt and changed with the `update_memory` tool (a custom tool, not Anthropic's built-in memory tool, which makes the AI check memory before every reply). Key fields:
 - `path` (PK) — virtual file path, must start with `/memories/`
-- `content` — file contents, managed by Claude via memory tool commands
+- `content` — file contents, managed by Claude via `update_memory`. A reader's files together hold at most 12,000 characters
 - `updated_at` — auto-updated via trigger
 
 **reader_profile** — Periodic AI-generated reader profiles. Each generation inserts a new row; latest fetched with `ORDER BY generated_at DESC LIMIT 1`. Key fields:

@@ -9,7 +9,7 @@ import { authenticateRequest, type createUserClient } from "./auth.js";
 import { buildLibraryIndex } from "./library-index.js";
 import { executeLibrarySearch, type LibrarySearchCommand } from "./library-search.js";
 import { loadReaderProfile } from "./profile-loader.js";
-import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
+import { executeMemoryCommand, loadCoreMemory, MAX_MEMORY_CHARS, type MemoryCommand } from "./memory-handler.js";
 import { executeSyllabusCommand, type SyllabusCommand } from "./syllabus-handler.js";
 import {
   executeWishlistCommand,
@@ -129,7 +129,7 @@ Your role:
 - Explore why certain books resonate and others don't — push past surface reactions
 - Help the reader reflect on their evolving tastes and reading life
 - Challenge comfortable interpretations when you have a real literary reason to
-- Remember what you learn about the reader using your memory tool
+- Remember what you learn about the reader
 
 Voice and register:
 - Be direct. State opinions. "I'd push back on that" is a perfectly good opener.
@@ -148,12 +148,16 @@ Voice and register:
   that to your library," "Let me record this," or "Let me check my memory."
   Just use your tools silently and continue the conversation naturally.
 
-When you learn something meaningful — preferences, emotional reactions,
-connections between books, evolving tastes — record it in your memory.
-Check your memory at the start of each conversation.
-
-Keep your memory organized. Prefer updating existing files over creating
-new ones.
+Your memory of this reader comes with your instructions, under "What you
+remember about this reader", so you have it from the start of every
+conversation without looking anything up. When you learn something that should
+shape future conversations, record it with your update_memory tool: tastes and
+aversions and what's behind them, corrections to something you assumed, context
+about their reading life (a book club, a goal, a season of life), how they like
+to talk about books. Remember the reader, not the conversation: don't keep a
+log of what was discussed or of book statuses and ratings, which the library
+already holds. Keep memory short and organized. Update or replace what's there
+rather than adding near-duplicates, and remove what's no longer true.
 
 You can create and manage curated syllabi using your manage_syllabi tool.
 Create syllabi when the reader asks, or suggest them when you notice patterns
@@ -486,6 +490,9 @@ async function handleChat(
 
     const isPaid = isPaidAndActive(subscription);
 
+    // The reader's memory, loaded while the prompt is built
+    const coreMemoryPromise = loadCoreMemory(supabase);
+
     // Build system prompt — onboarding uses a simpler prompt
     let systemPrompt: string;
     if (isOnboarding) {
@@ -506,6 +513,10 @@ async function handleChat(
     }
     systemPrompt += `\n\nToday's date is ${today}.`;
 
+    // Memory is its own block, cached apart from the prompt above, so a change to it
+    // rewrites only this block's cache, not the whole prompt's
+    const coreMemory = await coreMemoryPromise;
+
     // Kept apart from the prompt above so conversations about other books still reuse its cache
     const bookContext = bookId ? await buildBookContext(supabase, bookId, conversationId) : null;
     const linkedBook: LinkedBook | null = bookContext?.book ?? null;
@@ -519,7 +530,37 @@ async function handleChat(
 
     // Build tool list — free users get a subset
     const chatTools: Anthropic.Beta.Messages.BetaToolUnion[] = [
-      { type: "memory_20250818" as const, name: "memory" },
+      {
+        name: "update_memory",
+        description:
+          `Change your memory of this reader, which comes with your instructions in every conversation. Use one file, /memories/reader.md, unless a topic has grown big enough for its own file. Commands: create writes a whole file (replacing it if it exists); append adds text to the end of a file; str_replace replaces text that appears exactly once in a file; delete removes a file. Memory holds at most ${MAX_MEMORY_CHARS.toLocaleString("en-US")} characters across all files, so condense rather than pile up.`,
+        input_schema: {
+          type: "object" as const,
+          properties: {
+            command: {
+              type: "string",
+              enum: ["create", "append", "str_replace", "delete"],
+            },
+            path: {
+              type: "string",
+              description: "File path under /memories/, such as /memories/reader.md",
+            },
+            file_text: {
+              type: "string",
+              description: "The file's full text (create) or the text to add (append)",
+            },
+            old_str: {
+              type: "string",
+              description: "Text to replace, matching exactly once (str_replace)",
+            },
+            new_str: {
+              type: "string",
+              description: "Replacement text (str_replace)",
+            },
+          },
+          required: ["command", "path"],
+        },
+      },
       {
             name: "manage_syllabi",
             description:
@@ -919,6 +960,11 @@ async function handleChat(
             text: systemPrompt,
             cache_control: { type: "ephemeral" },
           },
+          {
+            type: "text",
+            text: coreMemory,
+            cache_control: { type: "ephemeral" },
+          },
           ...(bookContext ? [{ type: "text" as const, text: bookContext.text }] : []),
         ],
         messages: apiMessages,
@@ -1016,11 +1062,13 @@ async function handleChat(
               block.input as ReadingPathCommand,
               today,
             );
-          } else {
+          } else if (block.name === "update_memory") {
             result = await executeMemoryCommand(
               supabase,
               block.input as MemoryCommand,
             );
+          } else {
+            throw new Error(`Unknown tool: ${block.name}`);
           }
         } catch (err) {
           // Supabase throws PostgrestError objects, not Error instances

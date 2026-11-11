@@ -30,7 +30,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Chat cache rewrites (measured: 58% of chat cost) — 14 of 17 replies began by rewriting the whole prompt into the cache. The syllabus index, profile, and date share one cached block with the library index, so any change rewrites all of it; the 5-minute cache also lapses in ordinary reading pauses. Split the prompt into blocks by how often they change, with a 1-hour cache on the library index. The index query also has no `ORDER BY`, so its order can shift after an update and break the cache on its own
 - Cache the conversation, not only the system prompt (measured: 17% of chat cost) — each of a reply's tool calls resends the whole conversation and tool results at full price. Add automatic caching for the conversation tail
 - Batch API for tagging and predicted ratings — 50% off, and faster for imports, which today tag 10 books per 5-minute cycle
-- Load memory into the prompt — the AI checks memory as an extra call at the start of almost every reply (about 5% of chat, and one round trip). Same as "Load memory automatically" under Quick context wins
+- Load memory into the prompt **[DONE]** — the built-in memory tool made the API add an instruction to check memory before every reply, so almost every reply began with one or two extra calls. It's now a custom `update_memory` tool, with the reader's memory loaded into the prompt as its own cached block. On 14 test replies: 24 API calls instead of 48, and $0.30 instead of $0.42 (29% less)
 - Release scoring requests — 25 releases per request instead of 10, and cache the system prompt (about 20–30% of scoring input)
 - Haiku 5.5 for vibe and classification tagging — about a twentieth of the price. Changes quality: test first against the tags readers have confirmed
 - Chat effort `medium` → `low` — 5–10% of chat. Changes quality: needs a small test set of real messages first
@@ -59,7 +59,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 **Quick context wins**
 
-- Load memory automatically, with a size cap — today it's only read if the AI chooses to check, and there's no limit on its size
+- Load memory automatically, with a size cap **[DONE]** — in every chat prompt, with a 12,000-character limit (about 3,000 tokens) across a reader's files. Writes past it are refused and the AI condenses
 - Refresh the library index after the AI changes a book — it can be 10 minutes out of date, even about its own changes
 - Save a short record of each AI action — only message text is saved, so in later turns the AI has no record of what it did
 - Make the prompt plan-aware — free users are told about syllabus, path, and excerpt tools they don't have
@@ -93,7 +93,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Conversation summaries, and condensing the older parts of very long conversations — history has no limit, so a very long one will eventually fail
 - Better profile input — it reads the last 100 messages cut to 500 characters each, skips excerpts, and can take about 30 days to reflect a conversation. The first profile skips onboarding chat entirely
 - Prompt caching — the cache lasts 5 minutes, shorter than many pauses in a conversation about a book, so consider a longer one
-- Library index tiering **[DONE]** — the prompt now lists only what the reader is reading, has read, rated, or marked a favorite (85 lines and 3,400 tokens for the owner's 909 books, from 38,900), and the AI finds unread books and the wishlist with a `search_library` tool. The cached prompt went from about 57,000 tokens to 22,000. Next stages discussed: core memory loaded automatically, embeddings in Supabase (pgvector) for books, excerpts, conversation summaries and memory, then theme clusters per reader (also the basis for Reading Life eras)
+- Library index tiering **[DONE]** — the prompt now lists only what the reader is reading, has read, rated, or marked a favorite (85 lines and 3,400 tokens for the owner's 909 books, from 38,900), and the AI finds unread books and the wishlist with a `search_library` tool. The cached prompt went from about 57,000 tokens to 22,000. Next stages discussed: core memory loaded automatically (**[DONE]**, see "Load memory into the prompt"), embeddings in Supabase (pgvector) for books, excerpts, conversation summaries and memory, then theme clusters per reader (also the basis for Reading Life eras)
 
 ---
 

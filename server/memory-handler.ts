@@ -1,9 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Input shapes follow the memory_20250818 tool (see BetaMemoryTool20250818Command
-// in the SDK): create sends file_text, insert sends insert_text, rename sends
-// old_path/new_path. The legacy names (content, new_str for insert, path for
-// rename) are still accepted as fallbacks.
+// The chat's update_memory tool. Its commands follow the shapes of Anthropic's
+// memory tool (create sends file_text, insert sends insert_text, rename sends
+// old_path/new_path), plus append. The legacy names (content, new_str for insert,
+// path for rename) are still accepted as fallbacks.
 export interface MemoryCommand {
   command: string;
   path?: string;
@@ -19,6 +19,59 @@ export interface MemoryCommand {
 }
 
 const ROOT = "/memories";
+
+/**
+ * All of a reader's memory goes into every chat prompt (see loadCoreMemory), so it
+ * has a size limit: about 3,000 tokens. Writes that would pass it are refused, and
+ * the companion condenses instead.
+ */
+export const MAX_MEMORY_CHARS = 12_000;
+
+interface MemoryFile {
+  path: string;
+  content: string;
+}
+
+async function fetchAllFiles(supabase: SupabaseClient): Promise<MemoryFile[]> {
+  const { data, error } = await supabase
+    .from("memory_files")
+    .select("path, content")
+    .order("path");
+  if (error) throw error;
+  return (data ?? []) as MemoryFile[];
+}
+
+/** Refuses a write that would take the reader's memory past MAX_MEMORY_CHARS. */
+async function assertFits(supabase: SupabaseClient, path: string, newContent: string): Promise<void> {
+  const files = await fetchAllFiles(supabase);
+  const others = files.filter((f) => f.path !== path).reduce((n, f) => n + f.content.length, 0);
+  const total = others + newContent.length;
+  if (total > MAX_MEMORY_CHARS) {
+    throw new Error(
+      `Memory is limited to ${MAX_MEMORY_CHARS.toLocaleString("en-US")} characters, and this would make it ` +
+        `${total.toLocaleString("en-US")}. Condense or remove what matters less, then try again.`,
+    );
+  }
+}
+
+/**
+ * The reader's memory as it goes into the chat prompt, so the companion has it from
+ * the first word of every conversation without a tool call.
+ */
+export async function loadCoreMemory(supabase: SupabaseClient): Promise<string> {
+  const files = await fetchAllFiles(supabase);
+  const heading = "## What you remember about this reader";
+  if (files.length === 0) {
+    return `${heading}
+Nothing yet. This is where update_memory saves what you learn about them.`;
+  }
+  const used = files.reduce((n, f) => n + f.content.length, 0);
+  return [
+    `${heading}
+Your memory files, as they stand (${used.toLocaleString("en-US")} of ${MAX_MEMORY_CHARS.toLocaleString("en-US")} characters used).`,
+    ...files.map((f) => `### ${f.path}\n${f.content.trim()}`),
+  ].join("\n\n");
+}
 
 function validatePath(path: string): void {
   if (path !== ROOT && !path.startsWith(`${ROOT}/`)) {
@@ -115,6 +168,8 @@ export async function executeMemoryCommand(
         throw new Error("'create' requires a file path, not a directory");
       }
 
+      await assertFits(supabase, command.path, fileText);
+
       // create overwrites an existing file, per the memory tool spec
       const { data: existing, error: lookupError } = await supabase
         .from("memory_files")
@@ -170,6 +225,7 @@ export async function executeMemoryCommand(
 
       // Function replacer so "$&" etc. in new_str are inserted literally
       const newContent = data.content.replace(command.old_str, () => command.new_str!);
+      await assertFits(supabase, command.path, newContent);
       const { error: updateError } = await supabase
         .from("memory_files")
         .update({ content: newContent })
@@ -208,14 +264,43 @@ export async function executeMemoryCommand(
 
       const newLines = insertText.split("\n");
       lines.splice(command.insert_line, 0, ...newLines);
+      const newContent = lines.join("\n");
+      await assertFits(supabase, command.path, newContent);
 
       const { error: updateError } = await supabase
         .from("memory_files")
-        .update({ content: lines.join("\n") })
+        .update({ content: newContent })
         .eq("path", command.path);
 
       if (updateError) throw updateError;
       return `Inserted text at line ${command.insert_line} in ${command.path}`;
+    }
+
+    case "append": {
+      const text = command.file_text ?? command.content ?? command.new_str;
+      if (!command.path || text === undefined) {
+        throw new Error("'append' requires path and file_text");
+      }
+      validatePath(command.path);
+      if (command.path === ROOT || command.path.endsWith("/")) {
+        throw new Error("'append' requires a file path, not a directory");
+      }
+
+      const { data, error } = await supabase
+        .from("memory_files")
+        .select("content")
+        .eq("path", command.path)
+        .maybeSingle();
+      if (error) throw error;
+
+      // Appending to a file that doesn't exist yet creates it
+      const newContent = data ? `${data.content.replace(/\s+$/, "")}\n${text}` : text;
+      await assertFits(supabase, command.path, newContent);
+      const { error: writeError } = data
+        ? await supabase.from("memory_files").update({ content: newContent }).eq("path", command.path)
+        : await supabase.from("memory_files").insert({ path: command.path, content: newContent });
+      if (writeError) throw writeError;
+      return data ? `Added to ${command.path}` : `Created ${command.path}`;
     }
 
     case "delete": {
