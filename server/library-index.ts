@@ -49,6 +49,7 @@ export interface IndexBook {
   genre: string | null;
   is_favorite: boolean | null;
   predicted_rating?: number | null;
+  date_finished?: string | null;
 }
 
 const STATUS_ABBR: Record<string, string> = {
@@ -80,6 +81,7 @@ export function formatBookLine(book: IndexBook, tags: BookTag[] | undefined): st
   if (book.rating != null) meta.push(`★${book.rating}`);
   if (book.is_favorite) meta.push("♥");
   if (book.predicted_rating != null && book.rating == null) meta.push(`~${book.predicted_rating}`);
+  if (book.date_finished) meta.push(`finished ${book.date_finished}`);
   if (meta.length > 0) parts.push(meta.join(" "));
 
   if (book.genre) parts.push(book.genre);

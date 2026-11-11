@@ -11,7 +11,7 @@ export interface LibrarySearchCommand {
   status?: string[];
   tags?: string[];
   book_type?: "fiction" | "nonfiction" | "poetry";
-  sort?: "predicted_rating" | "title" | "recently_added";
+  sort?: "predicted_rating" | "title" | "recently_finished" | "recently_added";
   limit?: number;
 }
 
@@ -36,7 +36,7 @@ export async function executeLibrarySearch(
   const tags = (command.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean);
   const statuses = (command.status ?? []).filter((s) => STATUSES.has(s));
 
-  const fields = "id, title, author, book_type, status, rating, genre, is_favorite, predicted_rating";
+  const fields = "id, title, author, book_type, status, rating, genre, is_favorite, predicted_rating, date_finished";
   let query = supabase
     .from("books")
     .select(tags.length > 0 ? `${fields}, book_vibes!inner(vibe)` : fields, { count: "exact" });
@@ -51,6 +51,8 @@ export async function executeLibrarySearch(
 
   if (command.sort === "predicted_rating") {
     query = query.order("predicted_rating", { ascending: false, nullsFirst: false }).order("title");
+  } else if (command.sort === "recently_finished") {
+    query = query.order("date_finished", { ascending: false, nullsFirst: false }).order("title");
   } else if (command.sort === "recently_added") {
     query = query.order("created_at", { ascending: false });
   } else {

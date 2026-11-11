@@ -733,8 +733,8 @@ async function handleChat(
                 },
                 sort: {
                   type: "string",
-                  enum: ["predicted_rating", "title", "recently_added"],
-                  description: "predicted_rating puts the unread books the reader is likeliest to love first. Default title",
+                  enum: ["predicted_rating", "title", "recently_finished", "recently_added"],
+                  description: "predicted_rating puts the unread books the reader is likeliest to love first; recently_finished puts the books they finished most recently first (those with a finish date). Default title",
                 },
                 limit: {
                   type: "number",
