@@ -93,7 +93,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Conversation summaries, and condensing the older parts of very long conversations — history has no limit, so a very long one will eventually fail
 - Better profile input — it reads the last 100 messages cut to 500 characters each, skips excerpts, and can take about 30 days to reflect a conversation. The first profile skips onboarding chat entirely
 - Prompt caching — the cache lasts 5 minutes, shorter than many pauses in a conversation about a book, so consider a longer one
-- Library index — keep sending the whole index on every call for now (decided). Each call sends about 45,000 tokens on average, 51,000 at most, and a reply averages about four calls. A deeper look at how context gets served is planned for later
+- Library index tiering **[DONE]** — the prompt now lists only what the reader is reading, has read, rated, or marked a favorite (85 lines and 3,400 tokens for the owner's 909 books, from 38,900), and the AI finds unread books and the wishlist with a `search_library` tool. The cached prompt went from about 57,000 tokens to 22,000. Next stages discussed: core memory loaded automatically, embeddings in Supabase (pgvector) for books, excerpts, conversation summaries and memory, then theme clusters per reader (also the basis for Reading Life eras)
 
 ---
 

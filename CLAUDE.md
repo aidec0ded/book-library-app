@@ -155,7 +155,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ChatEmptyState.tsx` — New conversation screen, with openers based on the book's status and its focus questions
 - `src/components/SaveToBook.tsx` — "Save to book" under a chat message, for keeping all or a selected part on a book's page by hand
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001)
-- `server/library-index.ts` — Builds compact library index for system prompt (cached 10min)
+- `server/library-index.ts` — Builds the library index for the chat system prompt (cached 10min): what the reader is reading, has read, rated, or marked a favorite, plus a summary of the unread books and wishlist, which the AI finds with `search_library`. Onboarding gets every book. Stable ordering keeps the prompt cache valid
+- `server/library-search.ts` — `search_library` tool executor: the reader's whole library by title/author words, status, tags, and type, sortable by predicted rating
 - `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
 - `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, author name parsing ("Last, First", co-authors, credentials), edition grouping and scoring, format and language normalization, field mapping
 - `server/memory-handler.ts` — Memory tool command executor against Supabase memory_files table

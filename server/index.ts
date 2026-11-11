@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
 import { authenticateRequest, type createUserClient } from "./auth.js";
 import { buildLibraryIndex } from "./library-index.js";
+import { executeLibrarySearch, type LibrarySearchCommand } from "./library-search.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, type MemoryCommand } from "./memory-handler.js";
 import { executeSyllabusCommand, type SyllabusCommand } from "./syllabus-handler.js";
@@ -161,6 +162,13 @@ make a syllabus?"). Always confirm before creating proactively.
 For library books, reference them by their exact title. You can also include
 books not in the library — they'll be automatically added as wishlist items.
 Always provide the author when recommending books not in the library.
+
+Your instructions list the books the reader is reading, has read, rated, or
+marked a favorite. Their unread books and wishlist aren't listed. Use your
+search_library tool to find them: before saying the reader doesn't have a book,
+when they ask what they own by an author or on a subject, and before recommending
+something to read next, so you can suggest books they already own. Search by tag
+or type and sort by predicted rating to find the best candidates.
 
 You can manage the reader's wishlist using your manage_wishlist tool.
 When the reader mentions a book they want to read that isn't in their
@@ -481,7 +489,8 @@ async function handleChat(
     // Build system prompt — onboarding uses a simpler prompt
     let systemPrompt: string;
     if (isOnboarding) {
-      const libraryIndex = await buildLibraryIndex(supabase, userId);
+      // Onboarding lists every book: the AI is getting to know an imported library
+      const libraryIndex = await buildLibraryIndex(supabase, userId, { full: true });
       // Count books for prompt branch selection
       const { count: libraryCount } = await supabase
         .from("books")
@@ -695,6 +704,43 @@ async function handleChat(
                 },
               },
               required: ["action", "book_title"],
+            },
+          },
+          {
+            name: "search_library",
+            description:
+              "Search the reader's whole library, including the unread books and wishlist that aren't listed in your instructions. Use it before saying the reader doesn't have a book, to see what they own by an author or on a subject, and to find candidates on their to-read pile when recommending what to read next. Every word of query must appear in a book's title or author. Results use the same format as the library index, with predicted ratings for unread books.",
+            input_schema: {
+              type: "object" as const,
+              properties: {
+                query: {
+                  type: "string",
+                  description: "Words from the title or author, e.g. 'ishiguro' or 'remains of the day'. Leave out to filter by status, tags, or type alone.",
+                },
+                status: {
+                  type: "array",
+                  items: { type: "string", enum: ["unread", "wishlist", "read", "reading", "unfinished"] },
+                  description: "Only books with these statuses",
+                },
+                tags: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Only books with at least one of these tags (vibes, topics, forms, and so on), e.g. ['atmospheric', 'dark']",
+                },
+                book_type: {
+                  type: "string",
+                  enum: ["fiction", "nonfiction", "poetry"],
+                },
+                sort: {
+                  type: "string",
+                  enum: ["predicted_rating", "title", "recently_added"],
+                  description: "predicted_rating puts the unread books the reader is likeliest to love first. Default title",
+                },
+                limit: {
+                  type: "number",
+                  description: "Max results (default 25, max 60)",
+                },
+              },
             },
           },
           {
@@ -952,6 +998,11 @@ async function handleChat(
               supabase,
               block.input as BookCommand,
               today,
+            );
+          } else if (block.name === "search_library") {
+            result = await executeLibrarySearch(
+              supabase,
+              block.input as LibrarySearchCommand,
             );
           } else if (block.name === "search_releases") {
             result = await executeReleasesCommand(
