@@ -113,13 +113,23 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-function buildSystemPrompt(
-  libraryIndex: string,
-  readerProfile: string | null,
-  syllabusIndex: string | null,
-  isPaid: boolean,
-): string {
-  let prompt = `You are the reading companion for Rekollekt, a personal book library app.
+/**
+ * The chat prompt is sent as blocks ordered from least to most often changed, each
+ * cached on its own, so a change to one only rewrites the cache from that block on:
+ *
+ * 1. Instructions (with the tools ahead of them). The same for every reader on a plan,
+ *    so readers share one cache entry.
+ * 2. The reader's profile and library. Changes monthly and when books change.
+ * 3. Syllabi, memory, and the date. Change when the companion uses its tools.
+ * 4. The conversation (cached automatically as it grows), after the book context.
+ *
+ * Blocks 1-3 use the 1-hour cache: readers often pause 5-60 minutes between messages
+ * while reading, past the 5-minute cache. A 1-hour write costs 2x instead of 1.25x.
+ */
+const PROMPT_CACHE = { type: "ephemeral" as const, ttl: "1h" as const };
+
+function buildInstructions(isPaid: boolean): string {
+  const prompt = `You are the reading companion for Rekollekt, a personal book library app.
 You are a sharp, well-read literary mind — think engaged seminar leader,
 not enthusiastic assistant. You have genuine respect for the reader's taste,
 but your job is to deepen their thinking, not validate their choices.
@@ -232,17 +242,14 @@ Approach each type differently in conversation:
 - For poetry, attend to language, form, emotional register, and how a poet's voice relates to movements or other poets the reader appreciates
 - Draw cross-type connections when relevant — a novel's themes might connect to a nonfiction interest, or a poet's sensibility might illuminate a fiction preference`;
 
-  if (readerProfile) {
-    prompt += `\n\n## Reader Profile\n\n${readerProfile}`;
-  }
-
-  if (syllabusIndex) {
-    prompt += `\n\n${syllabusIndex}`;
-  }
-
-  prompt += `\n\n## The Reader's Library\n\n${libraryIndex}`;
-
   return prompt;
+}
+
+function buildReaderContext(libraryIndex: string, readerProfile: string | null): string {
+  const sections = [];
+  if (readerProfile) sections.push(`## Reader Profile\n\n${readerProfile}`);
+  sections.push(`## The Reader's Library\n\n${libraryIndex}`);
+  return sections.join("\n\n");
 }
 
 interface ChatRequest {
@@ -496,8 +503,10 @@ async function handleChat(
     // The reader's memory, loaded while the prompt is built
     const coreMemoryPromise = loadCoreMemory(supabase);
 
-    // Build system prompt — onboarding uses a simpler prompt
-    let systemPrompt: string;
+    // System prompt blocks, cached separately (see PROMPT_CACHE). Onboarding uses its
+    // own prompt with the 5-minute cache: its exchanges come in quick succession.
+    const systemBlocks: Anthropic.Beta.Messages.BetaTextBlockParam[] = [];
+    const dateLine = `Today's date is ${today}.`;
     if (isOnboarding) {
       // Onboarding lists every book: the AI is getting to know an imported library
       const libraryIndex = await buildLibraryIndex(supabase, userId, { full: true });
@@ -505,24 +514,33 @@ async function handleChat(
       const { count: libraryCount } = await supabase
         .from("books")
         .select("id", { count: "exact", head: true });
-      systemPrompt = buildOnboardingPrompt(libraryIndex, libraryCount ?? 0);
+      const coreMemory = await coreMemoryPromise;
+      systemBlocks.push(
+        { type: "text", text: buildOnboardingPrompt(libraryIndex, libraryCount ?? 0), cache_control: { type: "ephemeral" } },
+        { type: "text", text: `${coreMemory}\n\n${dateLine}`, cache_control: { type: "ephemeral" } },
+      );
     } else {
-      const [libraryIndex, readerProfile, syllabusIndex] = await Promise.all([
+      const [libraryIndex, readerProfile, syllabusIndex, coreMemory] = await Promise.all([
         buildLibraryIndex(supabase, userId),
         loadReaderProfile(supabase, userId),
         buildSyllabusIndex(supabase, userId),
+        coreMemoryPromise,
       ]);
-      systemPrompt = buildSystemPrompt(libraryIndex, readerProfile, syllabusIndex, isPaid);
+      systemBlocks.push(
+        { type: "text", text: buildInstructions(isPaid), cache_control: PROMPT_CACHE },
+        { type: "text", text: buildReaderContext(libraryIndex, readerProfile), cache_control: PROMPT_CACHE },
+        {
+          type: "text",
+          text: [syllabusIndex, coreMemory, dateLine].filter(Boolean).join("\n\n"),
+          cache_control: PROMPT_CACHE,
+        },
+      );
     }
-    systemPrompt += `\n\nToday's date is ${today}.`;
 
-    // Memory is its own block, cached apart from the prompt above, so a change to it
-    // rewrites only this block's cache, not the whole prompt's
-    const coreMemory = await coreMemoryPromise;
-
-    // Kept apart from the prompt above so conversations about other books still reuse its cache
+    // After the cached blocks, so conversations about other books still reuse them
     const bookContext = bookId ? await buildBookContext(supabase, bookId, conversationId) : null;
     const linkedBook: LinkedBook | null = bookContext?.book ?? null;
+    if (bookContext) systemBlocks.push({ type: "text", text: bookContext.text });
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
@@ -965,20 +983,11 @@ async function handleChat(
       let roundText = "";
       const stream = anthropic.beta.messages.stream({
         model: MODEL,
-        system: [
-          {
-            type: "text",
-            text: systemPrompt,
-            cache_control: { type: "ephemeral" },
-          },
-          {
-            type: "text",
-            text: coreMemory,
-            cache_control: { type: "ephemeral" },
-          },
-          ...(bookContext ? [{ type: "text" as const, text: bookContext.text }] : []),
-        ],
+        system: systemBlocks,
         messages: apiMessages,
+        // Caches the conversation as it grows, so each tool call in a reply and each
+        // quick follow-up reads what came before instead of paying full price for it
+        cache_control: { type: "ephemeral" },
         tools,
         betas: ["context-management-2025-06-27"],
         max_tokens: 16000,
