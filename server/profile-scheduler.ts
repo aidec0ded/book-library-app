@@ -1,5 +1,6 @@
-import { exec } from "node:child_process";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchAllRows } from "../scripts/fetch-all.js";
+import { runScript } from "./jobs.js";
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const STARTUP_DELAY_MS = 30 * 1000; // 30 seconds after server start
@@ -7,8 +8,40 @@ const MIN_AGE_DAYS = 30;
 const NEW_USER_MIN_BOOKS = 8;
 const NEW_USER_MIN_RATED = 5;
 
-// Prevent duplicate spawns if a check fires while generation is still running
+// Readers queued or generating, so a check can't add the same reader twice
 const inFlightUsers = new Set<string>();
+
+// Profiles generate one at a time: each is an Opus run in its own ~100MB process, and a
+// handful of signups in one check used to start them all at once on a 512MB server
+const profileQueue: { userId: string; command: string; label: string }[] = [];
+let profileRunning = false;
+
+function queueProfile(userId: string, command: string, label: string): void {
+  if (inFlightUsers.has(userId)) return;
+  inFlightUsers.add(userId);
+  profileQueue.push({ userId, command, label });
+  runNextProfile();
+}
+
+function runNextProfile(): void {
+  if (profileRunning) return;
+  const job = profileQueue.shift();
+  if (!job) return;
+  profileRunning = true;
+  const tag = `[profile-scheduler:${job.userId.slice(0, 8)}]`;
+  console.log(`[profile-scheduler] Starting: ${job.command} (${profileQueue.length} more waiting)`);
+  runScript(job.command, (error, stdout, stderr) => {
+    profileRunning = false;
+    inFlightUsers.delete(job.userId);
+    if (error) {
+      console.error(`${tag} ${job.label} failed:`, error.message);
+      if (stderr) console.error(`${tag} stderr:`, stderr);
+    } else {
+      console.log(`${tag} ${job.label} output:\n` + stdout);
+    }
+    runNextProfile();
+  });
+}
 
 interface ActivitySnapshot {
   total_books: number;
@@ -88,25 +121,19 @@ async function fetchLatestProfilePerUser(supabase: SupabaseClient): Promise<User
 }
 
 async function checkNewUsers(supabase: SupabaseClient): Promise<void> {
-  // Find distinct user_ids that have books but no reader_profile
-  const { data: bookUsers, error: bookErr } = await supabase
-    .from("books")
-    .select("user_id")
-    .limit(1000);
+  // Every reader has a subscription row from signup, so this lists them all. (It used
+  // to read the first 1,000 book rows, which misses readers as libraries grow.)
+  const readers = await fetchAllRows<{ user_id: string }>((from, to) =>
+    supabase.from("user_subscriptions").select("user_id").order("user_id").range(from, to),
+  );
+  if (readers.length === 0) return;
 
-  if (bookErr) throw bookErr;
-  if (!bookUsers || bookUsers.length === 0) return;
+  const profileUsers = await fetchAllRows<{ user_id: string }>((from, to) =>
+    supabase.from("reader_profile").select("user_id").order("user_id").range(from, to),
+  );
 
-  const distinctBookUsers = [...new Set(bookUsers.map((r) => r.user_id))];
-
-  const { data: profileUsers, error: profileErr } = await supabase
-    .from("reader_profile")
-    .select("user_id");
-
-  if (profileErr) throw profileErr;
-
-  const usersWithProfiles = new Set((profileUsers ?? []).map((r) => r.user_id));
-  const newUsers = distinctBookUsers.filter((uid) => !usersWithProfiles.has(uid));
+  const usersWithProfiles = new Set(profileUsers.map((r) => r.user_id));
+  const newUsers = readers.map((r) => r.user_id).filter((uid) => !usersWithProfiles.has(uid));
 
   if (newUsers.length === 0) return;
 
@@ -131,22 +158,7 @@ async function checkNewUsers(supabase: SupabaseClient): Promise<void> {
 }
 
 function spawnFirstProfile(userId: string): void {
-  if (inFlightUsers.has(userId)) return;
-  inFlightUsers.add(userId);
-  console.log(`[profile-scheduler] Spawning generate-profile.ts --force --bootstrap --user-id ${userId} ...`);
-  exec(
-    `npx tsx scripts/generate-profile.ts --force --bootstrap --user-id ${userId}`,
-    { cwd: process.cwd() },
-    (error, stdout, stderr) => {
-      inFlightUsers.delete(userId);
-      if (error) {
-        console.error(`[profile-scheduler:${userId.slice(0, 8)}] First profile generation failed:`, error.message);
-        if (stderr) console.error(`[profile-scheduler:${userId.slice(0, 8)}] stderr:`, stderr);
-        return;
-      }
-      console.log(`[profile-scheduler:${userId.slice(0, 8)}] First profile output:\n` + stdout);
-    },
-  );
+  queueProfile(userId, `npx tsx scripts/generate-profile.ts --force --bootstrap --user-id ${userId}`, "First profile");
 }
 
 async function checkAndRegenerateAll(supabase: SupabaseClient): Promise<void> {
@@ -227,22 +239,7 @@ async function checkUserProfile(
 }
 
 function spawnRegeneration(userId: string): void {
-  if (inFlightUsers.has(userId)) return;
-  inFlightUsers.add(userId);
-  console.log(`[profile-scheduler] Spawning generate-profile.ts --force --user-id ${userId} ...`);
-  exec(
-    `npx tsx scripts/generate-profile.ts --force --user-id ${userId}`,
-    { cwd: process.cwd() },
-    (error, stdout, stderr) => {
-      inFlightUsers.delete(userId);
-      if (error) {
-        console.error(`[profile-scheduler:${userId.slice(0, 8)}] Generation failed:`, error.message);
-        if (stderr) console.error(`[profile-scheduler:${userId.slice(0, 8)}] stderr:`, stderr);
-        return;
-      }
-      console.log(`[profile-scheduler:${userId.slice(0, 8)}] Generation output:\n` + stdout);
-    },
-  );
+  queueProfile(userId, `npx tsx scripts/generate-profile.ts --force --user-id ${userId}`, "Profile regeneration");
 }
 
 export function startProfileScheduler(supabase: SupabaseClient): void {

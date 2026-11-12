@@ -17,7 +17,8 @@ const supabase = createClient(
 );
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+  // Background work bills the jobs workspace in the Anthropic Console
+  apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY!,
   // Tolerate flaky networks: longer per-request timeout + SDK-level retries on
   // connection errors. Our batch loop adds a further retry layer on top.
   timeout: 120_000,

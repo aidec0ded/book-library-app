@@ -39,7 +39,8 @@ import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
 import { buildBookContext, type LinkedBook } from "./book-context.js";
 import { startConversationReviewScheduler } from "./conversation-review.js";
 import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
-import { readJsonBody } from "./request-body.js";
+import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
+import { BUSY_MESSAGE, dailyBudgetReached, isCapacityError, recordSpend, type TokenUsage } from "./spend-guard.js";
 import { requestReleasesCheck, startReleasesScheduler } from "./releases-scheduler.js";
 import { startEmbeddingScheduler } from "./embeddings.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
@@ -59,13 +60,9 @@ async function logTokenUsage(
   conversationId: string | null,
   endpoint: string,
   model: string,
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_creation_input_tokens?: number | null;
-    cache_read_input_tokens?: number | null;
-  },
+  usage: TokenUsage,
 ): Promise<void> {
+  recordSpend(model, usage);
   try {
     await supabase.from("chat_token_usage").insert({
       user_id: userId,
@@ -109,8 +106,13 @@ const serviceSupabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
+// Chat, greetings, and titles bill the chat workspace in the Anthropic Console;
+// background work bills the jobs workspace, so each has its own spend limit
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
+});
+const jobsAnthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY!,
 });
 
 /**
@@ -276,6 +278,12 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 
 const FREE_MESSAGE_LIMIT = 5;
+/** Fair-use cap on paid (and promotional) readers' chat replies a month: about $7.50 at today's cost per reply. */
+const PAID_MONTHLY_REPLY_CAP = Number(process.env.PAID_MONTHLY_REPLY_CAP) || 100;
+/** Onboarding chat is free of the monthly limits up to this many messages, then counts like any other chat. */
+const ONBOARDING_MESSAGE_LIMIT = 20;
+/** Longest chat message accepted: room for a pasted passage, not a whole chapter. */
+const MAX_MESSAGE_CHARS = 10_000;
 
 function setCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): void {
   const origin = req.headers.origin ?? "";
@@ -373,15 +381,32 @@ async function handleChat(
   let body: ChatRequest;
   try {
     body = (await readJsonBody(req)) as ChatRequest;
-  } catch {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid request body" }));
+  } catch (err) {
+    const tooLarge = err instanceof BodyTooLargeError;
+    res.writeHead(tooLarge ? 413 : 400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: tooLarge ? "That message is too long." : "Invalid request body" }));
     return;
   }
 
   if (!body?.message || typeof body.message !== "string") {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "message is required" }));
+    return;
+  }
+  if (body.message.length > MAX_MESSAGE_CHARS) {
+    res.writeHead(413, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      error: "message_too_long",
+      message: `That message is too long. Keep it under ${MAX_MESSAGE_CHARS.toLocaleString("en-US")} characters.`,
+    }));
+    return;
+  }
+
+  // Past the day's chat budget, answer "busy" before doing any work
+  if (await dailyBudgetReached(serviceSupabase)) {
+    setCorsHeaders(req, res);
+    res.writeHead(503, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "busy", message: BUSY_MESSAGE }));
     return;
   }
 
@@ -414,24 +439,37 @@ async function handleChat(
     isOnboarding = !subRow?.onboarding_completed_at;
   }
 
-  // Chat message gating for free users (skip for onboarding)
+  // Onboarding chat only skips the monthly limits for its first messages; otherwise an
+  // account that never finished onboarding could chat for free indefinitely
+  if (isOnboarding) {
+    const { count: onboardingMessages } = await serviceSupabase
+      .from("messages")
+      .select("id, conversations!inner(user_id, is_onboarding)", { count: "exact", head: true })
+      .eq("role", "user")
+      .eq("conversations.user_id", userId)
+      .eq("conversations.is_onboarding", true);
+    if ((onboardingMessages ?? 0) >= ONBOARDING_MESSAGE_LIMIT) isOnboarding = false;
+  }
+
+  // Monthly limits: free readers' few messages, and a fair-use cap for paid readers.
+  // A message is claimed before any work, so requests sent together can't pass the limit.
   const subscription = await getOrCreateSubscription(userId);
-  const usesFreeMessage = !isOnboarding && !isPaidAndActive(subscription);
-  if (usesFreeMessage) {
-    const claimed = await claimMessage(
-      serviceSupabase,
-      userId,
-      subscription.chat_messages_used,
-      FREE_MESSAGE_LIMIT,
-    );
+  const paid = isPaidAndActive(subscription);
+  const claimsMessage = !isOnboarding;
+  if (claimsMessage) {
+    const limit = paid ? PAID_MONTHLY_REPLY_CAP : FREE_MESSAGE_LIMIT;
+    const claimed = await claimMessage(serviceSupabase, userId, subscription.chat_messages_used, limit);
     if (!claimed) {
       setCorsHeaders(req, res);
       res.writeHead(403, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        error: "message_limit_reached",
-        messages_used: FREE_MESSAGE_LIMIT,
-        messages_limit: FREE_MESSAGE_LIMIT,
-      }));
+      res.end(JSON.stringify(
+        paid
+          ? {
+              error: "monthly_cap_reached",
+              message: `You've had ${limit} replies from your companion this month, the most for one month. It'll be ready to talk again on the 1st.`,
+            }
+          : { error: "message_limit_reached", messages_used: limit, messages_limit: limit },
+      ));
       return;
     }
   }
@@ -1145,11 +1183,13 @@ async function handleChat(
       void generateTitle(supabase, userId, conversationId, body.message, accumulatedText);
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    // A spend limit, rate limit, or overload is "try again later", not a failure to show
+    const message = isCapacityError(err) ? BUSY_MESSAGE : err instanceof Error ? err.message : String(err);
+    if (isCapacityError(err)) console.error("[chat] Anthropic capacity or spend limit:", err instanceof Error ? err.message : err);
     writeSSE(res, "error", { message });
 
     // A reader isn't charged a message for a reply they didn't get
-    if (usesFreeMessage && !replySaved) {
+    if (claimsMessage && !replySaved) {
       void releaseMessage(serviceSupabase, userId).catch((releaseError) => {
         console.error("[chat] Couldn't return a free message:", releaseError);
       });
@@ -1294,6 +1334,12 @@ const server = http.createServer((req, res) => {
         }
 
         try {
+          // Past the day's chat budget, the home page goes without a new greeting
+          if (await dailyBudgetReached(serviceSupabase)) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ greeting: "" }));
+            return;
+          }
           const result = await getGreeting(userSupabase, anthropic, userId);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ greeting: result.greeting }));
@@ -1314,9 +1360,7 @@ const server = http.createServer((req, res) => {
     if (req.method === "POST" && url === "/api/contact") {
       void (async () => {
         try {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
-          const body = JSON.parse(Buffer.concat(chunks).toString());
+          const body = (await readJsonBody(req)) as Record<string, unknown>;
 
           const { name, email, message } = body;
           if (!name || !email || !message) {
@@ -1454,9 +1498,7 @@ const server = http.createServer((req, res) => {
     if (req.method === "POST" && url === "/api/stripe/webhook") {
       void (async () => {
         try {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
-          const rawBody = Buffer.concat(chunks);
+          const rawBody = await readRawBody(req);
           const signature = req.headers["stripe-signature"] as string;
 
           if (!signature) {
@@ -1491,9 +1533,7 @@ const server = http.createServer((req, res) => {
         }
 
         try {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
-          const body = JSON.parse(Buffer.concat(chunks).toString());
+          const body = (await readJsonBody(req)) as Record<string, unknown>;
 
           const plan = body.plan as "monthly" | "annual";
           if (plan !== "monthly" && plan !== "annual") {
@@ -1621,7 +1661,7 @@ server.listen(PORT, () => {
   console.log(`Rekollekt chat server listening on http://localhost:${PORT}`);
   startProfileScheduler(serviceSupabase);
   startEnrichmentScheduler(serviceSupabase);
-  startConversationReviewScheduler(serviceSupabase, anthropic, MODEL);
+  startConversationReviewScheduler(serviceSupabase, jobsAnthropic, MODEL);
   startReleasesScheduler(serviceSupabase);
   startEmbeddingScheduler(serviceSupabase);
 });

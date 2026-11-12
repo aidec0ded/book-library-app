@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { runScript } from "./jobs.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { personallyScorableOnly, scorableOnly } from "../src/lib/release-scoring.js";
 
@@ -59,7 +59,7 @@ function spawn(label: string, command: string, guard: keyof typeof inFlight): vo
   }
   inFlight[guard] = true;
   console.log(`[releases] Spawning: ${command}`);
-  exec(command, { cwd: process.cwd() }, (error, stdout, stderr) => {
+  runScript(command, (error, stdout, stderr) => {
     inFlight[guard] = false;
     if (error) {
       console.error(`[releases] ${label} failed:`, error.message);

@@ -173,12 +173,14 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view). In a conversation about a book, saves go to that book
 - `server/book-context.ts` — What the AI gets in a conversation about a book: its status, dates, notes, excerpts, list context, summary, and earlier conversations
 - `server/conversation-review.ts` — After a book conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation
-- `server/subscription.ts` — Paid plan check, plus claiming and returning a free reader's chat messages so requests sent together can't pass the limit
-- `server/request-body.ts` — Reads a JSON request body
+- `server/subscription.ts` — Paid plan check, plus claiming and returning a reader's chat messages (free readers' 5 a month, paid readers' fair-use cap of 100) so requests sent together can't pass the limit
+- `server/request-body.ts` — Reads a request body, refusing anything over 100KB so a huge request can't fill the server's memory
+- `server/spend-guard.ts` — The daily stop for chat spending: a running total of today's chat cost (from `chat_token_usage` at startup, then each call as it's logged); past `DAILY_CHAT_BUDGET_USD` (default $25) chat and greetings answer "busy" until 00:00 UTC. Also turns Anthropic spend limits, rate limits, and overload into the same "busy" message
+- `server/jobs.ts` — Starts background scripts, at most 2 at a time across all schedulers (each is an ~80-100MB process on a 512MB server)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/onboarding-prompt.ts` — Onboarding-specific system prompt builder (empty library vs. imported library paths)
-- `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (daily check, spawns generate-profile.ts)
+- `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (checks every 4 hours, generates one profile at a time, finds new readers from `user_subscriptions`)
 - `server/stripe-handler.ts` — Stripe webhook event processing, checkout/portal session creation
 - `scripts/grant-subscription.ts` — Admin script to grant/revoke complimentary paid subscriptions by email
 - `scripts/fetch-all.ts` — Reads every row of a query page by page (Supabase returns at most 1,000 per request, with no error)
@@ -236,7 +238,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Onboarding** — Two-phase flow: welcome gate (chat, Goodreads import, or skip) + AI chat that populates library through conversation. Onboarding gate redirects new users until complete. Goodreads CSV import with shelf selection, duplicate detection, and batch insert.
 
-**Monetization** — Stripe-based subscription (free tier: 5 chat messages/month + full library; paid: $7/month or $60/year for unlimited chat + syllabi + reading paths + automatic excerpts; saving by hand is free). Stripe Checkout + Customer Portal, webhook handler for subscription lifecycle, chat message gating, tool filtering for free users, subscription context + UI (message counters, lock icons, upgrade CTAs), public pricing + FAQ pages, subscription management in Settings. Admin script for granting complimentary subscriptions.
+**Monetization** — Stripe-based subscription (free tier: 5 chat messages/month + full library; paid: $7/month or $60/year for chat up to a fair-use cap of 100 replies a month + syllabi + reading paths + automatic excerpts; saving by hand is free). Stripe Checkout + Customer Portal, webhook handler for subscription lifecycle, chat message gating, tool filtering for free users, subscription context + UI (message counters, lock icons, upgrade CTAs), public pricing + FAQ pages, subscription management in Settings. Admin script for granting complimentary subscriptions.
 
 **Analytics** — PostHog client-side integration tracking pageviews, auth events, onboarding funnel, chat engagement, book additions, imports, releases, checkout, and shelf creation. Graceful no-op when key unset.
 
@@ -401,7 +403,10 @@ Requires `.env` (not committed) with:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (service role, not anon — bypasses RLS for bulk import and scripts)
 - `SUPABASE_ANON_KEY` — anon key used by the chat server to create per-user Supabase clients (with RLS)
-- `ANTHROPIC_API_KEY` — for AI vibe tagging script + chat server
+- `ANTHROPIC_API_KEY` — Claude key for the chat server (chat, greetings, titles), in the Console's chat workspace
+- `ANTHROPIC_JOBS_API_KEY` — Claude key for background work (scripts and conversation review), in the Console's jobs workspace, so each has its own spend limit. Falls back to `ANTHROPIC_API_KEY` if unset
+- `DAILY_CHAT_BUDGET_USD` — daily chat spending stop (optional, default 25)
+- `PAID_MONTHLY_REPLY_CAP` — fair-use cap on a paid reader's chat replies a month (optional, default 100)
 - `ISBNDB_API_KEY` — for ISBNdb enrichment, new releases ingestion, and Add Book search (server-side only)
 - `VOYAGE_AI_API_KEY` — Voyage AI embeddings key, created in MongoDB Atlas (AI Model APIs). Search by meaning is off without it. The account needs a payment method, or it's limited to 3 requests a minute
 - `VOYAGE_AI_ENDPOINT` — embeddings host (`ai.mongodb.com`)

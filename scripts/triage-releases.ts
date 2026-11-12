@@ -157,7 +157,8 @@ function markDuplicateFormats(releases: Release[], reasons: Map<string, SkipReas
 
 // --- AI check ---
 
-const anthropic = new Anthropic();
+// Background work bills the jobs workspace in the Anthropic Console
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY });
 
 const SYSTEM_PROMPT = `You sort a month of upcoming book releases for a reading app. Its readers want to hear about genuinely new books, the way Kirkus Reviews or Publishers Weekly cover a season: new novels, story collections, poetry, memoir, essays, and nonfiction written for general readers. The listings come from a bookseller database, so many are not that.
 

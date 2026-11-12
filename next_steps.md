@@ -4,12 +4,12 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 **Before announcing**
 
-- Anthropic spend limit and alerts — set in the Console (owner). The backstop for everything below. Plan: separate "Chat" and "Background jobs" workspaces with their own keys (the Default Workspace can't have a spend limit), a monthly spend limit and threshold alerts on each, an organization limit above both, a lower rate limit on background jobs so an import can't starve chat, and auto-reload of credits so a depleted balance doesn't stop the app. The server needs a second key for the scripts it starts, and should show "busy" rather than an error when a limit is reached (400 "You have reached your specified API usage limits")
-- Daily spending stop — `chat_token_usage` already records every chat call. Past a daily total, chat answers "busy, try again later" instead of calling the API
-- Per-reader cap during the free period — a monthly or daily reply limit, and keep a fair-use cap on the paid plan after, since "unlimited" at $7 doesn't cover heavy use at today's cost per reply
-- Request size limit and onboarding cap — the two open chat security items below
-- Profile generation one at a time — the scheduler starts an Opus process for every new reader at once, about 100MB each on a 512MB server, so a handful of signups in one check takes chat down with it
-- Profile scheduler misses readers — it finds new readers by reading the first 1,000 `books` rows with no order (1,683 today). No one is missed yet, but it will as libraries grow. Use `scripts/fetch-all.ts` or a distinct query
+- Anthropic spend limit and alerts **[DONE]** — chat and background jobs workspaces with their own keys, spend limits, and alerts (owner, November 2026). The scripts and conversation review use `ANTHROPIC_JOBS_API_KEY`, and a spend limit, rate limit, or overload shows readers a "busy" message
+- Daily spending stop **[DONE]** — `server/spend-guard.ts`: past `DAILY_CHAT_BUDGET_USD` (default $25) in a UTC day, chat and greetings answer "busy". Covers chat only; background jobs are capped by the Console's jobs workspace limit
+- Per-reader cap during the free period **[DONE]** — paid readers have a fair-use cap of 100 replies a month (`PAID_MONTHLY_REPLY_CAP`), counted like free readers' messages. The Settings page doesn't show it yet
+- Request size limit and onboarding cap **[DONE]** — bodies over 100KB and messages over 10,000 characters are refused, and onboarding chat counts like any other chat after 20 messages
+- Profile generation one at a time **[DONE]** — profiles queue and generate one at a time, and no more than 2 background scripts run at once across all schedulers (`server/jobs.ts`)
+- Profile scheduler misses readers **[DONE]** — it now lists readers from `user_subscriptions`, every row
 - How "free" works — a launch promotion that treats everyone as paid until 1 January 2027, with the caps above. Decide what free readers see on 1 January (syllabi and reading paths locked?), and say it plainly on the pricing page
 
 **First weeks**
@@ -18,7 +18,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Per-IP rate limits — on `/api/chat`, and on `/api/contact`, which needs no login and writes straight to the database
 - Personal release scoring per reader **[DONE]** — now only on request, see "Personal release scoring on request" below
 - Background jobs off the web server — a Render background worker, or a 2GB instance, so a job can't take chat down
-- Separate API keys for chat and background jobs — background scripts don't record usage, so the Console is the only place to see where money goes
+- Separate API keys for chat and background jobs **[DONE]** — done with the Console setup. Recording what each background job costs is under Telemetry
 - Record profile generation cost — Opus 5.5 monthly per reader, not recorded anywhere
 - ISBNdb quota — every reader's imports share one key at 1 request a second. Check the plan's daily quota against, say, 50 readers importing 500 books each
 - Supabase plan — check connection, bandwidth, and database size limits for the plan in use
@@ -54,8 +54,8 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Verify login tokens — the server read the user ID from the token without checking its signature, so a forged token could delete another reader's account or open their billing portal, and any bearer value could use the ISBNdb proxy. Every endpoint now checks with Supabase **[DONE]**
 - Malformed chat requests — `JSON.parse` in `handleChat` sat outside any `try`, and nothing caught the rejection, so a signed-in user sending bad JSON could crash the server for everyone. It now returns a 400, and unexpected failures in chat and the ISBNdb proxy return an error instead of reaching the top level **[DONE]**
 - Free message counter — it was checked before the reply and counted after, so requests sent together could all pass the limit. A message is now claimed up front and returned if the reply fails **[DONE]**
-- Onboarding chat has no limit — onboarding conversations skip the free limit until onboarding is marked complete, and the reader controls when that happens, so a new account could keep chatting for free by never finishing. Consider capping it
-- Request size limit — the server reads a whole request body into memory with no cap, and production has 512MB, so a very large request could run it out of memory. Reject bodies past a sensible size
+- Onboarding chat has no limit **[DONE]** — capped at 20 messages, then it counts against the monthly limits
+- Request size limit **[DONE]** — 100KB per request body
 
 **Conversations get a subject**
 

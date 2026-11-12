@@ -28,7 +28,8 @@ const supabase = createClient(
 );
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+  // Background work bills the jobs workspace in the Anthropic Console
+  apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY!,
 });
 
 // --- CLI args ---

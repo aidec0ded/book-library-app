@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { runScript } from "./jobs.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -12,7 +12,7 @@ let cycleInFlight = false;
 function run(label: string, command: string): Promise<void> {
   console.log(`[enrichment] Spawning: ${command}`);
   return new Promise((resolve) => {
-    exec(command, { cwd: process.cwd() }, (error, stdout, stderr) => {
+    runScript(command, (error, stdout, stderr) => {
       if (error) {
         console.error(`[enrichment] ${label} failed:`, error.message);
         if (stderr) console.error(`[enrichment] ${label} stderr:`, stderr);
