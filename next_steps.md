@@ -14,8 +14,8 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 **First weeks**
 
-- Signup abuse — free chat makes scripted accounts worth creating. Email confirmation is on, but nothing limits signups or requests and there's no captcha. Turn on Cloudflare Turnstile in Supabase Auth
-- Per-IP rate limits — on `/api/chat`, and on `/api/contact`, which needs no login and writes straight to the database
+- Signup abuse **[DONE]** — the Turnstile widget is on sign-up and email sign-in (`src/components/Turnstile.tsx`). To switch it on: create a Turnstile widget in Cloudflare (Managed mode) for the site's domains and localhost, set `VITE_TURNSTILE_SITE_KEY` in Render and `.env`, deploy, then turn on captcha protection in Supabase Auth with the secret key. Doing it in the other order breaks sign-ups until the deploy
+- Per-IP rate limits **[DONE]** — `server/rate-limit.ts` limits every API route per address, and chat per reader too (an address can be faked by calling Render directly; a reader can't). Kept in memory, so limits reset on deploy
 - Personal release scoring per reader **[DONE]** — now only on request, see "Personal release scoring on request" below
 - Background jobs off the web server — a Render background worker, or a 2GB instance, so a job can't take chat down
 - Separate API keys for chat and background jobs **[DONE]** — done with the Console setup. Recording what each background job costs is under Telemetry

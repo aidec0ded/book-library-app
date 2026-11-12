@@ -40,6 +40,7 @@ import { buildBookContext, type LinkedBook } from "./book-context.js";
 import { startConversationReviewScheduler } from "./conversation-review.js";
 import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
 import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
+import { clientIp, hit, rejectRateLimited, type RULES } from "./rate-limit.js";
 import { BUSY_MESSAGE, dailyBudgetReached, isCapacityError, recordSpend, type TokenUsage } from "./spend-guard.js";
 import { requestReleasesCheck, startReleasesScheduler } from "./releases-scheduler.js";
 import { startEmbeddingScheduler } from "./embeddings.js";
@@ -374,6 +375,13 @@ async function handleChat(
   } catch {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Unauthorized" }));
+    return;
+  }
+
+  // Per-reader limit, which can't be dodged by changing address
+  const readerLimit = hit("chatPerReader", userId);
+  if (!readerLimit.ok) {
+    rejectRateLimited(res, readerLimit.retryAfter);
     return;
   }
 
@@ -1313,6 +1321,26 @@ const server = http.createServer((req, res) => {
       res.writeHead(204);
       res.end();
       return;
+    }
+
+    // Per-address limits. Stripe's webhook is exempt: Stripe retries, and it's signed.
+    if (url !== "/api/stripe/webhook") {
+      const ip = clientIp(req);
+      const rules: (keyof typeof RULES)[] = ["api"];
+      if (url === "/api/chat") rules.push("chatPerIp");
+      else if (url === "/api/contact") rules.push("contact");
+      else if (url.startsWith("/api/isbndb/")) rules.push("isbndb");
+      else if (
+        url === "/api/releases/curate" || url === "/api/stripe/checkout" ||
+        url === "/api/stripe/portal" || url === "/api/account/delete"
+      ) rules.push("sensitive");
+      for (const rule of rules) {
+        const result = hit(rule, ip);
+        if (!result.ok) {
+          rejectRateLimited(res, result.retryAfter);
+          return;
+        }
+      }
     }
 
     if (req.method === "POST" && url === "/api/chat") {

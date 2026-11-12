@@ -113,7 +113,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/main.tsx` — React entry point
 - `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/onboarding` (OnboardingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/import` (ImportBooks), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/settings` (Settings), `/guide` (GuidePage), `/chat` and `/chat/:id` (Chat), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth via OnboardingGate; public pages standalone.
 - `src/pages/LandingPage.tsx` — Public landing page (standalone, no sidebar/Layout wrapper)
-- `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth
+- `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth, with the Turnstile check on email sign-up and sign-in
+- `src/components/Turnstile.tsx` — Cloudflare Turnstile widget for Supabase Auth's captcha protection. Shows nothing until `VITE_TURNSTILE_SITE_KEY` is set
 - `src/pages/PhilosophyPage.tsx` — Public editorial essay on Rekollekt's reading philosophy
 - `src/pages/FeaturesPage.tsx` — Public features page with sticky-scroll layout
 - `src/pages/ContactPage.tsx` — Public contact form page
@@ -176,6 +177,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/subscription.ts` — Paid plan check, plus claiming and returning a reader's chat messages (free readers' 5 a month, paid readers' fair-use cap of 100) so requests sent together can't pass the limit
 - `server/request-body.ts` — Reads a request body, refusing anything over 100KB so a huge request can't fill the server's memory
 - `server/spend-guard.ts` — The daily stop for chat spending: a running total of today's chat cost (from `chat_token_usage` at startup, then each call as it's logged); past `DAILY_CHAT_BUDGET_USD` (default $25) chat and greetings answer "busy" until 00:00 UTC. Also turns Anthropic spend limits, rate limits, and overload into the same "busy" message
+- `server/rate-limit.ts` — Request limits kept in memory: every API request (300 a minute per address), chat (60 per 10 minutes per address, 10 a minute per reader), the contact form (5 an hour), Add Book searches (60 a minute), and curation, checkout, the billing portal, and account deletion (20 an hour). Over a limit: 429 with Retry-After. The Stripe webhook is exempt
 - `server/jobs.ts` — Starts background scripts, at most 2 at a time across all schedulers (each is an ~80-100MB process on a 512MB server)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
@@ -416,6 +418,7 @@ Requires `.env` (not committed) with:
 - `STRIPE_ANNUAL_PRICE_ID` — Stripe Price ID for $60/year plan
 - `VITE_SUPABASE_URL` — same Supabase URL (exposed to browser via Vite)
 - `VITE_SUPABASE_ANON_KEY` — anon key (respects RLS, safe for browser)
+- `VITE_TURNSTILE_SITE_KEY` — Cloudflare Turnstile site key (optional; the captcha is off without it). Its secret key goes in Supabase Auth's captcha setting, not here
 - `VITE_POSTHOG_KEY` — PostHog project API key (optional — analytics disabled when unset)
 - `VITE_POSTHOG_HOST` — PostHog ingest URL (optional, defaults to `https://us.i.posthog.com`)
 

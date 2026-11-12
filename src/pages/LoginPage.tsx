@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { capture } from "@/lib/posthog";
+import { Turnstile, captchaEnabled } from "@/components/Turnstile";
 
 type Mode = "sign-in" | "sign-up";
 
@@ -14,6 +15,8 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
   const navigate = useNavigate();
   const { session } = useAuth();
 
@@ -33,6 +36,7 @@ export function LoginPage() {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
+          options: { captchaToken: captchaToken ?? undefined },
         });
         if (signInError) throw signInError;
         capture("user_logged_in", { method: "email" });
@@ -43,6 +47,7 @@ export function LoginPage() {
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/home`,
+            captchaToken: captchaToken ?? undefined,
           },
         });
         if (signUpError) throw signUpError;
@@ -53,6 +58,8 @@ export function LoginPage() {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
+      // A captcha token works once, so each attempt gets a fresh check
+      if (captchaEnabled) setCaptchaKey((k) => k + 1);
     }
   };
 
@@ -166,13 +173,15 @@ export function LoginPage() {
             className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground/30 focus:ring-1 focus:ring-foreground/10"
           />
 
+          <Turnstile onToken={setCaptchaToken} resetKey={captchaKey} />
+
           {error && (
             <p className="text-sm text-red-500">{error}</p>
           )}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (captchaEnabled && !captchaToken)}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition-all hover:opacity-90 disabled:opacity-50"
           >
             {loading
