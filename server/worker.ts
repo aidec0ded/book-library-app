@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
+import { startAlerts } from "./alerts.js";
 import { startBackgroundJobs } from "./background-jobs.js";
+import { startCostReconciliation } from "./cost-reconciliation.js";
 import { CHAT_MODEL } from "./models.js";
 
 /**
@@ -22,6 +24,9 @@ const jobsAnthropic = new Anthropic({
 console.log("[worker] Starting background jobs.");
 // The web server can't start a releases job here directly, so curation requests are polled
 startBackgroundJobs(service, jobsAnthropic, CHAT_MODEL, { watchCurationRequests: true });
+// Only the worker sends alerts and checks costs against Anthropic, so a local server never emails
+startAlerts(service);
+startCostReconciliation(service);
 
 process.on("SIGTERM", () => {
   console.log("[worker] Stopping.");

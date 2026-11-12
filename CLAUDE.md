@@ -186,6 +186,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/background-jobs.ts` — Starts all the schedulers. The web server calls it unless `JOBS_IN_WORKER=true`; the worker always does
 - `server/models.ts` — The chat model ID, shared by the web server and the worker
 - `server/usage.ts` — Telemetry recording: `recordUsage`/`recordClaudeUsage` write every paid API call with its cost to `api_usage`, `trackClaudeUsage` wraps a script's Anthropic client so each response is recorded (per reader where known), `usageCost` holds the prices, and `recordJobRun` updates `job_heartbeats`
+- `server/alerts.ts` — Email alerts from the worker through Resend, checked every 15 minutes and each sent once per period (`alerts_sent`): AI spend today past `ALERT_DAILY_SPEND_USD` (default $10), chat paused by the daily stop, signups per hour past `ALERT_SIGNUPS_PER_HOUR` (default 20), failing or stalled jobs, ISBNdb at its reserve, Voyage free tokens at 80%/95%, the database at 80% of 8GB, readers at the monthly reply cap, and gaps between billed and recorded AI cost. Plus a daily summary of the day before after 14:00 UTC (`ALERT_DAILY_SUMMARY=false` turns it off)
+- `server/cost-reconciliation.ts` — Hourly in the worker: compares the last 3 complete UTC days of Anthropic's bill (Usage and Cost Analytics API, `ANTHROPIC_ADMIN_API_KEY`) with `api_usage`, per workspace matched by name ("chat", "background"/"jobs", anything else "other"; Claude Code workspaces left out), into `cost_reconciliation`
 - `server/jobs.ts` — Starts background scripts, at most 2 at a time across all schedulers (each is an ~80-100MB process on a 512MB server)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
@@ -262,7 +264,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Twenty-two tables in Supabase:
+Twenty-four tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -317,6 +319,10 @@ Twenty-two tables in Supabase:
 **api_usage** — Every paid API call with its cost (migration 034): `provider` (anthropic, voyage, isbndb), `feature` (chat, title, greeting, condense, review, profile, predicted_ratings, vibe_tagging, classification_tagging, genre_reclassify, release_triage, release_scoring, book_embeddings, search_by_meaning, isbndb_lookup, isbndb_search), `model`, `user_id` (the reader it was for, where known), token counts, `calls` (ISBNdb quota charge), `cost_usd`, and `batch`. Chat usage from `chat_token_usage` was copied in; that table is no longer written. Service role only
 
 **job_heartbeats** — Each background job's latest run: `last_run_at`, `last_ok_at`, `last_error`, `runs`, `failures`. Written by every scheduler check and every script run. Service role only
+
+**alerts_sent** — One row per alert email sent, keyed by alert and period (`chat_stop:2026-11-12`, `job_failing:embeddings:2026-11-12`), so each goes out once. Inserting a key by hand silences that alert. Service role only (migration 035)
+
+**cost_reconciliation** — Per UTC day and workspace (`chat`, `jobs`, `other`): what Anthropic billed and what the app recorded. Service role only (migration 035)
 
 **api_quota** — The latest remaining quota a paid API reported, one row per service (`isbndb`: `remaining`, `resets_at`). Service role only
 
@@ -425,6 +431,9 @@ Requires `.env` (not committed) with:
 - `SUPABASE_ANON_KEY` — anon key used by the chat server to create per-user Supabase clients (with RLS)
 - `ANTHROPIC_API_KEY` — Claude key for the chat server (chat, greetings, titles), in the Console's chat workspace
 - `ANTHROPIC_JOBS_API_KEY` — Claude key for background work (scripts and conversation review), in the Console's jobs workspace, so each has its own spend limit. Falls back to `ANTHROPIC_API_KEY` if unset
+- `RESEND_API_KEY`, `ALERT_FROM`, `ALERT_TO` — alert emails through Resend, sent from `alerts@updates.rekollekt.io` (worker only; alerts are off without them). In `.env`, quote `ALERT_FROM` since it has spaces and angle brackets
+- `ANTHROPIC_ADMIN_API_KEY` — Anthropic Admin API key for the daily cost check (worker only)
+- `ALERT_DAILY_SPEND_USD`, `ALERT_SIGNUPS_PER_HOUR`, `ALERT_DAILY_SUMMARY` — alert thresholds and the daily summary switch (worker, optional). If `DAILY_CHAT_BUDGET_USD` or `PAID_MONTHLY_REPLY_CAP` change on the web service, set the same on the worker so its alerts match
 - `ADMIN_USER_IDS` — comma-separated user IDs that can open `/admin` (web service only)
 - `JOBS_IN_WORKER` — `true` on the web service once the background worker runs, so the web server leaves the schedulers to it (optional; unset, the web server runs them, as locally)
 - `DAILY_CHAT_BUDGET_USD` — daily chat spending stop (optional, default 25)

@@ -69,6 +69,13 @@ interface Overview {
     database_included_bytes: number;
   };
   jobs_in_worker: boolean;
+  reconciliation: {
+    day: string;
+    workspace: "chat" | "jobs" | "other";
+    workspace_name: string | null;
+    anthropic_usd: number;
+    recorded_usd: number;
+  }[];
 }
 
 /** How often each scheduler should report; three missed intervals counts as stalled. */
@@ -78,6 +85,7 @@ const JOB_INTERVALS_MIN: Record<string, number> = {
   embeddings: 10,
   profile_check: 240,
   releases_check: 240,
+  cost_reconciliation: 60,
 };
 
 const JOB_LABELS: Record<string, string> = {
@@ -95,6 +103,7 @@ const JOB_LABELS: Record<string, string> = {
   "ingest-releases": "Release ingestion",
   "triage-releases": "Release triage",
   "score-releases": "Release scoring",
+  cost_reconciliation: "Daily cost check",
 };
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -496,6 +505,56 @@ export function AdminPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="mb-1 text-lg font-semibold">Recorded against billed</h2>
+              <p className="mb-4 text-sm text-muted-foreground">
+                What Anthropic billed each day against what the app recorded. A gap means calls the app didn't record.
+              </p>
+              {data.reconciliation.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No days checked yet. The worker checks hourly once ANTHROPIC_ADMIN_API_KEY is set, after Anthropic finishes counting a day.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[32rem] text-sm">
+                    <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <tr>
+                        <th className="pb-2 font-medium">Day</th>
+                        <th className="pb-2 font-medium">Workspace</th>
+                        <th className="pb-2 text-right font-medium">Billed</th>
+                        <th className="pb-2 text-right font-medium">Recorded</th>
+                        <th className="pb-2 text-right font-medium">Gap</th>
+                      </tr>
+                    </thead>
+                    <tbody className="tabular-nums">
+                      {data.reconciliation
+                        .filter((r) => Number(r.anthropic_usd) > 0 || Number(r.recorded_usd) > 0)
+                        .map((r) => {
+                          const gap = Number(r.anthropic_usd) - Number(r.recorded_usd);
+                          const off = Math.abs(gap) >= Math.max(0.5, Number(r.anthropic_usd) * 0.15);
+                          return (
+                            <tr key={`${r.day}:${r.workspace}`} className="border-t">
+                              <td className="py-1.5">{r.day}</td>
+                              <td className="py-1.5">
+                                {{ chat: "Chat", jobs: "Background jobs", other: "Other" }[r.workspace]}
+                                {r.workspace === "other" && r.workspace_name ? ` (${r.workspace_name})` : ""}
+                              </td>
+                              <td className="py-1.5 text-right">{money(Number(r.anthropic_usd))}</td>
+                              <td className="py-1.5 text-right">{money(Number(r.recorded_usd))}</td>
+                              <td className={`py-1.5 text-right ${off ? "font-medium text-red-700" : "text-muted-foreground"}`}>
+                                {gap >= 0 ? "+" : "−"}{money(Math.abs(gap))}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardContent className="pt-6">

@@ -1651,8 +1651,16 @@ const server = http.createServer((req, res) => {
         }
         try {
           const days = Math.min(Math.max(Number(new URL(url, "http://x").searchParams.get("days")) || 30, 1), 90);
-          const { data, error } = await serviceSupabase.rpc("admin_overview", { p_days: days });
+          const [{ data, error }, { data: reconciliation, error: reconError }] = await Promise.all([
+            serviceSupabase.rpc("admin_overview", { p_days: days }),
+            serviceSupabase
+              .from("cost_reconciliation")
+              .select("day, workspace, workspace_name, anthropic_usd, recorded_usd, checked_at")
+              .order("day", { ascending: false })
+              .limit(21),
+          ]);
           if (error) throw error;
+          if (reconError) throw reconError;
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
             ...(data as Record<string, unknown>),
@@ -1667,6 +1675,7 @@ const server = http.createServer((req, res) => {
               database_included_bytes: 8 * 1024 ** 3,
             },
             jobs_in_worker: jobsInWorker(),
+            reconciliation: reconciliation ?? [],
           }));
         } catch (err) {
           failRequest(res, "admin", err);
