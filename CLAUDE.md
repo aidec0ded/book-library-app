@@ -124,7 +124,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/OnboardingPage.tsx` — Two-phase onboarding: welcome gate (chat/import/skip) + AI chat to populate library
 - `src/pages/ImportBooks.tsx` — Goodreads CSV import: upload, shelf selection, dedup, batch insert with progress
 - `src/pages/GuidePage.tsx` — In-app guide page for new users
-- `src/pages/AdminPage.tsx` — Owner telemetry page: spend today and this month against the daily stop, daily cost by area, cost by feature and per reader, signups, messages, books added by source, ISBNdb/Voyage/database usage, and background job health. Data from `/api/admin/overview` (the `admin_overview` database function), which only answers for accounts in `ADMIN_USER_IDS`
+- `src/pages/AdminPage.tsx` — Owner telemetry page: revenue, profit, and break-even, spend today and this month against the daily stop, daily cost by area, cost by feature and per reader, signups, messages, books added by source, ISBNdb/Voyage/database usage, and background job health. Data from `/api/admin/overview` (the `admin_overview` database function), which only answers for accounts in `ADMIN_USER_IDS`
 - `src/pages/Settings.tsx` — Account settings: password reset, library export, subscription management, delete account
 - `src/lib/onboarding.ts` — Onboarding status check and completion
 - `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation
@@ -182,18 +182,21 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/spend-guard.ts` — The daily stop for chat spending: a running total of today's chat cost (from `chat_token_usage` at startup, then each call as it's logged); past `DAILY_CHAT_BUDGET_USD` (default $25) chat and greetings answer "busy" until 00:00 UTC. Also turns Anthropic spend limits, rate limits, and overload into the same "busy" message
 - `server/rate-limit.ts` — Request limits kept in memory: every API request (300 a minute per address), chat (60 per 10 minutes per address, 10 a minute per reader), the contact form (5 an hour), Add Book searches (60 a minute), and curation, checkout, the billing portal, and account deletion (20 an hour). Over a limit: 429 with Retry-After. The Stripe webhook is exempt
 - `server/isbndb.ts` — Every ISBNdb call goes through here (Add Book proxy, chat lookups, enrichment, ISBN discovery, release ingestion). The plan allows 5,000 calls a day and 60 a minute; a lookup is charged per ISBN even in bulk, and a search is one call however many books it returns. Lookups check a shared cache of ISBNdb's data (`isbndb_books`), then ingested releases, before calling; misses go 100 ISBNs to a call. Every book a response returns is cached. Each response's remaining quota is kept in `api_quota`, and background lookups stop when 1,000 calls are left for the day (`BACKGROUND_RESERVE`), so Add Book and chat keep working
-- `server/worker.ts` — The background worker, a separate Render service (Background Worker, start command `npx tsx server/worker.ts`) that runs every scheduler, so a job can't slow or crash chat. Polls `release_curation` every minute, since the web server can't start a releases check in another process
+- `server/worker.ts` — The background worker (also sends alerts and runs the daily Anthropic and Stripe checks), a separate Render service (Background Worker, start command `npx tsx server/worker.ts`) that runs every scheduler, so a job can't slow or crash chat. Polls `release_curation` every minute, since the web server can't start a releases check in another process
 - `server/background-jobs.ts` — Starts all the schedulers. The web server calls it unless `JOBS_IN_WORKER=true`; the worker always does
 - `server/models.ts` — The chat model ID, shared by the web server and the worker
 - `server/usage.ts` — Telemetry recording: `recordUsage`/`recordClaudeUsage` write every paid API call with its cost to `api_usage`, `trackClaudeUsage` wraps a script's Anthropic client so each response is recorded (per reader where known), `usageCost` holds the prices, and `recordJobRun` updates `job_heartbeats`
-- `server/alerts.ts` — Email alerts from the worker through Resend, checked every 15 minutes and each sent once per period (`alerts_sent`): AI spend today past `ALERT_DAILY_SPEND_USD` (default $10), chat paused by the daily stop, signups per hour past `ALERT_SIGNUPS_PER_HOUR` (default 20), failing or stalled jobs, ISBNdb at its reserve, Voyage free tokens at 80%/95%, the database at 80% of 8GB, readers at the monthly reply cap, and gaps between billed and recorded AI cost. Plus a daily summary of the day before after 14:00 UTC (`ALERT_DAILY_SUMMARY=false` turns it off)
+- `server/alerts.ts` — Email alerts from the worker through Resend, checked every 15 minutes and each sent once per period (`alerts_sent`): AI spend today past `ALERT_DAILY_SPEND_USD` (default $10), chat paused by the daily stop, signups per hour past `ALERT_SIGNUPS_PER_HOUR` (default 20), failing or stalled jobs, ISBNdb at its reserve, Voyage free tokens at 80%/95%, the database at 80% of 8GB, readers at the monthly reply cap, gaps between billed and recorded AI cost, disputed payments, revenue that doesn't match Stripe, a server past 85% of its memory, and the web server not reporting. Plus a daily summary of the day before after 14:00 UTC (`ALERT_DAILY_SUMMARY=false` turns it off)
 - `server/cost-reconciliation.ts` — Hourly in the worker: compares the last 3 complete UTC days of Anthropic's bill (Usage and Cost Analytics API, `ANTHROPIC_ADMIN_API_KEY`) with `api_usage`, per workspace matched by name ("chat", "background"/"jobs", anything else "other"; Claude Code workspaces left out), into `cost_reconciliation`
 - `server/jobs.ts` — Starts background scripts, at most 2 at a time across all schedulers (each is an ~80-100MB process on a 512MB server)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/onboarding-prompt.ts` — Onboarding-specific system prompt builder (empty library vs. imported library paths)
 - `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (checks every 4 hours, generates one profile at a time, finds new readers from `user_subscriptions`)
-- `server/stripe-handler.ts` — Stripe webhook event processing, checkout/portal session creation
+- `server/stripe-handler.ts` — Stripe webhook event processing (subscriptions, payments, refunds, disputes; each payment, refund, and dispute also recorded in `billing_events`), checkout/portal session creation. Pinned to API version 2026-01-28.clover, the webhook endpoint's: a subscription's period is on its items, and an invoice's subscription is under `parent.subscription_details`. Change both together
+- `server/stripe-reconciliation.ts` — Hourly in the worker: the last 3 UTC days of Stripe's balance (payments less refunds, and fees) against `billing_events`, into `stripe_reconciliation`
+- `server/health.ts` — Each server's container memory (scripts it started included) and today's peak, reported to `service_health` every 5 minutes, on Render only
+- `src/components/admin/RevenueSection.tsx` — Revenue and profit on the admin page: recurring revenue, profit this month with fixed costs, break-even, each paid reader's margin, recent billing, and the Stripe check
 - `scripts/grant-subscription.ts` — Admin script to grant/revoke complimentary paid subscriptions by email
 - `scripts/fetch-all.ts` — Reads every row of a query page by page (Supabase returns at most 1,000 per request, with no error)
 - `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 fiction vibes, batches of 5, retries, --dry-run/--limit/--force flags)
@@ -264,7 +267,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Twenty-four tables in Supabase:
+Twenty-eight tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -323,6 +326,14 @@ Twenty-four tables in Supabase:
 **alerts_sent** — One row per alert email sent, keyed by alert and period (`chat_stop:2026-11-12`, `job_failing:embeddings:2026-11-12`), so each goes out once. Inserting a key by hand silences that alert. Service role only (migration 035)
 
 **cost_reconciliation** — Per UTC day and workspace (`chat`, `jobs`, `other`): what Anthropic billed and what the app recorded. Service role only (migration 035)
+
+**billing_events** — Every payment (positive, with Stripe's fee), refund (negative), dispute, failed payment, and subscription start or end, from the Stripe webhook, keyed by Stripe's id (migration 036). Service role only
+
+**stripe_reconciliation** — Per UTC day: Stripe's balance (payments less refunds), its fees, and what `billing_events` recorded. Service role only
+
+**fixed_costs** — Monthly bills that don't depend on usage (`name`, `monthly_usd`, `notes`; annual bills as a twelfth), for profit and break-even on `/admin`. Edit in the Table Editor. Service role only
+
+**service_health** — Each Render service's latest memory report (`web`, `worker`): container memory, limit, the server process alone, and today's peak. Service role only
 
 **api_quota** — The latest remaining quota a paid API reported, one row per service (`isbndb`: `remaining`, `resets_at`). Service role only
 

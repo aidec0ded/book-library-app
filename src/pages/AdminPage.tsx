@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { RevenueSection, type Revenue } from "@/components/admin/RevenueSection";
 import { Card, CardContent } from "@/components/ui/card";
 
 /**
@@ -76,6 +77,7 @@ interface Overview {
     anthropic_usd: number;
     recorded_usd: number;
   }[];
+  revenue: Revenue;
 }
 
 /** How often each scheduler should report; three missed intervals counts as stalled. */
@@ -86,6 +88,7 @@ const JOB_INTERVALS_MIN: Record<string, number> = {
   profile_check: 240,
   releases_check: 240,
   cost_reconciliation: 60,
+  stripe_reconciliation: 60,
 };
 
 const JOB_LABELS: Record<string, string> = {
@@ -104,6 +107,7 @@ const JOB_LABELS: Record<string, string> = {
   "triage-releases": "Release triage",
   "score-releases": "Release scoring",
   cost_reconciliation: "Daily cost check",
+  stripe_reconciliation: "Daily Stripe check",
 };
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -373,6 +377,8 @@ export function AdminPage() {
             </CardContent>
           </Card>
 
+          <RevenueSection revenue={data.revenue} />
+
           <Card>
             <CardContent className="space-y-4 pt-6">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -502,6 +508,26 @@ export function AdminPage() {
                   limit={data.limits.database_included_bytes}
                   detail={`${(data.quotas.database_bytes / 1024 ** 2).toFixed(0)}MB of 8GB included`}
                 />
+                {data.revenue.services.map((svc) => {
+                  const limit = svc.limit_mb ?? 512;
+                  const stale = Date.now() - new Date(svc.reported_at).getTime() > 20 * 60 * 1000;
+                  return (
+                    <Meter
+                      key={svc.service}
+                      label={svc.service === "web" ? "Web server memory" : "Worker memory"}
+                      used={svc.memory_mb}
+                      limit={limit}
+                      detail={
+                        stale
+                          ? `not reporting since ${ago(svc.reported_at)}`
+                          : `${Math.round(svc.memory_mb)}MB of ${Math.round(limit)}MB, peak today ${Math.round(svc.peak_mb)}MB`
+                      }
+                    />
+                  );
+                })}
+                {data.revenue.services.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Server memory appears here once each Render service has reported (every 5 minutes).</p>
+                )}
               </CardContent>
             </Card>
           </div>

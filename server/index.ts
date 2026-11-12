@@ -45,6 +45,7 @@ import { recordClaudeUsage } from "./usage.js";
 import { BUSY_MESSAGE, dailyBudget, dailyBudgetReached, isCapacityError, recordSpend, spentToday, type TokenUsage } from "./spend-guard.js";
 import { requestReleasesCheck } from "./releases-scheduler.js";
 import { jobsInWorker, startBackgroundJobs } from "./background-jobs.js";
+import { startHealthReports } from "./health.js";
 import { CHAT_MODEL } from "./models.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
 import {
@@ -1651,16 +1652,18 @@ const server = http.createServer((req, res) => {
         }
         try {
           const days = Math.min(Math.max(Number(new URL(url, "http://x").searchParams.get("days")) || 30, 1), 90);
-          const [{ data, error }, { data: reconciliation, error: reconError }] = await Promise.all([
+          const [{ data, error }, { data: reconciliation, error: reconError }, { data: revenue, error: revenueError }] = await Promise.all([
             serviceSupabase.rpc("admin_overview", { p_days: days }),
             serviceSupabase
               .from("cost_reconciliation")
               .select("day, workspace, workspace_name, anthropic_usd, recorded_usd, checked_at")
               .order("day", { ascending: false })
               .limit(21),
+            serviceSupabase.rpc("admin_revenue"),
           ]);
           if (error) throw error;
           if (reconError) throw reconError;
+          if (revenueError) throw revenueError;
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
             ...(data as Record<string, unknown>),
@@ -1676,6 +1679,7 @@ const server = http.createServer((req, res) => {
             },
             jobs_in_worker: jobsInWorker(),
             reconciliation: reconciliation ?? [],
+            revenue,
           }));
         } catch (err) {
           failRequest(res, "admin", err);
@@ -1753,4 +1757,5 @@ server.listen(PORT, () => {
   } else {
     startBackgroundJobs(serviceSupabase, jobsAnthropic, MODEL);
   }
+  startHealthReports(serviceSupabase, "web");
 });

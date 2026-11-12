@@ -4,7 +4,9 @@ import { config } from "dotenv";
 import { startAlerts } from "./alerts.js";
 import { startBackgroundJobs } from "./background-jobs.js";
 import { startCostReconciliation } from "./cost-reconciliation.js";
+import { startHealthReports } from "./health.js";
 import { CHAT_MODEL } from "./models.js";
+import { startStripeReconciliation } from "./stripe-reconciliation.js";
 
 /**
  * The background worker: a separate Render service (Background Worker type) that runs
@@ -27,6 +29,8 @@ startBackgroundJobs(service, jobsAnthropic, CHAT_MODEL, { watchCurationRequests:
 // Only the worker sends alerts and checks costs against Anthropic, so a local server never emails
 startAlerts(service);
 startCostReconciliation(service);
+startStripeReconciliation(service);
+startHealthReports(service, "worker");
 
 process.on("SIGTERM", () => {
   console.log("[worker] Stopping.");

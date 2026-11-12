@@ -30,7 +30,17 @@ const JOB_INTERVALS_MIN: Record<string, number> = {
   profile_check: 240,
   releases_check: 240,
   cost_reconciliation: 60,
+  stripe_reconciliation: 60,
 };
+
+interface Revenue {
+  month: { payments: number; refunds: number; fees: number };
+  mrr: number;
+  paying_readers: number;
+  services: { service: string; memory_mb: number; limit_mb: number | null; peak_mb: number; peak_day: string; reported_at: string }[];
+}
+
+const MEMORY_LIMIT_MB = 512; // Render Starter, if the container doesn't report a limit
 
 interface Overview {
   daily_costs: { day: string; provider: string; feature: string; cost: number }[];
@@ -206,6 +216,60 @@ async function runChecks(service: SupabaseClient): Promise<void> {
     }
   }
 
+  // Money: disputes (they have a response deadline), and Stripe days that don't match the webhook's
+  const { data: revenueData, error: revenueError } = await service.rpc("admin_revenue");
+  if (revenueError) throw revenueError;
+  const revenue = revenueData as Revenue;
+  const { data: disputes, error: disputeError } = await service
+    .from("billing_events")
+    .select("id, details, occurred_at, user_id")
+    .eq("kind", "dispute")
+    .gte("occurred_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+  if (disputeError) throw disputeError;
+  for (const d of disputes ?? []) {
+    const details = (d.details ?? {}) as { amount_usd?: number; reason?: string; due_by?: string | null };
+    await sendOnce(service, `dispute:${d.id}`, `Rekollekt: a payment of ${money(details.amount_usd ?? 0)} is disputed`, [
+      `A reader's bank has disputed a payment (${details.reason ?? "no reason given"}). Stripe has taken the amount and a dispute fee from the balance.`,
+      details.due_by ? `Evidence is due by ${details.due_by.slice(0, 10)}. Respond in the Stripe dashboard under Payments → Disputes.` : "Respond in the Stripe dashboard under Payments → Disputes.",
+    ]);
+  }
+  const { data: stripeDays, error: stripeDaysError } = await service
+    .from("stripe_reconciliation")
+    .select("day, stripe_usd, recorded_usd")
+    .gte("day", utcDay(new Date(Date.now() - 4 * 24 * 60 * 60 * 1000)));
+  if (stripeDaysError) throw stripeDaysError;
+  for (const r of stripeDays ?? []) {
+    const gap = Number(r.stripe_usd) - Number(r.recorded_usd);
+    if (Math.abs(gap) >= 1) {
+      await sendOnce(service, `stripe_reconcile:${r.day}`, `Rekollekt: ${money(Math.abs(gap))} of revenue on ${r.day} doesn't match Stripe`, [
+        `On ${r.day}, Stripe's balance shows ${money(Number(r.stripe_usd))} in payments less refunds, and the app recorded ${money(Number(r.recorded_usd))}.`,
+        gap > 0
+          ? "Stripe has more: a webhook probably failed. Check Developers → Webhooks in Stripe for failed deliveries; resending them records the payment and upgrades the reader if that was missed."
+          : "The app recorded more than Stripe shows; a payment near midnight UTC can land on the next day.",
+      ]);
+    }
+  }
+
+  // Server memory
+  for (const svc of revenue.services) {
+    const limit = svc.limit_mb ?? MEMORY_LIMIT_MB;
+    const share = svc.memory_mb / limit;
+    if (share >= 0.85) {
+      await sendOnce(service, `memory:${svc.service}:${today}`, `Rekollekt: the ${svc.service} server is at ${Math.round(share * 100)}% of its memory`, [
+        `The ${svc.service} service is using ${Math.round(svc.memory_mb)}MB of ${Math.round(limit)}MB (today's peak ${Math.round(svc.peak_mb)}MB). Past the limit, Render restarts it.`,
+        svc.service === "worker"
+          ? "Background scripts are the usual cause; if it keeps happening, the worker needs a bigger instance."
+          : "If it keeps happening, the web service needs a bigger instance.",
+      ]);
+    }
+    if (svc.service === "web" && Date.now() - new Date(svc.reported_at).getTime() > 20 * 60 * 1000) {
+      await sendOnce(service, `health_stale:${svc.service}:${today}`, "Rekollekt: the web server has stopped reporting", [
+        `The web service last reported its memory ${svc.reported_at}; it reports every 5 minutes.`,
+        "Check that it's running in Render.",
+      ]);
+    }
+  }
+
   // Daily summary of yesterday
   if (process.env.ALERT_DAILY_SUMMARY !== "false" && new Date().getUTCHours() >= SUMMARY_HOUR_UTC) {
     const yesterday = utcDay(new Date(Date.now() - 24 * 60 * 60 * 1000));
@@ -215,10 +279,24 @@ async function runChecks(service: SupabaseClient): Promise<void> {
     const activity = o.daily_activity.find((a) => a.day === yesterday);
     const books = Object.entries(activity?.books_added ?? {}).map(([k, n]) => `${n} via ${k}`).join(", ") || "none";
     const failing = o.jobs.filter((j) => j.last_error_at && (!j.last_ok_at || j.last_error_at > j.last_ok_at)).map((j) => j.job);
+    const { data: billing, error: billingError } = await service
+      .from("billing_events")
+      .select("kind, amount_usd")
+      .gte("occurred_at", `${yesterday}T00:00:00Z`)
+      .lt("occurred_at", `${today}T00:00:00Z`);
+    if (billingError) throw billingError;
+    const sumOf = (kind: string) => (billing ?? []).filter((b) => b.kind === kind).reduce((n, b) => n + Number(b.amount_usd), 0);
+    const countOf = (kind: string) => (billing ?? []).filter((b) => b.kind === kind).length;
+    const revenueLine =
+      `Revenue: ${money(sumOf("payment"))} in payments` +
+      (countOf("refund") ? `, ${money(-sumOf("refund"))} refunded` : "") +
+      `; ${countOf("subscribed")} new subscriptions, ${countOf("canceled")} ended. ` +
+      `${revenue.paying_readers} paying readers, ${money(revenue.mrr)} a month recurring.`;
     await sendOnce(service, `summary:${yesterday}`, `Rekollekt on ${yesterday}: ${money(total)}, ${activity?.signups ?? 0} signups`, [
       `AI cost: ${money(total)} (chat ${money(chat)}, everything else ${money(total - chat)}).`,
       `Readers: ${activity?.signups ?? 0} signups, ${activity?.chatting_readers ?? 0} chatting, ${activity?.chat_messages ?? 0} messages. ${o.totals.readers} readers in all.`,
       `Books added: ${books}.`,
+      revenueLine,
       failing.length > 0 ? `Failing jobs: ${failing.join(", ")}.` : "All background jobs are running.",
     ]);
   }
