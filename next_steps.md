@@ -22,7 +22,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Record profile generation cost — Opus 5.5 monthly per reader, not recorded anywhere
 - ISBNdb quota — every reader's imports share one key at 1 request a second. Check the plan's daily quota against, say, 50 readers importing 500 books each
 - Supabase plan — check connection, bandwidth, and database size limits for the plan in use
-- Long conversations — cost per reply still grows with length: the conversation is cached now, and memory checks are gone (about 1.7 calls a reply instead of 4.4), but a very long history is still read on every call. See "Conversation summaries" under Long-term continuity
+- Long conversations **[DONE]** — past about 20,000 tokens, the start of a conversation is condensed into a summary (`server/conversation-history.ts`, migration 032), so cost per reply stops growing. Tested on a real 20-message conversation: 14 messages became a 3,800-character summary that kept every book, the reader's views, and open threads, for about 2 cents
 
 **Telemetry, dashboards, and alerting** (owner request, November 2026: track usage, signups, books added, and so on, with the cost of each, for everything that has a lever or a cost, viewable in dashboards with alerts)
 
@@ -100,7 +100,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - "What your companion remembers" — view, edit, and delete memory. Readers can't see it today
 - Export — conversations, memory, excerpts, and the profile. The only export is the book CSV
 - AI tools to read a book's details and search past conversations
-- Conversation summaries, and condensing the older parts of very long conversations — history has no limit, so a very long one will eventually fail
+- Conversation summaries, and condensing the older parts of very long conversations **[DONE]** for condensing; see "Long conversations" under Free Launch. One-line summaries of book conversations come from the review step
 - Better profile input — it reads the last 100 messages cut to 500 characters each, skips excerpts, and can take about 30 days to reflect a conversation. The first profile skips onboarding chat entirely
 - Prompt caching **[DONE]** — the prompt now uses the 1-hour cache; see "Chat cache rewrites" under Free Launch
 - Library index tiering **[DONE]** — the prompt now lists only what the reader is reading, has read, rated, or marked a favorite (85 lines and 3,400 tokens for the owner's 909 books, from 38,900), and the AI finds unread books and the wishlist with a `search_library` tool. The cached prompt went from about 57,000 tokens to 22,000. Next stages discussed: core memory loaded automatically (**[DONE]**, see "Load memory into the prompt"), embeddings in Supabase (pgvector), then theme clusters per reader (also the basis for Reading Life eras)

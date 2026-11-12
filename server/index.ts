@@ -41,6 +41,7 @@ import { startConversationReviewScheduler } from "./conversation-review.js";
 import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
 import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
 import { clientIp, hit, rejectRateLimited, type RULES } from "./rate-limit.js";
+import { condenseIfLong, historySummaryBlock, loadHistory } from "./conversation-history.js";
 import { BUSY_MESSAGE, dailyBudgetReached, isCapacityError, recordSpend, type TokenUsage } from "./spend-guard.js";
 import { requestReleasesCheck, startReleasesScheduler } from "./releases-scheduler.js";
 import { startEmbeddingScheduler } from "./embeddings.js";
@@ -535,14 +536,9 @@ async function handleChat(
     });
     if (msgError) throw msgError;
 
-    // Load conversation history
-    const { data: history, error: histError } = await supabase
-      .from("messages")
-      .select("role, content")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
-
-    if (histError) throw histError;
+    // Load conversation history: in full, or for a long conversation its condensed
+    // start and the messages since (see conversation-history.ts)
+    const history = await loadHistory(supabase, conversationId);
 
     const isPaid = isPaidAndActive(subscription);
 
@@ -587,10 +583,11 @@ async function handleChat(
     const bookContext = bookId ? await buildBookContext(supabase, bookId, conversationId) : null;
     const linkedBook: LinkedBook | null = bookContext?.book ?? null;
     if (bookContext) systemBlocks.push({ type: "text", text: bookContext.text });
+    if (history.summary) systemBlocks.push({ type: "text", text: historySummaryBlock(history.summary) });
 
     // Build API messages from history
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
-      history.map((m) => ({
+      history.messages.map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content as string,
       }));
@@ -1190,6 +1187,14 @@ async function handleChat(
       // Fire-and-forget title generation
       void generateTitle(supabase, userId, conversationId, body.message, accumulatedText);
     }
+
+    // Condense a long conversation for the next reply, in the background
+    const condensingId = conversationId;
+    void condenseIfLong(supabase, anthropic, MODEL, condensingId)
+      .then((usage) => {
+        if (usage) void logTokenUsage(supabase, userId, condensingId, "condense", MODEL, usage);
+      })
+      .catch((err) => console.error("[history] Condensing failed:", err instanceof Error ? err.message : err));
   } catch (err) {
     // A spend limit, rate limit, or overload is "try again later", not a failure to show
     const message = isCapacityError(err) ? BUSY_MESSAGE : err instanceof Error ? err.message : String(err);

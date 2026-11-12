@@ -172,6 +172,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view). In a conversation about a book, saves go to that book
+- `server/conversation-history.ts` — What the AI sees of a conversation: every message until the history passes about 20,000 tokens, then a summary of the start (written in the background after a reply, Sonnet 5.5) plus the most recent ~8,000 tokens in full. The reader still sees every message
 - `server/book-context.ts` — What the AI gets in a conversation about a book: its status, dates, notes, excerpts, list context, summary, and earlier conversations
 - `server/conversation-review.ts` — After a book conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation
 - `server/subscription.ts` — Paid plan check, plus claiming and returning a reader's chat messages (free readers' 5 a month, paid readers' fair-use cap of 100) so requests sent together can't pass the limit
@@ -286,6 +287,7 @@ Eighteen tables in Supabase:
 - `book_id` — the book it's about, FK to books, SET NULL on delete. Set when a conversation starts from a book page
 - `summary` — one line on what it explored, from the review step
 - `last_message_at` — latest activity, updated by a trigger on `messages`; the conversation list sorts by it
+- `history_summary`, `history_summarized_until` — the condensed start of a long conversation and the time of the last message it covers; the AI gets the summary plus the messages after it (migration 032)
 - `needs_review` — set by the same trigger on book-linked conversations, cleared by the review step
 
 **messages** — Chat messages within conversations. Key fields:
