@@ -247,8 +247,44 @@ export function requestReleasesCheck(): void {
   void runReleasesCheck(schedulerSupabase);
 }
 
-export function startReleasesScheduler(supabase: SupabaseClient): void {
+const CURATION_POLL_MS = 60 * 1000;
+
+/**
+ * In the worker, the web server can't start a check when a reader asks for curation,
+ * so the worker looks for new requests every minute. Requests from before it started
+ * are covered by its first check.
+ */
+function watchCurationRequests(supabase: SupabaseClient): void {
+  let lastSeen: string | null | undefined;
+  const poll = async () => {
+    const { data, error } = await supabase
+      .from("release_curation")
+      .select("requested_at")
+      .not("requested_at", "is", null)
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.error("[releases] Couldn't check for curation requests:", error.message);
+      return;
+    }
+    const latest = (data?.requested_at as string | undefined) ?? null;
+    if (lastSeen !== undefined && latest !== lastSeen) {
+      console.log("[releases] A reader asked for curation; checking for work now.");
+      requestReleasesCheck();
+    }
+    lastSeen = latest;
+  };
+  void poll();
+  setInterval(() => void poll(), CURATION_POLL_MS);
+}
+
+export function startReleasesScheduler(
+  supabase: SupabaseClient,
+  { watchCurationRequests: watch = false }: { watchCurationRequests?: boolean } = {},
+): void {
   schedulerSupabase = supabase;
+  if (watch) watchCurationRequests(supabase);
   console.log(
     `[releases] Will check in ${STARTUP_DELAY_MS / 1000}s, then every ${CHECK_INTERVAL_MS / 3600000}h. Ingests next month on day ${TRIGGER_DAY}+.`,
   );

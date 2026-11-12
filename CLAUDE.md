@@ -28,7 +28,8 @@ npx tsx scripts/enrich-isbndb.ts               # enrich books via ISBNdb (cover 
 npx tsx scripts/enrich-isbndb.ts --dry-run     # list books that would be enriched, no API calls
 npx tsx scripts/enrich-isbndb.ts --limit 10    # process only first 10 books
 npx tsx scripts/enrich-isbndb.ts --force       # re-check books already looked up (fills blanks only, never overwrites edits)
-npm run dev:server                             # start chat API server (port 3001, auto-restarts)
+npm run dev:server                             # start chat API server (port 3001, auto-restarts; runs background jobs too unless JOBS_IN_WORKER=true)
+npm run worker                                 # background worker: every scheduler (profiles, enrichment, review, releases, embeddings)
 npx tsx scripts/generate-profile.ts            # generate reader profile via Claude API
 npx tsx scripts/generate-profile.ts --dry-run  # preview prompt, no API call or DB write
 npx tsx scripts/generate-profile.ts --force    # regenerate even if generated this month
@@ -180,6 +181,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/spend-guard.ts` — The daily stop for chat spending: a running total of today's chat cost (from `chat_token_usage` at startup, then each call as it's logged); past `DAILY_CHAT_BUDGET_USD` (default $25) chat and greetings answer "busy" until 00:00 UTC. Also turns Anthropic spend limits, rate limits, and overload into the same "busy" message
 - `server/rate-limit.ts` — Request limits kept in memory: every API request (300 a minute per address), chat (60 per 10 minutes per address, 10 a minute per reader), the contact form (5 an hour), Add Book searches (60 a minute), and curation, checkout, the billing portal, and account deletion (20 an hour). Over a limit: 429 with Retry-After. The Stripe webhook is exempt
 - `server/isbndb.ts` — Every ISBNdb call goes through here (Add Book proxy, chat lookups, enrichment, ISBN discovery, release ingestion). The plan allows 5,000 calls a day and 60 a minute; a lookup is charged per ISBN even in bulk, and a search is one call however many books it returns. Lookups check a shared cache of ISBNdb's data (`isbndb_books`), then ingested releases, before calling; misses go 100 ISBNs to a call. Every book a response returns is cached. Each response's remaining quota is kept in `api_quota`, and background lookups stop when 1,000 calls are left for the day (`BACKGROUND_RESERVE`), so Add Book and chat keep working
+- `server/worker.ts` — The background worker, a separate Render service (Background Worker, start command `npx tsx server/worker.ts`) that runs every scheduler, so a job can't slow or crash chat. Polls `release_curation` every minute, since the web server can't start a releases check in another process
+- `server/background-jobs.ts` — Starts all the schedulers. The web server calls it unless `JOBS_IN_WORKER=true`; the worker always does
+- `server/models.ts` — The chat model ID, shared by the web server and the worker
 - `server/jobs.ts` — Starts background scripts, at most 2 at a time across all schedulers (each is an ~80-100MB process on a 512MB server)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
@@ -414,6 +418,7 @@ Requires `.env` (not committed) with:
 - `SUPABASE_ANON_KEY` — anon key used by the chat server to create per-user Supabase clients (with RLS)
 - `ANTHROPIC_API_KEY` — Claude key for the chat server (chat, greetings, titles), in the Console's chat workspace
 - `ANTHROPIC_JOBS_API_KEY` — Claude key for background work (scripts and conversation review), in the Console's jobs workspace, so each has its own spend limit. Falls back to `ANTHROPIC_API_KEY` if unset
+- `JOBS_IN_WORKER` — `true` on the web service once the background worker runs, so the web server leaves the schedulers to it (optional; unset, the web server runs them, as locally)
 - `DAILY_CHAT_BUDGET_USD` — daily chat spending stop (optional, default 25)
 - `PAID_MONTHLY_REPLY_CAP` — fair-use cap on a paid reader's chat replies a month (optional, default 100)
 - `ISBNDB_API_KEY` — for ISBNdb enrichment, new releases ingestion, and Add Book search (server-side only)

@@ -33,11 +33,8 @@ import {
 } from "./reading-path-handler.js";
 import { buildSyllabusIndex, invalidateSyllabusIndex } from "./syllabus-index.js";
 import { getGreeting } from "./greeting-handler.js";
-import { startProfileScheduler } from "./profile-scheduler.js";
 import { isIsoDate } from "../src/lib/reading-dates.js";
-import { startEnrichmentScheduler } from "./enrichment-scheduler.js";
 import { buildBookContext, type LinkedBook } from "./book-context.js";
-import { startConversationReviewScheduler } from "./conversation-review.js";
 import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
 import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
 import { clientIp, hit, rejectRateLimited, type RULES } from "./rate-limit.js";
@@ -45,8 +42,9 @@ import { condenseIfLong, historySummaryBlock, loadHistory } from "./conversation
 import { cacheBooks, isbndbFetch, lookupIsbns } from "./isbndb.js";
 import type { ISBNdbBook } from "../src/lib/editions.js";
 import { BUSY_MESSAGE, dailyBudgetReached, isCapacityError, recordSpend, type TokenUsage } from "./spend-guard.js";
-import { requestReleasesCheck, startReleasesScheduler } from "./releases-scheduler.js";
-import { startEmbeddingScheduler } from "./embeddings.js";
+import { requestReleasesCheck } from "./releases-scheduler.js";
+import { jobsInWorker, startBackgroundJobs } from "./background-jobs.js";
+import { CHAT_MODEL } from "./models.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
 import {
   handleStripeWebhook,
@@ -56,7 +54,7 @@ import {
 
 config();
 
-const MODEL = "claude-sonnet-5-5";
+const MODEL = CHAT_MODEL;
 
 async function logTokenUsage(
   supabase: ReturnType<typeof createUserClient>,
@@ -1708,9 +1706,9 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Rekollekt chat server listening on http://localhost:${PORT}`);
-  startProfileScheduler(serviceSupabase);
-  startEnrichmentScheduler(serviceSupabase);
-  startConversationReviewScheduler(serviceSupabase, jobsAnthropic, MODEL);
-  startReleasesScheduler(serviceSupabase);
-  startEmbeddingScheduler(serviceSupabase);
+  if (jobsInWorker()) {
+    console.log("Background jobs run in the worker (JOBS_IN_WORKER=true).");
+  } else {
+    startBackgroundJobs(serviceSupabase, jobsAnthropic, MODEL);
+  }
 });
