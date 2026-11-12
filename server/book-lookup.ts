@@ -12,13 +12,11 @@ import {
   pickBestEdition,
   type ISBNdbBook,
 } from "../src/lib/editions.js";
+import { isbndbSearch } from "./isbndb.js";
 
 // The app is English-language; the server has no reader's browser to ask
 const LANGUAGE = "en";
 
-const ISBNDB_BASE_URL = "https://api2.isbndb.com";
-const ISBNDB_TIMEOUT_MS = 10_000;
-const ISBNDB_MIN_GAP_MS = 1100; // ISBNdb allows about one request per second
 
 interface LibraryRow {
   id: string;
@@ -75,43 +73,22 @@ export async function findBookByTitle<T extends Record<string, unknown>>(
 
 // --- ISBNdb lookup ---
 
-let lastRequest: Promise<unknown> = Promise.resolve();
-
-// Runs requests one at a time with a gap, since a reading path can add several books
-function throttled<T>(request: () => Promise<T>): Promise<T> {
-  const result = lastRequest.then(request);
-  lastRequest = result
-    .catch(() => undefined)
-    .then(() => new Promise((resolve) => setTimeout(resolve, ISBNDB_MIN_GAP_MS)));
-  return result;
-}
-
+/** A search, through the shared client: paced, counted against the quota, and cached. */
 async function searchISBNdb(path: string): Promise<ISBNdbBook[]> {
-  const apiKey = process.env.ISBNDB_API_KEY;
-  if (!apiKey) return [];
-
-  const res = await fetch(`${ISBNDB_BASE_URL}${path}`, {
-    headers: { Authorization: apiKey },
-    signal: AbortSignal.timeout(ISBNDB_TIMEOUT_MS),
-  });
-  if (res.status === 404) return [];
-  if (!res.ok) throw new Error(`ISBNdb HTTP ${res.status}`);
-  const data = (await res.json()) as { books?: ISBNdbBook[] };
-  return data.books ?? [];
+  if (!process.env.ISBNDB_API_KEY) return [];
+  return (await isbndbSearch(path))?.books ?? [];
 }
 
 /** All listings of a book on ISBNdb, or none if it can't be found or reached. */
 async function findEditions(title: string, author?: string): Promise<ISBNdbBook[]> {
   try {
     const encodedTitle = encodeURIComponent(baseTitle(title));
-    const byTitle = await throttled(() =>
-      searchISBNdb(`/books/${encodedTitle}?page=1&pageSize=100&column=title`),
-    );
+    const byTitle = await searchISBNdb(`/books/${encodedTitle}?page=1&pageSize=100&column=title`);
     const editions = findMatchingEditions(title, author, byTitle);
     if (editions.length > 0) return editions;
 
     const encodedQuery = encodeURIComponent(author ? `${baseTitle(title)} ${author}` : baseTitle(title));
-    const byQuery = await throttled(() => searchISBNdb(`/books/${encodedQuery}?page=1&pageSize=100`));
+    const byQuery = await searchISBNdb(`/books/${encodedQuery}?page=1&pageSize=100`);
     return findMatchingEditions(title, author, byQuery);
   } catch (err) {
     // The background enrichment retries books left without details

@@ -9,6 +9,8 @@ import {
   type ISBNdbBook,
 } from "../src/lib/editions.js";
 
+import { backgroundBudget, isbndbSearch } from "../server/isbndb.js";
+
 config();
 
 // --- Supabase client ---
@@ -53,64 +55,10 @@ const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
 
 // --- Constants ---
 
-const RATE_LIMIT_MS = 1100;
-const MAX_RETRIES = 3;
-const ISBNDB_BASE_URL = "https://api2.isbndb.com";
 
 // --- Helpers ---
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
-async function searchISBNdb(
-  query: string,
-  apiKey: string
-): Promise<ISBNdbSearchResponse | null> {
-  const encoded = encodeURIComponent(query);
-  const url = `${ISBNDB_BASE_URL}/books/${encoded}?page=1&pageSize=100&column=title`;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetch(url, {
-        headers: { Authorization: apiKey },
-      });
-
-      if (res.status === 404) {
-        return null;
-      }
-
-      if (res.status === 429 || res.status >= 500) {
-        if (attempt < MAX_RETRIES) {
-          const backoff = 1000 * Math.pow(2, attempt - 1);
-          console.log(
-            `    Retry ${attempt}/${MAX_RETRIES} (HTTP ${res.status}, waiting ${backoff}ms)`
-          );
-          await sleep(backoff);
-          continue;
-        }
-        throw new Error(`HTTP ${res.status} after ${MAX_RETRIES} retries`);
-      }
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      return (await res.json()) as ISBNdbSearchResponse;
-    } catch (err) {
-      if (err instanceof TypeError && attempt < MAX_RETRIES) {
-        const backoff = 1000 * Math.pow(2, attempt - 1);
-        console.log(
-          `    Retry ${attempt}/${MAX_RETRIES} (network error, waiting ${backoff}ms)`
-        );
-        await sleep(backoff);
-        continue;
-      }
-      throw err;
-    }
-  }
-  return null;
-}
 
 // --- Main ---
 
@@ -158,6 +106,16 @@ async function main() {
     return;
   }
 
+  // Each search is one call; leave the reserve for readers' own searches
+  const budget = await backgroundBudget();
+  if (!dryRun && budget < candidates.length) {
+    if (budget === 0) {
+      console.log("ISBNdb quota is down to the reserve for readers; searching again after it resets.");
+      return;
+    }
+    candidates = candidates.slice(0, budget);
+  }
+
   // Step 2: Search ISBNdb for each book
   let matched = 0;
   let skipped = 0;
@@ -170,7 +128,10 @@ async function main() {
     const searchQuery = baseTitle(book.title);
 
     try {
-      const response = await searchISBNdb(searchQuery, apiKey);
+      // One call however many results; every result goes into the shared cache
+      const response = (await isbndbSearch(
+        `/books/${encodeURIComponent(searchQuery)}?page=1&pageSize=100&column=title`,
+      )) as ISBNdbSearchResponse | null;
 
       if (!response || !response.books || response.books.length === 0) {
         console.log(`  ${progress} ? ${book.title} — ${book.author} (no results)`);
@@ -275,7 +236,7 @@ async function main() {
 
     // Rate limiting between requests
     if (i < candidates.length - 1) {
-      await sleep(RATE_LIMIT_MS);
+      // isbndbFetch paces requests itself
     }
   }
 

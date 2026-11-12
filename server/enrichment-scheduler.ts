@@ -1,3 +1,4 @@
+import { backgroundBudget } from "./isbndb.js";
 import { runScript } from "./jobs.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -8,6 +9,11 @@ const STARTUP_DELAY_MS = 60 * 1000; // 1 minute after server start
 // and running them concurrently alongside the server exceeded the 512MB instance
 // limit. A single cycle lock also keeps a slow cycle from overlapping the next tick.
 let cycleInFlight = false;
+
+// When background ISBNdb calls have used their share of the day, lookups can still be
+// filled from the shared cache, so enrichment runs, but only hourly until the reset
+const QUOTA_WAIT_INTERVAL_MS = 60 * 60 * 1000;
+let lastRunWithoutQuota = 0;
 
 function run(label: string, command: string): Promise<void> {
   console.log(`[enrichment] Spawning: ${command}`);
@@ -64,15 +70,20 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
   cycleInFlight = true;
 
   try {
+    const isbndbBudget = await backgroundBudget().catch(() => Infinity);
+    const quotaWaiting = isbndbBudget === 0;
+    const runIsbndbStages = !quotaWaiting || Date.now() - lastRunWithoutQuota >= QUOTA_WAIT_INTERVAL_MS;
+    if (quotaWaiting && runIsbndbStages) lastRunWithoutQuota = Date.now();
+
     // Stage 0: ISBN discovery — books without ISBN that haven't been searched yet
-    // (e.g. books added via chat's manage_book tool)
+    // (e.g. books added via chat's manage_book tool). Every search costs a call.
     const { count: discoveryPending } = await supabase
       .from("books")
       .select("id", { count: "exact", head: true })
       .is("isbn", null)
       .is("isbndb_enriched_at", null);
 
-    if ((discoveryPending ?? 0) > 0) {
+    if ((discoveryPending ?? 0) > 0 && !quotaWaiting) {
       await run(
         `ISBN discovery (${discoveryPending} pending)`,
         "npx tsx scripts/discover-isbns.ts --auto --limit 10",
@@ -86,10 +97,11 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
       .not("isbn", "is", null)
       .is("isbndb_enriched_at", null);
 
-    if ((isbndbPending ?? 0) > 0) {
+    if ((isbndbPending ?? 0) > 0 && runIsbndbStages) {
+      // Bulk lookups (100 ISBNs a call) make a large batch quick; the cost is per ISBN either way
       await run(
         `ISBNdb enrichment (${isbndbPending} pending)`,
-        "npx tsx scripts/enrich-isbndb.ts --limit 30",
+        "npx tsx scripts/enrich-isbndb.ts --limit 500",
       );
     }
 

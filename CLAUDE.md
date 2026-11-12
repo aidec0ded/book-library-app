@@ -179,6 +179,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/request-body.ts` — Reads a request body, refusing anything over 100KB so a huge request can't fill the server's memory
 - `server/spend-guard.ts` — The daily stop for chat spending: a running total of today's chat cost (from `chat_token_usage` at startup, then each call as it's logged); past `DAILY_CHAT_BUDGET_USD` (default $25) chat and greetings answer "busy" until 00:00 UTC. Also turns Anthropic spend limits, rate limits, and overload into the same "busy" message
 - `server/rate-limit.ts` — Request limits kept in memory: every API request (300 a minute per address), chat (60 per 10 minutes per address, 10 a minute per reader), the contact form (5 an hour), Add Book searches (60 a minute), and curation, checkout, the billing portal, and account deletion (20 an hour). Over a limit: 429 with Retry-After. The Stripe webhook is exempt
+- `server/isbndb.ts` — Every ISBNdb call goes through here (Add Book proxy, chat lookups, enrichment, ISBN discovery, release ingestion). The plan allows 5,000 calls a day and 60 a minute; a lookup is charged per ISBN even in bulk, and a search is one call however many books it returns. Lookups check a shared cache of ISBNdb's data (`isbndb_books`), then ingested releases, before calling; misses go 100 ISBNs to a call. Every book a response returns is cached. Each response's remaining quota is kept in `api_quota`, and background lookups stop when 1,000 calls are left for the day (`BACKGROUND_RESERVE`), so Add Book and chat keep working
 - `server/jobs.ts` — Starts background scripts, at most 2 at a time across all schedulers (each is an ~80-100MB process on a 512MB server)
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
@@ -255,7 +256,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Eighteen tables in Supabase:
+Twenty tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -303,6 +304,10 @@ Eighteen tables in Supabase:
 **text_embeddings** — One vector per distinct text, keyed by `content_hash` (SHA-256 of model, dimensions, and text), so a book in many libraries is embedded once (migration 031). Holds no text and no reader. `embedding` is `halfvec(1024)`. Signed-in readers can read it; only the service role writes.
 
 **book_embeddings** — Links each library book to the vector of its current text: `book_id` (PK, CASCADE delete), `user_id`, `content_hash`. A trigger deletes a book's row when its title, subtitle, author, genre, summary, or type changes, so the embedding job picks it up again. Readers can read their own rows. `match_books(query_embedding, like_book_id, statuses, only_type, match_count)` runs as the caller, so it only searches their books; it scans the reader's books without an index, which is fast at library sizes
+
+**isbndb_books** — Shared cache of ISBNdb's own book data, by ISBN (ISBN-13 where available), filled from every ISBNdb response: lookups, bulk lookups, and search results (migration 033). `data` is ISBNdb's book object, or null for an ISBN it didn't have (looked up again after 90 days). Never holds readers' books, which they can edit. Service role only
+
+**api_quota** — The latest remaining quota a paid API reported, one row per service (`isbndb`: `remaining`, `resets_at`). Service role only
 
 **reader_profile** — Periodic AI-generated reader profiles. Each generation inserts a new row; latest fetched with `ORDER BY generated_at DESC LIMIT 1`. Key fields:
 - `generated_at` — when this profile was generated

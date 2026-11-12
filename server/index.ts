@@ -42,6 +42,8 @@ import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js
 import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
 import { clientIp, hit, rejectRateLimited, type RULES } from "./rate-limit.js";
 import { condenseIfLong, historySummaryBlock, loadHistory } from "./conversation-history.js";
+import { cacheBooks, isbndbFetch, lookupIsbns } from "./isbndb.js";
+import type { ISBNdbBook } from "../src/lib/editions.js";
 import { BUSY_MESSAGE, dailyBudgetReached, isCapacityError, recordSpend, type TokenUsage } from "./spend-guard.js";
 import { requestReleasesCheck, startReleasesScheduler } from "./releases-scheduler.js";
 import { startEmbeddingScheduler } from "./embeddings.js";
@@ -1271,19 +1273,33 @@ async function handleIsbndbProxy(
 
   // Strip /api/isbndb prefix to get the ISBNdb path
   const isbndbPath = req.url!.replace(/^\/api\/isbndb/, "");
-  const upstream = `https://api2.isbndb.com${isbndbPath}`;
 
   try {
-    const response = await fetch(upstream, {
-      method: req.method,
-      headers: { Authorization: apiKey },
-    });
+    // One book by ISBN: from the shared cache when any library has brought it in before
+    const single = isbndbPath.match(/^\/book\/([0-9Xx-]+)(?:\?.*)?$/);
+    if (single) {
+      const { found } = await lookupIsbns([single[1]]);
+      const book = found.values().next().value;
+      res.writeHead(book ? 200 : 404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(book ? { book } : { errorMessage: "Not Found" }));
+      return;
+    }
 
+    // Searches go to ISBNdb (one call each), and every book they return is cached
+    const response = await isbndbFetch(isbndbPath);
+    const text = await response.text();
+    if (response.ok) {
+      try {
+        const body = JSON.parse(text) as { books?: ISBNdbBook[] };
+        if (Array.isArray(body.books)) void cacheBooks(body.books);
+      } catch {
+        // Not JSON; pass it through as is
+      }
+    }
     res.writeHead(response.status, {
       "Content-Type": response.headers.get("content-type") || "application/json",
     });
-    const body = await response.arrayBuffer();
-    res.end(Buffer.from(body));
+    res.end(text);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.writeHead(502, { "Content-Type": "application/json" });

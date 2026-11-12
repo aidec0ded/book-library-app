@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
+import { isbndbFetch } from "../server/isbndb.js";
 
 config();
 
@@ -172,9 +173,8 @@ async function fetchISBNdbSearch(
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let res: Response;
     try {
-      res = await fetch(url, {
-        headers: { Authorization: apiKey },
-      });
+      // Through the shared client, so the call is paced and counted against the quota
+      res = await isbndbFetch(url.slice(ISBNDB_BASE_URL.length));
     } catch (err) {
       if (attempt < MAX_RETRIES) {
         const backoff = 1000 * Math.pow(2, attempt - 1);

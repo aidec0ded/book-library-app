@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
+import { lookupIsbns, normalizeIsbn } from "../server/isbndb.js";
 
 config();
 
@@ -55,12 +56,6 @@ const force = args.includes("--force");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
 
-// --- Constants ---
-
-const RATE_LIMIT_MS = 1100;
-const MAX_RETRIES = 3;
-const ISBNDB_BASE_URL = "https://api2.isbndb.com";
-
 // --- Helpers ---
 
 function parseYear(dateStr: string): number | null {
@@ -70,56 +65,6 @@ function parseYear(dateStr: string): number | null {
 
 function stripHtml(text: string): string {
   return text.replace(/<[^>]*>/g, "").trim();
-}
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function fetchISBNdb(
-  isbn: string,
-  apiKey: string
-): Promise<ISBNdbBookResponse | null> {
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetch(`${ISBNDB_BASE_URL}/book/${isbn}`, {
-        headers: { Authorization: apiKey },
-      });
-
-      if (res.status === 404) {
-        return null;
-      }
-
-      if (res.status === 429 || res.status >= 500) {
-        if (attempt < MAX_RETRIES) {
-          const backoff = 1000 * Math.pow(2, attempt - 1);
-          console.log(`    Retry ${attempt}/${MAX_RETRIES} (HTTP ${res.status}, waiting ${backoff}ms)`);
-          await sleep(backoff);
-          continue;
-        }
-        throw new Error(`HTTP ${res.status} after ${MAX_RETRIES} retries`);
-      }
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      return (await res.json()) as ISBNdbBookResponse;
-    } catch (err) {
-      if (
-        err instanceof TypeError &&
-        attempt < MAX_RETRIES
-      ) {
-        // Network error — retry
-        const backoff = 1000 * Math.pow(2, attempt - 1);
-        console.log(`    Retry ${attempt}/${MAX_RETRIES} (network error, waiting ${backoff}ms)`);
-        await sleep(backoff);
-        continue;
-      }
-      throw err;
-    }
-  }
-  return null;
 }
 
 // Only fills blanks: --force must not overwrite details a reader edited or an
@@ -222,10 +167,19 @@ async function main() {
     return;
   }
 
-  // Step 2: Process books one at a time
+  // Step 2: Look the books up together: from the shared cache where another library
+  // already brought them in, the rest from ISBNdb 100 to a call. Background work
+  // stops at its share of today's quota, and the rest wait for tomorrow.
+  const lookup = await lookupIsbns(booksToEnrich.map((b) => b.isbn), { background: true });
+  const deferred = new Set(lookup.deferred);
+  console.log(
+    `  Looked up ${booksToEnrich.length} books: ${lookup.charged} charged to today's ISBNdb quota, ${deferred.size} left for after the quota resets`,
+  );
+
   let enriched = 0;
   let notFound = 0;
   let errors = 0;
+  let waiting = 0;
   const fieldCounts: Record<string, number> = {
     cover_image_url: 0,
     summary: 0,
@@ -240,7 +194,13 @@ async function main() {
     const progress = `[${String(i + 1).padStart(String(booksToEnrich.length).length)}/${booksToEnrich.length}]`;
 
     try {
-      const data = await fetchISBNdb(book.isbn, apiKey);
+      const isbn = normalizeIsbn(book.isbn);
+      if (deferred.has(isbn)) {
+        waiting++;
+        continue;
+      }
+      const found = lookup.found.get(isbn);
+      const data: ISBNdbBookResponse | null = found ? { book: found } : null;
 
       if (!data) {
         // Not found in ISBNdb — mark as enriched so we don't retry
@@ -281,11 +241,6 @@ async function main() {
       console.log(`  ${progress} ✗ ${book.title} — ${errMsg}`);
       errors++;
     }
-
-    // Rate limiting between requests
-    if (i < booksToEnrich.length - 1) {
-      await sleep(RATE_LIMIT_MS);
-    }
   }
 
   // Summary
@@ -294,6 +249,7 @@ async function main() {
   console.log(`  Enriched:        ${enriched}`);
   console.log(`  Not in ISBNdb:   ${notFound}`);
   console.log(`  Errors:          ${errors}`);
+  console.log(`  Waiting on quota: ${waiting}`);
   console.log();
   console.log("  Fields populated:");
   for (const [field, count] of Object.entries(fieldCounts)) {
