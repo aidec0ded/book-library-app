@@ -1,4 +1,5 @@
 import { runScript } from "./jobs.js";
+import { recordJobRun } from "./usage.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { personallyScorableOnly, scorableOnly } from "../src/lib/release-scoring.js";
 
@@ -212,6 +213,7 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
     return;
   }
   planning = true;
+  let failure: string | null = null;
   try {
     const job = await planReleasesJob(supabase);
     if (job) {
@@ -224,12 +226,14 @@ async function runReleasesCheck(supabase: SupabaseClient): Promise<void> {
       console.log("[releases] All months covered, nothing to do.");
     }
   } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
     console.error(
       "[releases] Check error:",
       err instanceof Error ? err.message : String(err),
     );
   } finally {
     planning = false;
+    void recordJobRun("releases_check", failure ? { ok: false, error: failure } : { ok: true });
   }
 }
 

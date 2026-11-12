@@ -168,6 +168,7 @@ export function ImportBooks() {
         book_type: b.book_type,
         is_favorite: b.is_favorite,
         is_up_next: b.is_up_next,
+        added_via: "import",
       }));
 
       const { data, error } = await supabase

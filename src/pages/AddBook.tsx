@@ -271,7 +271,7 @@ export function AddBook() {
     setAdding(true);
     setAddError(null);
 
-    const payload = mapToBookInsert(selected, statusOverride ?? status);
+    const payload = { ...mapToBookInsert(selected, statusOverride ?? status), added_via: "search" };
     // Override book_type with user selection (may differ from auto-detect)
     payload.book_type = bookType;
     // A book added as "read" was probably finished long ago, so only a start date is safe to assume

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllRows } from "../scripts/fetch-all.js";
 import { runScript } from "./jobs.js";
+import { recordJobRun } from "./usage.js";
 
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const STARTUP_DELAY_MS = 30 * 1000; // 30 seconds after server start
@@ -162,6 +163,7 @@ function spawnFirstProfile(userId: string): void {
 }
 
 async function checkAndRegenerateAll(supabase: SupabaseClient): Promise<void> {
+  let failure: string | null = null;
   try {
     // Check for new users without any profile first
     await checkNewUsers(supabase);
@@ -179,10 +181,13 @@ async function checkAndRegenerateAll(supabase: SupabaseClient): Promise<void> {
       await checkUserProfile(supabase, profile);
     }
   } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
     console.error(
       "[profile-scheduler] Error:",
       err instanceof Error ? err.message : String(err),
     );
+  } finally {
+    void recordJobRun("profile_check", failure ? { ok: false, error: failure } : { ok: true });
   }
 }
 

@@ -1,4 +1,5 @@
 import { exec, type ExecException } from "node:child_process";
+import { recordJobRun } from "./usage.js";
 
 /**
  * Background scripts (tagging, predictions, profiles, releases) each run as their own
@@ -19,6 +20,9 @@ export function runScript(command: string, done: Done): void {
     exec(command, { cwd: process.cwd() }, (error, stdout, stderr) => {
       running--;
       waiting.shift()?.();
+      // Heartbeat under the script's name, e.g. "enrich-isbndb"
+      const script = command.match(/scripts\/([\w-]+)\.ts/)?.[1] ?? command;
+      void recordJobRun(script, { ok: !error, error: error ? (stderr || error.message).slice(-1000) : undefined });
       done(error, stdout, stderr);
     });
   };

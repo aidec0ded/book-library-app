@@ -276,6 +276,7 @@ export async function addReleaseToWishlist(release: NewRelease): Promise<string>
   const { data, error } = await supabase
     .from("books")
     .insert({
+      added_via: "release",
       isbn: release.isbn13,
       title: release.title,
       author: release.authors.join(", ") || "Unknown",

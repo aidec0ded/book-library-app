@@ -195,6 +195,8 @@ export async function findOrCreateBook(
       status,
       is_favorite: false,
       is_up_next: false,
+      // The AI added it: in chat, during onboarding, or to a syllabus or reading path
+      added_via: "chat",
     })
     .select("id, title")
     .single();

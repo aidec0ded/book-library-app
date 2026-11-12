@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackClaudeUsage, recordClaudeUsage } from "../server/usage.js";
 import { config } from "dotenv";
 import type {
   ReaderProfileData,
@@ -30,7 +31,9 @@ const supabase = createClient(
 const anthropic = new Anthropic({
   // Background work bills the jobs workspace in the Anthropic Console
   apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY!,
-});
+});// Every response's cost is recorded in api_usage
+const usageTracking = trackClaudeUsage(anthropic, "release_scoring");
+
 
 // --- CLI args ---
 
@@ -44,6 +47,7 @@ const monthIdx = args.indexOf("--month");
 const singleMonth = monthIdx !== -1 ? args[monthIdx + 1] : null;
 const userIdIdx = args.indexOf("--user-id");
 const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
+usageTracking.setUser(userId);
 
 // --- Constants ---
 
@@ -753,6 +757,14 @@ async function runBatchMode(
     }
 
     const batchLabel = `[${String(entry.batchIndex + 1).padStart(3)}/${entries.length}]`;
+
+    // Batch results don't pass through the tracked client; record them at half price
+    if (response.result.type === "succeeded") {
+      await recordClaudeUsage("release_scoring", response.result.message.model, response.result.message.usage, {
+        userId,
+        batch: true,
+      });
+    }
 
     if (response.result.type !== "succeeded") {
       console.log(`  ${batchLabel} \u2717 ${response.result.type}`);

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackClaudeUsage } from "../server/usage.js";
 import { config } from "dotenv";
 import type {
   ReaderProfileData,
@@ -23,7 +24,9 @@ const anthropic = new Anthropic({
   // connection errors. Our batch loop adds a further retry layer on top.
   timeout: 120_000,
   maxRetries: 4,
-});
+});// Every response's cost is recorded in api_usage
+const usageTracking = trackClaudeUsage(anthropic, "predicted_ratings");
+
 
 // --- CLI args ---
 
@@ -760,6 +763,7 @@ async function main() {
   let skipped = 0;
 
   for (const uid of users) {
+    usageTracking.setUser(uid);
     const result = await processUser(uid);
     if (result.status === "skipped") {
       skipped++;

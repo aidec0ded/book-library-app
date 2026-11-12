@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { ISBNdbBook } from "../src/lib/editions.js";
+import { recordUsage } from "./usage.js";
 
 /**
  * Every ISBNdb call goes through here: the server's Add Book proxy and chat lookups,
@@ -118,7 +119,16 @@ export async function isbndbFetch(
       }),
     );
     recordRate(res.headers.get("ratelimit"));
-    recordQuota(res.headers.get("ratelimit"), res.ok || res.status === 404 ? (options.cost ?? 1) : 0);
+    const charged = res.ok || res.status === 404 ? (options.cost ?? 1) : 0;
+    recordQuota(res.headers.get("ratelimit"), charged);
+    if (charged > 0) {
+      // The plan is a flat monthly fee, so calls are counted rather than priced
+      void recordUsage({
+        provider: "isbndb",
+        feature: path.startsWith("/books?") || options.method === "POST" || path.startsWith("/book/") ? "isbndb_lookup" : "isbndb_search",
+        calls: charged,
+      });
+    }
     if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, 2000 * attempt));
       continue;

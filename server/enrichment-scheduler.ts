@@ -1,5 +1,6 @@
 import { backgroundBudget } from "./isbndb.js";
 import { runScript } from "./jobs.js";
+import { recordJobRun } from "./usage.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -68,6 +69,7 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
     return;
   }
   cycleInFlight = true;
+  let failure: string | null = null;
 
   try {
     const isbndbBudget = await backgroundBudget().catch(() => Infinity);
@@ -171,12 +173,14 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
       }
     }
   } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
     console.error(
       "[enrichment] Cycle error:",
       err instanceof Error ? err.message : String(err),
     );
   } finally {
     cycleInFlight = false;
+    void recordJobRun("enrichment_check", failure ? { ok: false, error: failure } : { ok: true });
   }
 }
 

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackClaudeUsage } from "../server/usage.js";
 import { config } from "dotenv";
 import { fetchAllRows } from "./fetch-all.js";
 import {
@@ -19,7 +20,9 @@ const supabase = createClient(
 const anthropic = new Anthropic({
   // Background work bills the jobs workspace in the Anthropic Console
   apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY!,
-});
+});// Every response's cost is recorded in api_usage
+trackClaudeUsage(anthropic, "vibe_tagging");
+
 
 // --- Types ---
 

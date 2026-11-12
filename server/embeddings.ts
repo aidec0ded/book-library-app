@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { recordJobRun, recordUsage, VOYAGE_PRICE_PER_MTOK } from "./usage.js";
 
 /**
  * Embeddings for searching the library by meaning, from Voyage AI (through MongoDB
@@ -74,7 +75,15 @@ export async function embedTexts(
         const body = (await res.json()) as VoyageResponse;
         const ordered = [...body.data].sort((a, b) => a.index - b.index);
         embeddings.push(...ordered.map((d) => d.embedding));
-        tokens += body.usage?.total_tokens ?? 0;
+        const batchTokens = body.usage?.total_tokens ?? 0;
+        tokens += batchTokens;
+        await recordUsage({
+          provider: "voyage",
+          feature: inputType === "query" ? "search_by_meaning" : "book_embeddings",
+          model: EMBEDDING_MODEL,
+          inputTokens: batchTokens,
+          costUsd: (batchTokens * VOYAGE_PRICE_PER_MTOK) / 1e6,
+        });
         break;
       }
       const retryable = res.status === 429 || res.status >= 500;
@@ -268,8 +277,10 @@ export function startEmbeddingScheduler(supabase: SupabaseClient): void {
           `[embeddings] Embedded ${total.books} books: ${total.newTexts} new texts, ${total.reusedTexts} reused, ${total.tokens} tokens.`,
         );
       }
+      await recordJobRun("embeddings", { ok: true });
     } catch (err) {
       console.error("[embeddings] Check failed:", err instanceof Error ? err.message : err);
+      await recordJobRun("embeddings", { ok: false, error: err instanceof Error ? err.message : String(err) });
     } finally {
       running = false;
     }

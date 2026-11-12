@@ -39,9 +39,10 @@ import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js
 import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
 import { clientIp, hit, rejectRateLimited, type RULES } from "./rate-limit.js";
 import { condenseIfLong, historySummaryBlock, loadHistory } from "./conversation-history.js";
-import { cacheBooks, isbndbFetch, lookupIsbns } from "./isbndb.js";
+import { BACKGROUND_RESERVE, cacheBooks, isbndbFetch, lookupIsbns } from "./isbndb.js";
 import type { ISBNdbBook } from "../src/lib/editions.js";
-import { BUSY_MESSAGE, dailyBudgetReached, isCapacityError, recordSpend, type TokenUsage } from "./spend-guard.js";
+import { recordClaudeUsage } from "./usage.js";
+import { BUSY_MESSAGE, dailyBudget, dailyBudgetReached, isCapacityError, recordSpend, spentToday, type TokenUsage } from "./spend-guard.js";
 import { requestReleasesCheck } from "./releases-scheduler.js";
 import { jobsInWorker, startBackgroundJobs } from "./background-jobs.js";
 import { CHAT_MODEL } from "./models.js";
@@ -56,8 +57,9 @@ config();
 
 const MODEL = CHAT_MODEL;
 
+/** Record a chat-workspace call's cost (api_usage) and add it to today's chat spend. */
 async function logTokenUsage(
-  supabase: ReturnType<typeof createUserClient>,
+  _supabase: unknown,
   userId: string,
   conversationId: string | null,
   endpoint: string,
@@ -65,20 +67,7 @@ async function logTokenUsage(
   usage: TokenUsage,
 ): Promise<void> {
   recordSpend(model, usage);
-  try {
-    await supabase.from("chat_token_usage").insert({
-      user_id: userId,
-      conversation_id: conversationId,
-      endpoint,
-      model,
-      input_tokens: usage.input_tokens,
-      output_tokens: usage.output_tokens,
-      cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
-      cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
-    });
-  } catch {
-    // Token logging is best-effort — never fail the request
-  }
+  await recordClaudeUsage(endpoint, model, usage, { userId, conversationId });
 }
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
@@ -1637,6 +1626,50 @@ const server = http.createServer((req, res) => {
           console.error("[stripe/portal] Error:", msg);
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Failed to create portal session" }));
+        }
+      })();
+      return;
+    }
+
+    // The admin page's numbers: costs, activity, quotas, and job health. Admins only
+    // (ADMIN_USER_IDS); anyone else gets a 404, so the endpoint doesn't announce itself.
+    if (req.method === "GET" && url.startsWith("/api/admin/overview")) {
+      void (async () => {
+        let userId: string;
+        try {
+          ({ userId } = await authenticateRequest(req.headers.authorization));
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+        const admins = (process.env.ADMIN_USER_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+        if (!admins.includes(userId)) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Not found" }));
+          return;
+        }
+        try {
+          const days = Math.min(Math.max(Number(new URL(url, "http://x").searchParams.get("days")) || 30, 1), 90);
+          const { data, error } = await serviceSupabase.rpc("admin_overview", { p_days: days });
+          if (error) throw error;
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ...(data as Record<string, unknown>),
+            limits: {
+              daily_chat_budget_usd: dailyBudget(),
+              chat_spent_today_usd: await spentToday(serviceSupabase),
+              paid_monthly_reply_cap: PAID_MONTHLY_REPLY_CAP,
+              free_monthly_messages: FREE_MESSAGE_LIMIT,
+              isbndb_daily_quota: 5000,
+              isbndb_background_reserve: BACKGROUND_RESERVE,
+              voyage_free_tokens: 200_000_000,
+              database_included_bytes: 8 * 1024 ** 3,
+            },
+            jobs_in_worker: jobsInWorker(),
+          }));
+        } catch (err) {
+          failRequest(res, "admin", err);
         }
       })();
       return;

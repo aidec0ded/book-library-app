@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackClaudeUsage } from "../server/usage.js";
 import { config } from "dotenv";
 
 config();
@@ -14,7 +15,9 @@ const supabase = createClient(
 const anthropic = new Anthropic({
   // Background work bills the jobs workspace in the Anthropic Console
   apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY!,
-});
+});// Every response's cost is recorded in api_usage
+const usageTracking = trackClaudeUsage(anthropic, "profile");
+
 
 // --- CLI args ---
 
@@ -25,6 +28,7 @@ const bootstrap = args.includes("--bootstrap");
 
 const userIdIdx = args.indexOf("--user-id");
 const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
+usageTracking.setUser(userId);
 
 // --- Constants ---
 

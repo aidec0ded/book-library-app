@@ -24,6 +24,7 @@
 import { writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackClaudeUsage } from "../server/usage.js";
 import { config } from "dotenv";
 import { formatCategory, normalizeWorkKey } from "../src/lib/editions.js";
 import { fetchAllRows } from "./fetch-all.js";
@@ -159,6 +160,8 @@ function markDuplicateFormats(releases: Release[], reasons: Map<string, SkipReas
 
 // Background work bills the jobs workspace in the Anthropic Console
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_JOBS_API_KEY ?? process.env.ANTHROPIC_API_KEY });
+// Every response's cost is recorded in api_usage
+trackClaudeUsage(anthropic, "release_triage");
 
 const SYSTEM_PROMPT = `You sort a month of upcoming book releases for a reading app. Its readers want to hear about genuinely new books, the way Kirkus Reviews or Publishers Weekly cover a season: new novels, story collections, poetry, memoir, essays, and nonfiction written for general readers. The listings come from a bookseller database, so many are not that.
 

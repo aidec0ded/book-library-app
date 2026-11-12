@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { recordClaudeUsage, recordJobRun } from "./usage.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isPaidAndActive } from "./subscription.js";
 
@@ -170,18 +171,7 @@ async function processConversation(
     savedExcerpts: (excerpts ?? []).map((e) => e.content),
   });
 
-  void supabase.from("chat_token_usage").insert({
-    user_id: conversation.user_id,
-    conversation_id: conversation.id,
-    endpoint: "review",
-    model,
-    input_tokens: usage.input_tokens,
-    output_tokens: usage.output_tokens,
-    cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
-    cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
-  }).then(({ error }) => {
-    if (error) console.error("[review] Couldn't log token usage:", error.message);
-  });
+  await recordClaudeUsage("review", model, usage, { userId: conversation.user_id, conversationId: conversation.id });
 
   if (review && review.excerpts.length > 0) {
     const { error } = await supabase.from("book_excerpts").insert(
@@ -243,8 +233,10 @@ async function runReviewCycle(
         }
       }
     }
+    await recordJobRun("conversation_review", { ok: true });
   } catch (err) {
     console.error("[review] Cycle failed:", err instanceof Error ? err.message : err);
+    await recordJobRun("conversation_review", { ok: false, error: err instanceof Error ? err.message : String(err) });
   } finally {
     cycleInFlight = false;
   }

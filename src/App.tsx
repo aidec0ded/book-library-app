@@ -17,6 +17,7 @@ const ImportBooks = lazy(() => import("@/pages/ImportBooks").then((m) => ({ defa
 const Chat = lazy(() => import("@/pages/Chat").then((m) => ({ default: m.Chat })));
 const Profile = lazy(() => import("@/pages/Profile").then((m) => ({ default: m.Profile })));
 const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const AdminPage = lazy(() => import("@/pages/AdminPage").then((m) => ({ default: m.AdminPage })));
 const SyllabiPage = lazy(() => import("@/pages/SyllabiPage").then((m) => ({ default: m.SyllabiPage })));
 const SyllabusDetail = lazy(() => import("@/pages/SyllabusDetail").then((m) => ({ default: m.SyllabusDetail })));
 const ReleasesPage = lazy(() => import("@/pages/ReleasesPage").then((m) => ({ default: m.ReleasesPage })));
@@ -127,6 +128,7 @@ export function App() {
           <Route path="chat/:id" element={<Chat />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="admin" element={<AdminPage />} />
           <Route path="add" element={<AddBook />} />
           <Route path="import" element={<ImportBooks />} />
           <Route path="guide" element={<GuidePage />} />
