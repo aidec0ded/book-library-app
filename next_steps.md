@@ -72,6 +72,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Refresh the library index after the AI changes a book — it can be 10 minutes out of date, even about its own changes
 - Save a short record of each AI action — only message text is saved, so in later turns the AI has no record of what it did
 - Make the prompt plan-aware — free users are told about syllabus, path, and excerpt tools they don't have
+- Home greeting fixates on one book — every greeting for the owner is about Ligotti's "Dream of a Manikin", a story from a collection shelved as unfinished, while five books are in progress and more recent conversations were about other books. Found in November 2026 (`server/greeting-handler.ts`): the greeting only sees the first 1,000 characters of the reader profile, the last three messages of one conversation, and the date. It never sees what the reader is reading. The owner's profile (generated 27 October, after the June Ligotti conversation) mentions Ligotti, the manikin story, and the "puppeteer" fear in those first 1,000 characters, and the latest conversation (a correction about book-club page counts) names no book, so the profile excerpt wins every time. It also picks the conversation most recently started, not most recently active. Fix: give it the books being read (with start dates) and the most recently active conversation and its book, use the profile for tone rather than topic, leave out unfinished books, and avoid repeating what recent greetings said
 
 **Trust and reliability**
 
