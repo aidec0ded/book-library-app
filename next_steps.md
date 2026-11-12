@@ -4,7 +4,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 **Before announcing**
 
-- Anthropic spend limit and alerts — set in the Console (owner). The backstop for everything below
+- Anthropic spend limit and alerts — set in the Console (owner). The backstop for everything below. Plan: separate "Chat" and "Background jobs" workspaces with their own keys (the Default Workspace can't have a spend limit), a monthly spend limit and threshold alerts on each, an organization limit above both, a lower rate limit on background jobs so an import can't starve chat, and auto-reload of credits so a depleted balance doesn't stop the app. The server needs a second key for the scripts it starts, and should show "busy" rather than an error when a limit is reached (400 "You have reached your specified API usage limits")
 - Daily spending stop — `chat_token_usage` already records every chat call. Past a daily total, chat answers "busy, try again later" instead of calling the API
 - Per-reader cap during the free period — a monthly or daily reply limit, and keep a fair-use cap on the paid plan after, since "unlimited" at $7 doesn't cover heavy use at today's cost per reply
 - Request size limit and onboarding cap — the two open chat security items below
@@ -16,13 +16,22 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 - Signup abuse — free chat makes scripted accounts worth creating. Email confirmation is on, but nothing limits signups or requests and there's no captcha. Turn on Cloudflare Turnstile in Supabase Auth
 - Per-IP rate limits — on `/api/chat`, and on `/api/contact`, which needs no login and writes straight to the database
-- Personal release scoring per reader — every reader with a recent profile gets the whole month scored, about 2,700–3,700 releases, whether or not they open Releases. Scoring only releases with a general score of 6 or more for each reader would cut it by about 80%. It's also a ceiling: one job per 4-hour check is about 180 reader-months a month
+- Personal release scoring per reader **[DONE]** — now only on request, see "Personal release scoring on request" below
 - Background jobs off the web server — a Render background worker, or a 2GB instance, so a job can't take chat down
 - Separate API keys for chat and background jobs — background scripts don't record usage, so the Console is the only place to see where money goes
 - Record profile generation cost — Opus 5.5 monthly per reader, not recorded anywhere
 - ISBNdb quota — every reader's imports share one key at 1 request a second. Check the plan's daily quota against, say, 50 readers importing 500 books each
 - Supabase plan — check connection, bandwidth, and database size limits for the plan in use
-- Long conversations — each reply resends the whole history 4 or more times, so cost per reply grows with length. See "Conversation summaries" under Long-term continuity
+- Long conversations — cost per reply still grows with length: the conversation is cached now, and memory checks are gone (about 1.7 calls a reply instead of 4.4), but a very long history is still read on every call. See "Conversation summaries" under Long-term continuity
+
+**Telemetry, dashboards, and alerting** (owner request, November 2026: track usage, signups, books added, and so on, with the cost of each, for everything that has a lever or a cost, viewable in dashboards with alerts)
+
+- Record the cost of every AI call — only chat, greetings, and titles record usage today (`chat_token_usage`). Add the scripts and jobs: profile generation (Opus), predicted ratings, vibe and classification tagging, genre reclassification, release triage and scoring, conversation review, and Voyage embeddings. One table with feature, model, tokens, and dollars, so cost per feature is a query
+- Reconcile against Anthropic's own figures — the Usage and Cost Analytics API (needs an Admin API key) reports cost by workspace, API key, and model in hourly buckets, usually within 4 hours. A daily job compares it with what the app recorded, so nothing goes unrecorded
+- Other paid services and quotas — ISBNdb requests against the plan's daily quota, Voyage tokens against the free allowance, Supabase database size and bandwidth, Render memory, Stripe revenue
+- Product metrics with their cost — signups, onboarding completed, books added (by import, search, or chat), chat messages, curation requests, active readers, and cost per reader. PostHog already captures most of these in the browser (`user_signed_up`, `book_added`, `books_imported`, `chat_message_sent`, `release_curation_requested`, and others); add server-side events for what the browser can't see, such as books the AI adds and jobs that run
+- Dashboards — one place to see cost by feature and per reader, daily spend against the caps, signups and activity, and job health. Decide between PostHog dashboards (product data already there; costs sent as events) and an admin dashboard over the Supabase tables
+- Alerts — daily spend past a threshold, a reader hitting their cap, a spike in signups (abuse), jobs failing or stalling, server memory near the limit, and quotas running low. Email or Slack
 
 **Cost efficiencies** (ranked by possible saving; measured from `chat_token_usage` where noted)
 
@@ -92,7 +101,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - AI tools to read a book's details and search past conversations
 - Conversation summaries, and condensing the older parts of very long conversations — history has no limit, so a very long one will eventually fail
 - Better profile input — it reads the last 100 messages cut to 500 characters each, skips excerpts, and can take about 30 days to reflect a conversation. The first profile skips onboarding chat entirely
-- Prompt caching — the cache lasts 5 minutes, shorter than many pauses in a conversation about a book, so consider a longer one
+- Prompt caching **[DONE]** — the prompt now uses the 1-hour cache; see "Chat cache rewrites" under Free Launch
 - Library index tiering **[DONE]** — the prompt now lists only what the reader is reading, has read, rated, or marked a favorite (85 lines and 3,400 tokens for the owner's 909 books, from 38,900), and the AI finds unread books and the wishlist with a `search_library` tool. The cached prompt went from about 57,000 tokens to 22,000. Next stages discussed: core memory loaded automatically (**[DONE]**, see "Load memory into the prompt"), embeddings in Supabase (pgvector), then theme clusters per reader (also the basis for Reading Life eras)
 - Book embeddings and search by meaning **[DONE]** — every book is embedded from its title, author, genre, and summary with Voyage `voyage-4`, and `search_library` can search by description (`about`) or find books like one in the library (`like_title`). Vectors are shared between libraries by text, so a popular book is embedded once. The first fill was 1,704 books and 488,000 tokens in 34 seconds, inside Voyage's 200 million free tokens. Memory didn't need embeddings once it was in the prompt
 - Embed excerpts and conversation summaries — none exist yet. When they do, a recall tool for past conversations ("what did I say about Ligotti?") can use the same `text_embeddings` table
