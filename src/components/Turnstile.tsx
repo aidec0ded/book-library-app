@@ -58,7 +58,8 @@ export function Turnstile({ onToken, resetKey = 0 }: { onToken: (token: string |
         if (cancelled || !container.current || !window.turnstile) return;
         widgetId = window.turnstile.render(container.current, {
           sitekey: SITE_KEY,
-          theme: "auto",
+          // The site is light only, so the widget is too, whatever the visitor's system theme
+          theme: "light",
           size: "flexible",
           callback: (token: string) => callback.current(token),
           "expired-callback": () => callback.current(null),
