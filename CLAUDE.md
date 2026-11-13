@@ -36,6 +36,7 @@ npx tsx scripts/generate-profile.ts            # generate reader profile via Cla
 npx tsx scripts/generate-profile.ts --dry-run  # preview prompt, no API call or DB write
 npx tsx scripts/generate-profile.ts --force    # regenerate even if generated this month
 npx tsx scripts/generate-profile.ts --bootstrap # library data only (skip memory + conversations)
+npx tsx scripts/generate-profile.ts --user-id <uuid> --model claude-sonnet-5-5 --effort low --compare out.json  # try another model or effort: the profile, time, and cost to a file, nothing saved
 npx tsx scripts/predict-ratings.ts             # generate AI predicted ratings for unread books
 npx tsx scripts/predict-ratings.ts --dry-run   # preview prompt, no API calls or DB writes
 npx tsx scripts/predict-ratings.ts --limit 20  # process only first 20 books

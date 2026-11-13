@@ -29,10 +29,17 @@ const bootstrap = args.includes("--bootstrap");
 const userIdIdx = args.indexOf("--user-id");
 const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
 usageTracking.setUser(userId);
+// For testing another model or effort: --model, --effort, and --compare <file>, which
+// writes the profile, the time it took, and its usage to the file instead of saving it
+const modelIdx = args.indexOf("--model");
+const effortIdx = args.indexOf("--effort");
+const compareIdx = args.indexOf("--compare");
+const compareFile = compareIdx !== -1 ? args[compareIdx + 1] : null;
 
 // --- Constants ---
 
-const MODEL = "claude-opus-5-5";
+const MODEL = modelIdx !== -1 ? args[modelIdx + 1] : "claude-opus-5-5";
+const EFFORT = (effortIdx !== -1 ? args[effortIdx + 1] : "high") as "low" | "medium" | "high";
 
 const SYSTEM_PROMPT = `You are generating a Reader Profile for Rekollekt, a personal book library app. Analyze the reader's library, conversation history, and your accumulated notes to produce a structured profile.
 
@@ -399,7 +406,7 @@ async function main() {
   console.log("Rekollekt Reader Profile Generation\n");
 
   // Check if generation is needed (unless --force)
-  if (!force) {
+  if (!force && !compareFile) {
     const prev = await fetchPreviousProfile();
     if (prev) {
       const prevDate = new Date(
@@ -467,7 +474,7 @@ ${conversationText}
 ${JSON.stringify(previousShiftLog, null, 2)}`;
 
   const mode = dryRun ? "dry-run" : "live";
-  console.log(`  Mode: ${mode} | Model: ${MODEL}${userId ? ` | User: ${userId}` : ""}`);
+  console.log(`  Mode: ${mode} | Model: ${MODEL} | Effort: ${EFFORT}${userId ? ` | User: ${userId}` : ""}`);
   console.log(
     `  Context: ${books.length} books | ${memoryFiles.length} memory files | ${recentMessages.length} messages`,
   );
@@ -496,25 +503,26 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   // Generate profile
   console.log("Generating profile...");
 
+  const started = Date.now();
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 16000,
-    output_config: { effort: "high" },
+    output_config: { effort: EFFORT },
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
   });
+  const seconds = Math.round((Date.now() - started) / 1000);
+  console.log(`  Took ${seconds}s`);
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
     throw new Error("No text block in response");
   }
 
-  // Parse JSON response
-  let cleaned = textBlock.text.trim();
-  cleaned = cleaned
-    .replace(/^```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/, "")
-    .trim();
+  // Parse JSON response: the object itself, ignoring a code fence or any note the model
+  // writes before or after it
+  const raw = textBlock.text;
+  const cleaned = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
 
   const profileData = JSON.parse(cleaned);
 
@@ -535,6 +543,28 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   if (profileData.poetry_identity === null) delete profileData.poetry_identity;
   if (profileData.nonfiction_interests?.length === 0) delete profileData.nonfiction_interests;
   if (profileData.poet_affinities?.length === 0) delete profileData.poet_affinities;
+
+  if (compareFile) {
+    const { writeFileSync } = await import("node:fs");
+    const { usageCost } = await import("../server/usage.js");
+    writeFileSync(
+      compareFile,
+      JSON.stringify(
+        {
+          model: MODEL,
+          effort: EFFORT,
+          seconds,
+          usage: response.usage,
+          cost_usd: Math.round(usageCost(MODEL, response.usage) * 1000) / 1000,
+          profile: profileData,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(`  ✓ Wrote ${compareFile} (not saved, predictions untouched)`);
+    return;
+  }
 
   // Gather activity snapshot for scheduler
   const activitySnapshot = await gatherActivitySnapshot();
