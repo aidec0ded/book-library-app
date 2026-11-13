@@ -227,7 +227,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/home.ts` — Home page data queries (currently reading, AI suggestions, recent additions, library stats, greeting)
 - `src/components/BookCover.tsx` — Cover image with styled placeholder fallback (sm/lg sizes)
 - `src/components/DonutChart.tsx` — Pure SVG donut chart for library stats
-- `server/greeting-handler.ts` — AI greeting generation via Claude API with 1hr cache
+- `server/greeting-handler.ts` — The home page greeting (Sonnet 5.5, low effort): about one current thing, a book being read, one just finished, or the latest conversation, written from the reader's local date and hour (the `X-Reader-Time` header). The profile's reader identity is given for tone only. Greetings are kept in `reader_greetings`: the latest is reused for an hour, and the last few are shown so a new one picks another subject
 - `src/pages/ReleasesPage.tsx` — New releases browse page with month selector, Recommended view (the reader's personal picks, after they ask with "Curate for me") and Notable view (general score 6+), score badges, rationale display, dismiss, pagination
 - `src/lib/releases.ts` — Release query functions (Recommended and Notable lists by month, available months with notable counts via the `release_month_counts` database function (migration 030), library ISBN cross-reference, dismiss/undismiss, curation request and visit tracking)
 - `scripts/ingest-releases.ts` — ISBNdb new releases ingestion script (paginated search, batch upsert, pub_month validation, --dry-run/--limit/--month/--months flags)
@@ -275,7 +275,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Twenty-eight tables in Supabase:
+Twenty-nine tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -331,6 +331,8 @@ Twenty-eight tables in Supabase:
 **api_usage** — Every paid API call with its cost (migration 034): `provider` (anthropic, voyage, isbndb), `feature` (chat, title, greeting, condense, review, profile, predicted_ratings, vibe_tagging, classification_tagging, genre_reclassify, release_triage, release_scoring, book_embeddings, search_by_meaning, isbndb_lookup, isbndb_search), `model`, `user_id` (the reader it was for, where known), token counts, `calls` (ISBNdb quota charge), `cost_usd`, and `batch`. Chat usage from `chat_token_usage` was copied in; that table is no longer written. Service role only
 
 **job_heartbeats** — Each background job's latest run: `last_run_at`, `last_ok_at`, `last_error`, `runs`, `failures`. Written by every scheduler check and every script run. Service role only
+
+**reader_greetings** — The home page greetings a reader was shown (`greeting`, `created_at`), from `server/greeting-handler.ts`. The latest is reused for an hour across restarts, and the last five from the past two weeks go to the AI so it doesn't repeat itself. Readers can read and add their own (migration 038)
 
 **alerts_sent** — One row per alert email sent, keyed by alert and period (`chat_stop:2026-11-12`, `job_failing:embeddings:2026-11-12`), so each goes out once. Inserting a key by hand silences that alert. Service role only (migration 035)
 

@@ -33,7 +33,7 @@ import {
   type ReadingPathCommand,
 } from "./reading-path-handler.js";
 import { buildSyllabusIndex, invalidateSyllabusIndex } from "./syllabus-index.js";
-import { getGreeting } from "./greeting-handler.js";
+import { getGreeting, parseReaderTime } from "./greeting-handler.js";
 import { isIsoDate } from "../src/lib/reading-dates.js";
 import { buildBookContext, type LinkedBook } from "./book-context.js";
 import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
@@ -148,7 +148,7 @@ function setCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): vo
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization",
+    "Content-Type, Authorization, X-Reader-Time",
   );
 }
 
@@ -826,7 +826,9 @@ const server = http.createServer((req, res) => {
             res.end(JSON.stringify({ greeting: "" }));
             return;
           }
-          const result = await getGreeting(userSupabase, anthropic, userId);
+          // The reader's own date and hour, since the server runs on UTC
+          const readerTime = parseReaderTime(req.headers["x-reader-time"]);
+          const result = await getGreeting(userSupabase, anthropic, userId, readerTime);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ greeting: result.greeting }));
 

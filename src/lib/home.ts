@@ -101,8 +101,13 @@ export async function fetchLibraryStats(): Promise<LibraryStats> {
 export async function fetchGreeting(): Promise<string> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
+    // The reader's local date and hour, so the greeting knows their day
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const localTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
     const res = await fetch("/api/greeting", {
       headers: {
+        "X-Reader-Time": localTime,
         ...(session?.access_token && {
           Authorization: `Bearer ${session.access_token}`,
         }),
