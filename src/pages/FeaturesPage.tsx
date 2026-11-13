@@ -39,12 +39,12 @@ const FEATURES = [
     label: "Intelligence",
     title: "Understanding You",
     description:
-      "The more you read and reflect, the more Rekollekt learns. A monthly AI-generated reader profile captures who you are as a reader — your thematic pillars, emotional patterns, taste evolution, and personal canon.",
+      "The more you read and reflect, the more Rekollekt learns. An AI-written reader profile, renewed each month you're reading, captures who you are as a reader — your thematic pillars, emotional patterns, taste evolution, and personal canon.",
     bullets: [
       "Predicted ratings help prioritize your unread books",
       "Personalized recommendations grounded in your actual reading patterns",
       "Fiction taste, nonfiction interests, and poetry affinities each tracked separately",
-      "Activity-gated regeneration ensures the profile stays current",
+      "A new profile when you've been reading, written when you ask for it",
     ],
     caption: "Understanding You",
     image: "/screenshot_3.png",

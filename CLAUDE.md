@@ -126,7 +126,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/PhilosophyPage.tsx` — Public editorial essay on Rekollekt's reading philosophy
 - `src/pages/FeaturesPage.tsx` — Public features page with sticky-scroll layout
 - `src/pages/ContactPage.tsx` — Public contact form page
-- `src/pages/PricingPage.tsx` — Public pricing comparison page (Free vs Companion, Stripe checkout integration)
+- `src/pages/PricingPage.tsx` — Public pricing comparison page (Free vs Companion, Stripe checkout integration), with the free launch period while it lasts
+- `src/lib/plans.ts` — The plans as readers are told about them: reply limits, prices, and the free period's end, shared by the Pricing, FAQ, and Guide pages, the chat, and the server's defaults, so wording and limits can't drift apart. Free-period wording disappears on its own when it ends
 - `src/pages/FAQPage.tsx` — Public FAQ with accordion sections
 - `src/pages/OnboardingPage.tsx` — Two-phase onboarding: welcome gate (chat/import/skip) + AI chat to populate library
 - `src/pages/ImportBooks.tsx` — Goodreads CSV import: upload, shelf selection, dedup, batch insert with progress

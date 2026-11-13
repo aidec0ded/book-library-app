@@ -4,32 +4,42 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { capture } from "@/lib/posthog";
+import {
+  COMPANION_ANNUAL_PRICE,
+  COMPANION_MONTHLY_PRICE,
+  COMPANION_MONTHLY_REPLIES,
+  FREE_MONTHLY_REPLIES,
+  FREE_PERIOD_BILLING_STARTS,
+  FREE_PERIOD_LAST_DAY,
+  inFreePeriod,
+} from "@/lib/plans";
 
 const FREE_FEATURES = [
-  "Full library management",
-  "Visual shelves (manual + auto)",
-  "Goodreads/CSV import",
-  "AI-predicted ratings",
-  "Monthly reader profile",
-  "Personalized recommendations",
-  "New releases scored for you",
-  "5 chat messages per month",
+  "Your whole library: search, shelves, notes, and reading dates",
+  "Goodreads import",
+  "Tags and predicted ratings for every book",
+  "A reader profile, with a new one each month you're reading",
+  "Personalized recommendations and new release picks",
+  "Save anything from a conversation to a book's page",
+  `${FREE_MONTHLY_REPLIES} replies a month from your reading companion`,
 ];
 
 const PAID_FEATURES = [
   "Everything in Free",
-  "Unlimited AI chat",
-  "Curated syllabi via chat",
-  "Structured reading paths",
-  "Insights from book conversations saved automatically",
-  "On-demand profile regeneration",
+  `Up to ${COMPANION_MONTHLY_REPLIES} replies a month from your reading companion`,
+  "Syllabi and reading paths, built with the companion",
+  "Insights from book conversations saved for you",
+  "Refresh your reader profile weekly",
 ];
+
+const ANNUAL_SAVING = COMPANION_MONTHLY_PRICE * 12 - COMPANION_ANNUAL_PRICE;
 
 export function PricingPage() {
   const { session } = useAuth();
   const entryLink = session ? "/home" : "/login";
   const [billing, setBilling] = useState<"monthly" | "annual">("annual");
   const [loading, setLoading] = useState(false);
+  const freePeriod = inFreePeriod();
 
   async function handleUpgrade() {
     if (!session) return;
@@ -109,9 +119,16 @@ export function PricingPage() {
             Read more intentionally
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-lg text-muted-foreground">
-            Rekollekt is free to use. Upgrade for unlimited conversations with
-            your AI reading companion and access to power features.
+            Rekollekt is free to use. Companion gives you more time with your
+            reading companion, and the syllabi and reading paths you build together.
           </p>
+          {freePeriod && (
+            <p className="mx-auto mt-6 max-w-xl rounded-2xl bg-accent/10 px-5 py-4 text-sm text-foreground">
+              <span className="font-semibold">Free while we launch.</span> Everyone has Companion
+              at no charge through {FREE_PERIOD_LAST_DAY}. No card needed. After that, Rekollekt
+              stays free, and Companion is ${COMPANION_MONTHLY_PRICE} a month if you want to keep it.
+            </p>
+          )}
         </div>
       </section>
 
@@ -137,7 +154,7 @@ export function PricingPage() {
             }`}
           >
             Annual
-            <span className="ml-1.5 text-xs text-accent">Save $24</span>
+            <span className="ml-1.5 text-xs text-accent">Save ${ANNUAL_SAVING}</span>
           </button>
         </div>
       </div>
@@ -161,7 +178,7 @@ export function PricingPage() {
               to={session ? "/home" : "/login"}
               className="block w-full rounded-full border border-foreground/20 py-3 text-center text-sm font-medium transition-colors hover:bg-muted"
             >
-              {session ? "Current plan" : "Get started free"}
+              {session ? "Go to your library" : "Get started free"}
             </Link>
             <ul className="mt-8 space-y-3">
               {FREE_FEATURES.map((f) => (
@@ -181,34 +198,41 @@ export function PricingPage() {
               </div>
               <h2 className="font-serif text-2xl font-bold">Companion</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Unlimited AI conversations and structured learning tools.
+                Longer conversations with your reading companion, and what you build together.
               </p>
             </div>
             <div className="mb-8">
               <span className="font-serif text-4xl font-bold">
-                ${billing === "monthly" ? "7" : "5"}
+                ${billing === "monthly" ? COMPANION_MONTHLY_PRICE : Math.round((COMPANION_ANNUAL_PRICE / 12) * 100) / 100}
               </span>
               <span className="text-muted-foreground">/month</span>
               {billing === "annual" && (
                 <span className="ml-2 text-sm text-muted-foreground">
-                  billed $60/year
+                  billed ${COMPANION_ANNUAL_PRICE}/year
                 </span>
               )}
             </div>
             {session ? (
-              <button
-                onClick={handleUpgrade}
-                disabled={loading}
-                className="block w-full rounded-full bg-accent py-3 text-center text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
-              >
-                {loading ? "Redirecting..." : "Upgrade now"}
-              </button>
+              <>
+                <button
+                  onClick={handleUpgrade}
+                  disabled={loading}
+                  className="block w-full rounded-full bg-accent py-3 text-center text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 disabled:opacity-50"
+                >
+                  {loading ? "Redirecting..." : freePeriod ? "Subscribe now" : "Upgrade now"}
+                </button>
+                {freePeriod && (
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
+                    You won't be charged until {FREE_PERIOD_BILLING_STARTS}.
+                  </p>
+                )}
+              </>
             ) : (
               <Link
                 to="/login"
                 className="block w-full rounded-full bg-accent py-3 text-center text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
               >
-                Get started
+                {freePeriod ? "Get started free" : "Get started"}
               </Link>
             )}
             <ul className="mt-8 space-y-3">

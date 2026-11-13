@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { COMPANION_ANNUAL_PRICE, COMPANION_MONTHLY_PRICE, COMPANION_MONTHLY_REPLIES, FREE_MONTHLY_REPLIES, FREE_PERIOD_LAST_DAY, ONBOARDING_FREE_MESSAGES, inFreePeriod } from "@/lib/plans";
 
 interface FAQItem {
   q: string;
@@ -25,6 +26,14 @@ const SECTIONS: FAQSection[] = [
         q: "How is it different from Goodreads or StoryGraph?",
         a: "Most book apps focus on social features and reading stats. Rekollekt focuses on the reader's inner life — how books affect you, how your taste evolves, and what that means for what to read next. The AI companion is a genuine conversational partner, not a recommendation engine.",
       },
+      ...(inFreePeriod()
+        ? [
+            {
+              q: "Is Rekollekt free right now?",
+              a: `Yes. While we launch, everyone has Companion at no charge through ${FREE_PERIOD_LAST_DAY}: up to ${COMPANION_MONTHLY_REPLIES} replies a month from your reading companion, syllabi and reading paths, and weekly profile refreshes. No card is needed. After that, Rekollekt stays free to use, and Companion is $${COMPANION_MONTHLY_PRICE} a month or $${COMPANION_ANNUAL_PRICE} a year if you want to keep it. If you subscribe before then, you won't be charged until the free period ends. Syllabi and reading paths you make stay yours either way.`,
+            },
+          ]
+        : []),
       {
         q: "Is my data private?",
         a: "Yes. Your library, conversations, and profile are private to your account. We don't share your data with other users or third parties. AI conversations are processed through a secure API and your data is never used for model training.",
@@ -36,11 +45,11 @@ const SECTIONS: FAQSection[] = [
     items: [
       {
         q: "What do I get for free?",
-        a: "Full library management, visual shelves, Goodreads import, AI-predicted ratings, a monthly reader profile, personalized recommendations, new releases scored for you, and 5 AI chat messages per month.",
+        a: `Your whole library with shelves, notes, and reading dates; Goodreads import; tags and predicted ratings for every book; a reader profile, with a new one each month you're reading; personalized recommendations and new release picks; saving anything from a conversation to a book's page; and ${FREE_MONTHLY_REPLIES} replies a month from your reading companion.`,
       },
       {
-        q: 'What does "5 chat messages per month" mean?',
-        a: "Each message you send to the AI counts as one. The assistant's responses don't count toward your limit. Your counter resets on the 1st of each month.",
+        q: `What does "${FREE_MONTHLY_REPLIES} replies a month" mean?`,
+        a: `Each message you send gets one reply from your reading companion, and each reply counts once. The count resets on the 1st of each month. The first ${ONBOARDING_FREE_MESSAGES} messages while you set up your library don't count.`,
       },
       {
         q: "How do predicted ratings work?",
@@ -48,10 +57,10 @@ const SECTIONS: FAQSection[] = [
       },
       {
         q: "How does my reader profile get generated?",
-        a: "After you've added enough books and ratings, the AI builds a profile of your reading taste — your thematic interests, emotional patterns, and evolving sensibility. It regenerates monthly as your library evolves.",
+        a: "Once you've added enough books and ratings, the AI writes a profile of your reading taste: your themes, emotional patterns, and how your taste is changing. After that, when you've been reading, a new one is ready about once a month. You'll see a note in the app, and it's written when you click. On Companion you can also refresh it weekly. A new monthly profile also updates your predicted ratings.",
       },
       {
-        q: "Tips for making the most of 5 free messages?",
+        q: `Tips for making the most of ${FREE_MONTHLY_REPLIES} free replies?`,
         a: "Be specific: ask about a book you just finished, request recommendations with context about your mood, or ask about patterns in your reading. Each message is more valuable when it's focused.",
       },
     ],
@@ -61,7 +70,11 @@ const SECTIONS: FAQSection[] = [
     items: [
       {
         q: "What do I get with a subscription?",
-        a: "Everything in the free tier, plus unlimited AI chat, curated syllabi, structured reading paths with seminar-style scaffolding, insights from book conversations saved to book pages automatically, and on-demand profile regeneration.",
+        a: `Everything in the free plan, plus up to ${COMPANION_MONTHLY_REPLIES} replies a month from your reading companion, syllabi and reading paths built with it, insights from book conversations saved to book pages for you, and weekly profile refreshes.`,
+      },
+      {
+        q: `Why is Companion limited to ${COMPANION_MONTHLY_REPLIES} replies a month?`,
+        a: `Every reply is written by an AI model, which costs us real money each time. ${COMPANION_MONTHLY_REPLIES} a month is room for several long conversations a week, and the limit keeps the price fair for everyone. It resets on the 1st.`,
       },
       {
         q: "What are reading paths and syllabi?",
@@ -69,11 +82,11 @@ const SECTIONS: FAQSection[] = [
       },
       {
         q: "Can I cancel anytime?",
-        a: "Yes. Your subscription remains active through the end of your current billing period. No refunds for partial periods, but you keep full access until the period ends.",
+        a: "Yes, from Settings. You keep Companion until the end of the period you've paid for, and you won't be charged again. We don't refund partial periods. If a payment fails, you keep Companion while we retry your card, and Settings shows how to update it.",
       },
       {
         q: "What happens to my data if I cancel?",
-        a: "Your library, ratings, profile, and all your data stay intact. You lose access to unlimited chat, creating new syllabi and reading paths, but can still view existing ones read-only.",
+        a: `Your library, ratings, profile, and everything else stay as they are. You go back to ${FREE_MONTHLY_REPLIES} replies a month. Your syllabi and reading paths stay too: you can open them and talk about them with the companion, but not create new ones or change them.`,
       },
     ],
   },

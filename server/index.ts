@@ -50,6 +50,7 @@ import { jobsInWorker, startBackgroundJobs } from "./background-jobs.js";
 import { startHealthReports } from "./health.js";
 import { CHAT_MODEL } from "./models.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
+import { COMPANION_MONTHLY_REPLIES, FREE_MONTHLY_REPLIES, ONBOARDING_FREE_MESSAGES } from "../src/lib/plans.js";
 import { allowedWithoutCompanion, buildInstructions, buildReaderContext, chatTools, PROMPT_CACHE } from "./chat-prompt.js";
 import {
   handleStripeWebhook,
@@ -133,11 +134,11 @@ const ALLOWED_ORIGINS = new Set([
   ...(process.env.NODE_ENV !== "production" ? ["http://localhost:5173"] : []),
 ]);
 
-const FREE_MESSAGE_LIMIT = 5;
+const FREE_MESSAGE_LIMIT = FREE_MONTHLY_REPLIES;
 /** Fair-use cap on paid (and promotional) readers' chat replies a month: about $7.50 at today's cost per reply. */
-const PAID_MONTHLY_REPLY_CAP = Number(process.env.PAID_MONTHLY_REPLY_CAP) || 100;
+const PAID_MONTHLY_REPLY_CAP = Number(process.env.PAID_MONTHLY_REPLY_CAP) || COMPANION_MONTHLY_REPLIES;
 /** Onboarding chat is free of the monthly limits up to this many messages, then counts like any other chat. */
-const ONBOARDING_MESSAGE_LIMIT = 20;
+const ONBOARDING_MESSAGE_LIMIT = ONBOARDING_FREE_MESSAGES;
 /** Longest chat message accepted: room for a pasted passage, not a whole chapter. */
 const MAX_MESSAGE_CHARS = 10_000;
 

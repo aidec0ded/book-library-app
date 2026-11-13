@@ -6,6 +6,7 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { ConversationItems } from "@/components/ConversationItems";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useSubscription } from "@/contexts/SubscriptionContext";
+import { COMPANION_MONTHLY_REPLIES } from "@/lib/plans";
 
 export function ChatPanel() {
   const { pathname } = useLocation();
@@ -264,7 +265,7 @@ export function ChatPanel() {
                 to="/pricing"
                 className="mt-1.5 inline-block text-sm font-medium text-accent hover:underline"
               >
-                Upgrade for unlimited chat →
+                Get {COMPANION_MONTHLY_REPLIES} replies a month with Companion →
               </Link>
             </div>
           ) : (

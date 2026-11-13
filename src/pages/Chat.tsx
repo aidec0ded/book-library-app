@@ -6,6 +6,7 @@ import { ChatMessage } from "@/components/ChatMessage";
 import { ConversationList } from "@/components/ConversationList";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useSubscription } from "@/contexts/SubscriptionContext";
+import { COMPANION_MONTHLY_REPLIES } from "@/lib/plans";
 
 export function Chat() {
   const { id: linkedId } = useParams<{ id: string }>();
@@ -169,7 +170,7 @@ export function Chat() {
                 to="/pricing"
                 className="mt-2 inline-block text-sm font-medium text-accent hover:underline"
               >
-                Upgrade for unlimited chat →
+                Get {COMPANION_MONTHLY_REPLIES} replies a month with Companion →
               </Link>
             </div>
           ) : (

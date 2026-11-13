@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { FREE_PERIOD_ENDS_ISO } from "../src/lib/plans.js";
 
 /**
  * A paying subscriber. "past_due" counts: when a renewal fails, Stripe retries the card
@@ -14,7 +15,7 @@ export function isPaidAndActive(sub: { plan: string; status: string }): boolean 
  * moment. Midnight on 1 January 2027 in US Pacific time, so readers across the US keep it
  * through 31 December. FREE_PERIOD_ENDS (an ISO time) overrides it.
  */
-export const FREE_PERIOD_ENDS = new Date(process.env.FREE_PERIOD_ENDS ?? "2027-01-01T08:00:00Z");
+export const FREE_PERIOD_ENDS = new Date(process.env.FREE_PERIOD_ENDS ?? FREE_PERIOD_ENDS_ISO);
 
 export function inFreePeriod(now = new Date()): boolean {
   return now < FREE_PERIOD_ENDS;

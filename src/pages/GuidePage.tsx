@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronRight } from "lucide-react";
+import { COMPANION_ANNUAL_PRICE, COMPANION_MONTHLY_PRICE, COMPANION_MONTHLY_REPLIES, FREE_MONTHLY_REPLIES, FREE_PERIOD_LAST_DAY, ONBOARDING_FREE_MESSAGES, inFreePeriod } from "@/lib/plans";
 
 interface Section {
   id: string;
@@ -104,14 +105,20 @@ const SECTIONS: Section[] = [
 
         <Sub>Free and Paid Plans</Sub>
         <P>
-          <Bold>Free</Bold> — Full library management, shelves, Goodreads import, predicted ratings,
-          monthly reader profile, recommendations, new releases, and 5 AI chat messages per month.
+          <Bold>Free</Bold> — Your whole library, shelves, Goodreads import, tags and predicted ratings,
+          a reader profile with a new one each month you're reading, recommendations, new releases, "Save to
+          book", and {FREE_MONTHLY_REPLIES} replies a month from your reading companion.
         </P>
         <P>
-          <Bold>Reading Companion</Bold> ($7/month or $60/year) — Everything in Free, plus unlimited
-          chat, AI-created syllabi and reading paths, insights saved automatically from book conversations, and on-demand
-          profile regeneration.
+          <Bold>Companion</Bold> (${COMPANION_MONTHLY_PRICE}/month or ${COMPANION_ANNUAL_PRICE}/year) — Everything in Free, plus up
+          to {COMPANION_MONTHLY_REPLIES} replies a month, syllabi and reading paths built with the companion, insights saved
+          automatically from book conversations, and weekly profile refreshes.
         </P>
+        {inFreePeriod() && (
+          <P>
+            While we launch, everyone has Companion at no charge through {FREE_PERIOD_LAST_DAY}.
+          </P>
+        )}
       </>
     ),
   },
@@ -283,7 +290,7 @@ const SECTIONS: Section[] = [
 
         <Sub>Free Tier</Sub>
         <P>
-          Free accounts get 5 messages per month. The counter resets monthly and is visible in the chat interface. Onboarding messages don't count.
+          Free accounts get {FREE_MONTHLY_REPLIES} replies a month, and Companion up to {COMPANION_MONTHLY_REPLIES}. The count resets on the 1st, and on Free it's shown in the chat. The first {ONBOARDING_FREE_MESSAGES} messages while you set up your library don't count.
         </P>
       </>
     ),
@@ -304,7 +311,13 @@ const SECTIONS: Section[] = [
           <Li><Bold>Personal Canon</Bold> — Editable list of books that define you as a reader</Li>
           <Li><Bold>Reading Life</Bold> — Statistical snapshot</Li>
         </ul>
-        <P>Regenerates roughly monthly when meaningful new activity is detected.</P>
+        <P>
+          Your first profile is written once you have enough books and ratings. After that, when you've been
+          reading, a new one is ready about once a month: a note at the top of the app offers it, and it's written
+          when you click (about a minute). On Companion, "Refresh my profile" under the date on the Profile page
+          writes a new one weekly, when something has changed. A new monthly profile also updates your predicted
+          ratings.
+        </P>
       </>
     ),
   },
