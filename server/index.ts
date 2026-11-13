@@ -50,7 +50,7 @@ import { jobsInWorker, startBackgroundJobs } from "./background-jobs.js";
 import { startHealthReports } from "./health.js";
 import { CHAT_MODEL } from "./models.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
-import { COMPANION_MONTHLY_REPLIES, FREE_MONTHLY_REPLIES, ONBOARDING_FREE_MESSAGES } from "../src/lib/plans.js";
+import { COMPANION_MONTHLY_REPLIES, FREE_MONTHLY_REPLIES, ONBOARDING_FREE_MESSAGES, freeMonthlyReplies } from "../src/lib/plans.js";
 import { allowedWithoutCompanion, buildInstructions, buildReaderContext, chatTools, PROMPT_CACHE } from "./chat-prompt.js";
 import {
   handleStripeWebhook,
@@ -226,8 +226,9 @@ async function handleChat(
   // Auth: create per-request client
   let supabase;
   let userId: string;
+  let accountCreatedAt: string;
   try {
-    ({ supabase, userId } = await authenticateRequest(req.headers.authorization));
+    ({ supabase, userId, createdAt: accountCreatedAt } = await authenticateRequest(req.headers.authorization));
   } catch {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -322,7 +323,8 @@ async function handleChat(
   const paid = hasCompanion(subscription);
   const claimsMessage = !isOnboarding;
   if (claimsMessage) {
-    const limit = paid ? PAID_MONTHLY_REPLY_CAP : FREE_MESSAGE_LIMIT;
+    // Free readers get more in their first 30 days (src/lib/plans.ts)
+    const limit = paid ? PAID_MONTHLY_REPLY_CAP : freeMonthlyReplies(accountCreatedAt);
     const claimed = await claimMessage(serviceSupabase, userId, subscription.chat_messages_used, limit);
     if (!claimed) {
       setCorsHeaders(req, res);
@@ -1180,8 +1182,9 @@ const server = http.createServer((req, res) => {
     if (req.method === "GET" && url === "/api/subscription") {
       void (async () => {
         let userId: string;
+        let accountCreatedAt: string;
         try {
-          ({ userId } = await authenticateRequest(req.headers.authorization));
+          ({ userId, createdAt: accountCreatedAt } = await authenticateRequest(req.headers.authorization));
         } catch {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
@@ -1201,7 +1204,7 @@ const server = http.createServer((req, res) => {
             companion,
             free_period_ends: !isPaidAndActive(sub) && inFreePeriod() ? FREE_PERIOD_ENDS.toISOString() : null,
             chat_messages_used: sub.chat_messages_used,
-            chat_messages_limit: companion ? null : FREE_MESSAGE_LIMIT,
+            chat_messages_limit: companion ? null : freeMonthlyReplies(accountCreatedAt),
             current_period_end: sub.current_period_end,
             cancel_at_period_end: sub.cancel_at_period_end,
           }));

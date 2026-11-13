@@ -24,12 +24,12 @@ export function createUserClient(authHeader: string | undefined): SupabaseClient
  */
 export async function authenticateRequest(
   authHeader: string | undefined,
-): Promise<{ supabase: SupabaseClient; userId: string }> {
+): Promise<{ supabase: SupabaseClient; userId: string; createdAt: string }> {
   const supabase = createUserClient(authHeader);
   const token = authHeader!.replace("Bearer ", "");
 
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) throw new Error("Invalid authorization token");
 
-  return { supabase, userId: data.user.id };
+  return { supabase, userId: data.user.id, createdAt: data.user.created_at };
 }

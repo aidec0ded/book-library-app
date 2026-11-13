@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronRight } from "lucide-react";
-import { COMPANION_ANNUAL_PRICE, COMPANION_MONTHLY_PRICE, COMPANION_MONTHLY_REPLIES, FREE_MONTHLY_REPLIES, FREE_PERIOD_LAST_DAY, ONBOARDING_FREE_MESSAGES, inFreePeriod } from "@/lib/plans";
+import { COMPANION_ANNUAL_PRICE, COMPANION_MONTHLY_PRICE, COMPANION_MONTHLY_REPLIES, FREE_FIRST_MONTH_DAYS, FREE_FIRST_MONTH_REPLIES, FREE_MONTHLY_REPLIES, FREE_PERIOD_LAST_DAY, FREE_REPLIES_SUMMARY, ONBOARDING_FREE_MESSAGES, inFreePeriod } from "@/lib/plans";
 
 interface Section {
   id: string;
@@ -107,7 +107,7 @@ const SECTIONS: Section[] = [
         <P>
           <Bold>Free</Bold> — Your whole library, shelves, Goodreads import, tags and predicted ratings,
           a reader profile with a new one each month you're reading, recommendations, new releases, "Save to
-          book", and {FREE_MONTHLY_REPLIES} replies a month from your reading companion.
+          book", and {FREE_REPLIES_SUMMARY}, from your reading companion.
         </P>
         <P>
           <Bold>Companion</Bold> (${COMPANION_MONTHLY_PRICE}/month or ${COMPANION_ANNUAL_PRICE}/year) — Everything in Free, plus up
@@ -290,7 +290,7 @@ const SECTIONS: Section[] = [
 
         <Sub>Free Tier</Sub>
         <P>
-          Free accounts get {FREE_MONTHLY_REPLIES} replies a month, and Companion up to {COMPANION_MONTHLY_REPLIES}. The count resets on the 1st, and on Free it's shown in the chat. The first {ONBOARDING_FREE_MESSAGES} messages while you set up your library don't count.
+          Free accounts get {FREE_FIRST_MONTH_REPLIES} replies a month for their first {FREE_FIRST_MONTH_DAYS} days, then {FREE_MONTHLY_REPLIES} a month; Companion gets up to {COMPANION_MONTHLY_REPLIES}. The count resets on the 1st, and on Free it's shown in the chat. The first {ONBOARDING_FREE_MESSAGES} messages while you set up your library don't count.
         </P>
       </>
     ),

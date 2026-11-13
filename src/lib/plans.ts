@@ -5,8 +5,24 @@
  * these too.
  */
 
-/** Replies a month from the reading companion on Free. */
-export const FREE_MONTHLY_REPLIES = 5;
+/**
+ * Replies a month from the reading companion on Free: more in a reader's first 30 days,
+ * so they can find out what the companion is like, then enough for one real
+ * conversation a month (decided November 2026; it was 5 a month)
+ */
+export const FREE_FIRST_MONTH_REPLIES = 30;
+export const FREE_FIRST_MONTH_DAYS = 30;
+export const FREE_MONTHLY_REPLIES = 10;
+
+/** A free reader's monthly limit: the first-month allowance while their account is new. */
+export function freeMonthlyReplies(accountCreatedAt: string | Date | null | undefined, now = new Date()): number {
+  if (!accountCreatedAt) return FREE_MONTHLY_REPLIES;
+  const ageDays = (now.getTime() - new Date(accountCreatedAt).getTime()) / 86_400_000;
+  return ageDays < FREE_FIRST_MONTH_DAYS ? FREE_FIRST_MONTH_REPLIES : FREE_MONTHLY_REPLIES;
+}
+
+/** "30 replies in your first month, then 10 a month" */
+export const FREE_REPLIES_SUMMARY = `${FREE_FIRST_MONTH_REPLIES} replies in your first month, then ${FREE_MONTHLY_REPLIES} a month`;
 /** Companion's fair-use cap on replies a month (PAID_MONTHLY_REPLY_CAP on the server). */
 export const COMPANION_MONTHLY_REPLIES = 100;
 /** Onboarding messages that don't count against the monthly limit. */

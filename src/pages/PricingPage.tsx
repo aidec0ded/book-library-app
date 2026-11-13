@@ -8,7 +8,7 @@ import {
   COMPANION_ANNUAL_PRICE,
   COMPANION_MONTHLY_PRICE,
   COMPANION_MONTHLY_REPLIES,
-  FREE_MONTHLY_REPLIES,
+  FREE_REPLIES_SUMMARY,
   FREE_PERIOD_BILLING_STARTS,
   FREE_PERIOD_LAST_DAY,
   inFreePeriod,
@@ -21,7 +21,7 @@ const FREE_FEATURES = [
   "A reader profile, with a new one each month you're reading",
   "Personalized recommendations and new release picks",
   "Save anything from a conversation to a book's page",
-  `${FREE_MONTHLY_REPLIES} replies a month from your reading companion`,
+  `${FREE_REPLIES_SUMMARY}, from your reading companion`,
 ];
 
 const PAID_FEATURES = [

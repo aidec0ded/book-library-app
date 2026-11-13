@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { COMPANION_ANNUAL_PRICE, COMPANION_MONTHLY_PRICE, COMPANION_MONTHLY_REPLIES, FREE_MONTHLY_REPLIES, FREE_PERIOD_LAST_DAY, ONBOARDING_FREE_MESSAGES, inFreePeriod } from "@/lib/plans";
+import { COMPANION_ANNUAL_PRICE, COMPANION_MONTHLY_PRICE, COMPANION_MONTHLY_REPLIES, FREE_FIRST_MONTH_DAYS, FREE_FIRST_MONTH_REPLIES, FREE_MONTHLY_REPLIES, FREE_PERIOD_LAST_DAY, FREE_REPLIES_SUMMARY, ONBOARDING_FREE_MESSAGES, inFreePeriod } from "@/lib/plans";
 
 interface FAQItem {
   q: string;
@@ -45,11 +45,11 @@ const SECTIONS: FAQSection[] = [
     items: [
       {
         q: "What do I get for free?",
-        a: `Your whole library with shelves, notes, and reading dates; Goodreads import; tags and predicted ratings for every book; a reader profile, with a new one each month you're reading; personalized recommendations and new release picks; saving anything from a conversation to a book's page; and ${FREE_MONTHLY_REPLIES} replies a month from your reading companion.`,
+        a: `Your whole library with shelves, notes, and reading dates; Goodreads import; tags and predicted ratings for every book; a reader profile, with a new one each month you're reading; personalized recommendations and new release picks; saving anything from a conversation to a book's page; and ${FREE_REPLIES_SUMMARY}, from your reading companion.`,
       },
       {
-        q: `What does "${FREE_MONTHLY_REPLIES} replies a month" mean?`,
-        a: `Each message you send gets one reply from your reading companion, and each reply counts once. The count resets on the 1st of each month. The first ${ONBOARDING_FREE_MESSAGES} messages while you set up your library don't count.`,
+        q: "How many replies do I get for free?",
+        a: `${FREE_FIRST_MONTH_REPLIES} a month for your first ${FREE_FIRST_MONTH_DAYS} days, so you can get to know your reading companion, then ${FREE_MONTHLY_REPLIES} a month. Each message you send gets one reply, and each reply counts once. The count resets on the 1st of each month, and the first ${ONBOARDING_FREE_MESSAGES} messages while you set up your library don't count.`,
       },
       {
         q: "How do predicted ratings work?",
@@ -60,7 +60,7 @@ const SECTIONS: FAQSection[] = [
         a: "Once you've added enough books and ratings, the AI writes a profile of your reading taste: your themes, emotional patterns, and how your taste is changing. After that, when you've been reading, a new one is ready about once a month. You'll see a note in the app, and it's written when you click. On Companion you can also refresh it weekly. A new monthly profile also updates your predicted ratings.",
       },
       {
-        q: `Tips for making the most of ${FREE_MONTHLY_REPLIES} free replies?`,
+        q: "Tips for making the most of your free replies?",
         a: "Be specific: ask about a book you just finished, request recommendations with context about your mood, or ask about patterns in your reading. Each message is more valuable when it's focused.",
       },
     ],

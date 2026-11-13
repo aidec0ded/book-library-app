@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 import { supabase } from "@/lib/supabase";
 import { exportLibraryCSV } from "@/lib/export";
+import { FREE_REPLIES_SUMMARY } from "@/lib/plans";
 
 export function Settings() {
   const { user, session } = useAuth();
@@ -254,7 +255,7 @@ export function Settings() {
                 </p>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  You're on the <span className="font-medium text-foreground">Free</span> plan — 5 chat messages per month, full library management.
+                  You're on the <span className="font-medium text-foreground">Free</span> plan, with {FREE_REPLIES_SUMMARY} from your reading companion, and your whole library.
                 </p>
               )}
               <div className="flex items-center gap-3">
