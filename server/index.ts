@@ -6,7 +6,8 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "dotenv";
 import { authenticateRequest, type createUserClient } from "./auth.js";
-import { buildLibraryIndex } from "./library-index.js";
+import { buildLibraryIndex, invalidateLibraryIndex } from "./library-index.js";
+import { actionRecord, changesBooks, withActions, type ActionRecord } from "./action-log.js";
 import { executeLibrarySearch, type LibrarySearchCommand } from "./library-search.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, loadCoreMemory, type MemoryCommand } from "./memory-handler.js";
@@ -441,7 +442,8 @@ async function handleChat(
     const apiMessages: Anthropic.Beta.Messages.BetaMessageParam[] =
       history.messages.map((m) => ({
         role: m.role as "user" | "assistant",
-        content: m.content as string,
+        // A reply's record of what it did with tools goes back with it (see action-log.ts)
+        content: m.role === "assistant" ? withActions(m.content, m.actions) : m.content,
       }));
 
     // Free readers get a subset of the tools
@@ -449,6 +451,7 @@ async function handleChat(
 
     // Streaming tool loop
     let accumulatedText = "";
+    const actions: ActionRecord[] = [];
 
     while (true) {
       let roundText = "";
@@ -575,6 +578,11 @@ async function handleChat(
           isError = true;
         }
 
+        const record = actionRecord(block.name, block.input, result, isError);
+        if (record) actions.push(record);
+        // The library index is cached for 10 minutes; the next message should see this change
+        if (changesBooks(record)) invalidateLibraryIndex(userId);
+
         toolResults.push({
           type: "tool_result",
           tool_use_id: block.id,
@@ -598,6 +606,7 @@ async function handleChat(
         conversation_id: conversationId,
         role: "assistant",
         content: accumulatedText,
+        ...(actions.length > 0 && { actions }),
       })
       .select("id")
       .single();

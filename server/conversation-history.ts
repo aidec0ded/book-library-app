@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAllRows } from "../scripts/fetch-all.js";
+import { withActions, type ActionRecord } from "./action-log.js";
 
 /**
  * What the AI sees of a conversation. Every message is sent until the history passes
@@ -21,6 +22,8 @@ export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  /** What the companion did with tools in this reply (migration 037) */
+  actions?: ActionRecord[] | null;
 }
 
 export interface ConversationHistory {
@@ -51,7 +54,7 @@ export async function loadHistory(supabase: SupabaseClient, conversationId: stri
   const messages = await fetchAllRows<HistoryMessage>((from, to) => {
     let query = supabase
       .from("messages")
-      .select("role, content, created_at")
+      .select("role, content, actions, created_at")
       .eq("conversation_id", conversationId);
     if (summarizedUntil) query = query.gt("created_at", summarizedUntil);
     return query.order("created_at", { ascending: true }).range(from, to);
@@ -76,7 +79,7 @@ Keep, specifically:
 Leave out greetings, pleasantries, and restatements. Write plain prose in short paragraphs, about the reader in the third person ("the reader said"), in the order things came up. If an earlier summary is given, fold it in: the result replaces it.`;
 
 function transcript(messages: HistoryMessage[]): string {
-  return messages.map((m) => `${m.role === "user" ? "Reader" : "Companion"}: ${m.content}`).join("\n\n");
+  return messages.map((m) => `${m.role === "user" ? "Reader" : "Companion"}: ${withActions(m.content, m.actions)}`).join("\n\n");
 }
 
 /** Where to split: keep the most recent `keepTokens` or more, starting on a reader's message. */

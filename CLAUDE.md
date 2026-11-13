@@ -167,7 +167,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/SaveToBook.tsx` — "Save to book" under a chat message, for keeping all or a selected part on a book's page by hand
 - `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001). The chat prompt is sent as blocks cached separately, least often changed first: instructions (shared by every reader on a plan, with the tools ahead of them), then profile and library, then syllabi, memory, and the date, each with the 1-hour cache; then the book context, then the conversation, cached automatically with the 5-minute cache. Onboarding uses the 5-minute cache throughout. Don't put anything that changes per request ahead of a cached block. The instructions and tools are in `server/chat-prompt.ts`
 - `server/chat-prompt.ts` — The chat instructions, the reader context block, and the tools (`chatTools`, a subset for free readers), apart from the request handling so a test can send exactly what the server sends
-- `server/library-index.ts` — Builds the library index for the chat system prompt (cached 10min): what the reader is reading, has read, rated, or marked a favorite, plus a summary of the unread books and wishlist, which the AI finds with `search_library`. Onboarding gets every book. Stable ordering keeps the prompt cache valid
+- `server/library-index.ts` — Builds the library index for the chat system prompt (cached 10min): what the reader is reading, has read, rated, or marked a favorite, plus a summary of the unread books and wishlist, which the AI finds with `search_library`. Onboarding gets every book. Stable ordering keeps the prompt cache valid. Dropped from the cache when the companion changes a book, so its next message sees the change
 - `server/library-search.ts` — `search_library` tool executor: the reader's whole library by title/author words, status, tags, and type, sortable by predicted rating; or by meaning (`about`, a description, or `like_title`, books like one in the library) through the `match_books` database function. Results include page counts
 - `server/embeddings.ts` — Voyage AI embeddings (`voyage-4`, 1024 dimensions, through MongoDB Atlas): the client, the text a book is embedded from (title, author, type, genre, summary; nothing that differs between readers, so it's shared), and the job that embeds new and changed books every 10 minutes
 - `scripts/embed-books.ts` — Embeds every pending book in one go (first fill, or catching up by hand)
@@ -180,7 +180,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/wishlist-handler.ts` — Wishlist tool command executor (add, view, remove)
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view). In a conversation about a book, saves go to that book
-- `server/conversation-history.ts` — What the AI sees of a conversation: every message until the history passes about 20,000 tokens, then a summary of the start (written in the background after a reply, Sonnet 5.5) plus the most recent ~8,000 tokens in full. The reader still sees every message
+- `server/conversation-history.ts` — What the AI sees of a conversation: every message until the history passes about 20,000 tokens, then a summary of the start (written in the background after a reply, Sonnet 5.5) plus the most recent ~8,000 tokens in full. The reader still sees every message. Each reply goes back with its record of actions
+- `server/action-log.ts` — A short record of each change the companion makes with its tools (searches and views aren't recorded), saved with the reply in `messages.actions` and sent back to the AI as an `<actions>` note at the end of that reply, so it knows in later turns what it already did
 - `server/book-context.ts` — What the AI gets in a conversation about a book: its status, dates, notes, excerpts, list context, summary, and earlier conversations
 - `server/conversation-review.ts` — After a book conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation
 - `server/subscription.ts` — Paid plan check, plus claiming and returning a reader's chat messages (free readers' 5 a month, paid readers' fair-use cap of 100) so requests sent together can't pass the limit
@@ -314,6 +315,7 @@ Twenty-eight tables in Supabase:
 - `conversation_id` — FK to conversations, CASCADE delete
 - `role` — 'user' or 'assistant'
 - `content` — message text
+- `actions` (jsonb) — on assistant messages, what the companion did with its tools in that reply: `[{tool, action, result, failed?}]`, from `server/action-log.ts` (migration 037). Null when nothing changed
 
 **memory_files** — Persistent memory for the AI reading companion, loaded into every chat prompt and changed with the `update_memory` tool (a custom tool, not Anthropic's built-in memory tool, which makes the AI check memory before every reply). Key fields:
 - `path` (PK) — virtual file path, must start with `/memories/`

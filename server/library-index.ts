@@ -118,6 +118,12 @@ const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const TAG_SUMMARY_COUNT = 12;
 
+/** Drop the cached index after the companion changes a book, so its next message sees the change. */
+export function invalidateLibraryIndex(userId: string): void {
+  cache.delete(`${userId}:core`);
+  cache.delete(`${userId}:full`);
+}
+
 /**
  * The library as it goes into the chat prompt.
  *
