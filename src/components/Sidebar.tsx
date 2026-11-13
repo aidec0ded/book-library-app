@@ -87,7 +87,7 @@ const PAID_PATHS = new Set(["/syllabi"]);
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname, search } = useLocation();
   const { signOut, user } = useAuth();
-  const { isPaid, chatMessagesUsed, chatMessagesLimit } = useSubscription();
+  const { isPaid, chatMessagesUsed, chatMessagesLimit, paymentPastDue } = useSubscription();
 
   return (
     <div className="flex h-full flex-col">
@@ -149,6 +149,15 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       {/* Footer */}
       <div className="border-t border-sidebar-border px-3 py-3 space-y-1">
+        {paymentPastDue && (
+          <Link
+            to="/settings"
+            onClick={onNavigate}
+            className="mb-2 block rounded-md bg-amber-500/10 px-2 py-1.5 text-xs leading-snug text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
+          >
+            Your last payment didn't go through. Update your card to keep Companion.
+          </Link>
+        )}
         <Link
           to={FOOTER_ITEM.path}
           onClick={onNavigate}

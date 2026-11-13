@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { type SupabaseClient } from "@supabase/supabase-js";
+import { FREE_PERIOD_ENDS } from "./subscription.js";
 
 /**
  * Stripe: the webhook (subscriptions, payments, refunds, disputes), Checkout, and the
@@ -462,9 +463,16 @@ export async function createCheckoutSession(
     success_url: `${origin}/settings?checkout=success`,
     cancel_url: `${origin}/pricing`,
     metadata: { user_id: userId },
-    // Copied onto every invoice, so a payment can be matched to the reader even if
-    // its webhook arrives before checkout's
-    subscription_data: { metadata: { user_id: userId } },
+    subscription_data: {
+      // Copied onto every invoice, so a payment can be matched to the reader even if
+      // its webhook arrives before checkout's
+      metadata: { user_id: userId },
+      // Everyone has Companion during the free period, so subscribing early starts
+      // billing when it ends. Stripe needs a trial to end at least 48 hours out.
+      ...(FREE_PERIOD_ENDS.getTime() - Date.now() > 49 * 60 * 60 * 1000 && {
+        trial_end: Math.floor(FREE_PERIOD_ENDS.getTime() / 1000),
+      }),
+    },
   });
 
   return session.url!;

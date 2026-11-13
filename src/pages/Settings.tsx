@@ -11,7 +11,9 @@ export function Settings() {
   const navigate = useNavigate();
   const {
     plan,
-    isPaid,
+    isSubscribed,
+    freePeriodEnds,
+    paymentPastDue,
     currentPeriodEnd,
     cancelAtPeriodEnd,
     isLoading: subLoading,
@@ -208,8 +210,14 @@ export function Settings() {
 
           {subLoading ? (
             <p className="text-sm text-muted-foreground">Loading...</p>
-          ) : isPaid ? (
+          ) : isSubscribed ? (
             <div className="space-y-3">
+              {paymentPastDue && (
+                <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                  Your last payment didn't go through. Stripe will try again over the next few days, and
+                  you keep Companion meanwhile. Update your card under Manage subscription.
+                </p>
+              )}
               <p className="text-sm">
                 <span className="font-medium">{planLabel}</span>
                 {plan === "monthly" && (
@@ -236,9 +244,19 @@ export function Settings() {
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                You're on the <span className="font-medium text-foreground">Free</span> plan — 5 chat messages per month, full library management.
-              </p>
+              {freePeriodEnds ? (
+                <p className="text-sm text-muted-foreground">
+                  Everyone has <span className="font-medium text-foreground">Companion</span> free through{" "}
+                  {new Date(new Date(freePeriodEnds).getTime() - 1).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}:
+                  up to 100 replies a month, syllabi, and reading paths. After that you'll be on the Free plan
+                  unless you subscribe. Subscribing now starts billing when the free period ends, and anything
+                  you've made stays yours either way.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  You're on the <span className="font-medium text-foreground">Free</span> plan — 5 chat messages per month, full library management.
+                </p>
+              )}
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => handleUpgrade("monthly")}

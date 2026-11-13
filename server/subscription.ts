@@ -1,7 +1,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/**
+ * A paying subscriber. "past_due" counts: when a renewal fails, Stripe retries the card
+ * for up to a couple of weeks, and the reader keeps Companion while they fix it. When
+ * Stripe gives up, the subscription becomes unpaid or canceled and they drop to free.
+ */
 export function isPaidAndActive(sub: { plan: string; status: string }): boolean {
-  return sub.plan !== "free" && (sub.status === "active" || sub.status === "trialing");
+  return sub.plan !== "free" && (sub.status === "active" || sub.status === "trialing" || sub.status === "past_due");
+}
+
+/**
+ * The free launch period: everyone has Companion, with its monthly reply cap, until this
+ * moment. Midnight on 1 January 2027 in US Pacific time, so readers across the US keep it
+ * through 31 December. FREE_PERIOD_ENDS (an ISO time) overrides it.
+ */
+export const FREE_PERIOD_ENDS = new Date(process.env.FREE_PERIOD_ENDS ?? "2027-01-01T08:00:00Z");
+
+export function inFreePeriod(now = new Date()): boolean {
+  return now < FREE_PERIOD_ENDS;
+}
+
+/** Whether a reader gets Companion: a paying subscriber, or anyone during the free period. */
+export function hasCompanion(sub: { plan: string; status: string }, now = new Date()): boolean {
+  return isPaidAndActive(sub) || inFreePeriod(now);
 }
 
 async function readMessagesUsed(supabase: SupabaseClient, userId: string): Promise<number> {

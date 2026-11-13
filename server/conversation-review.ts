@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordClaudeUsage, recordJobRun } from "./usage.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isPaidAndActive } from "./subscription.js";
+import { hasCompanion } from "./subscription.js";
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 const STARTUP_DELAY_MS = 3 * 60 * 1000; // 3 minutes after server start
@@ -159,7 +159,7 @@ async function processConversation(
     readerMessages.length >= MIN_READER_MESSAGES || readerCharacters >= MIN_READER_CHARACTERS;
 
   // Each review costs an API call, so saving by AI is part of the paid plan
-  if (!subscription || !isPaidAndActive(subscription) || !book || !worthReading) {
+  if (!subscription || !hasCompanion(subscription) || !book || !worthReading) {
     await markReviewed(supabase, conversation);
     return;
   }

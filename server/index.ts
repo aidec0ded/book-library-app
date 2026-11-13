@@ -36,7 +36,7 @@ import { buildSyllabusIndex, invalidateSyllabusIndex } from "./syllabus-index.js
 import { getGreeting, parseReaderTime } from "./greeting-handler.js";
 import { isIsoDate } from "../src/lib/reading-dates.js";
 import { buildBookContext, type LinkedBook } from "./book-context.js";
-import { claimMessage, isPaidAndActive, releaseMessage } from "./subscription.js";
+import { claimMessage, FREE_PERIOD_ENDS, hasCompanion, inFreePeriod, isPaidAndActive, releaseMessage } from "./subscription.js";
 import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
 import { clientIp, hit, rejectRateLimited, type RULES } from "./rate-limit.js";
 import { condenseIfLong, historySummaryBlock, loadHistory } from "./conversation-history.js";
@@ -49,7 +49,7 @@ import { jobsInWorker, startBackgroundJobs } from "./background-jobs.js";
 import { startHealthReports } from "./health.js";
 import { CHAT_MODEL } from "./models.js";
 import { buildOnboardingPrompt } from "./onboarding-prompt.js";
-import { buildInstructions, buildReaderContext, chatTools, PROMPT_CACHE } from "./chat-prompt.js";
+import { allowedWithoutCompanion, buildInstructions, buildReaderContext, chatTools, PROMPT_CACHE } from "./chat-prompt.js";
 import {
   handleStripeWebhook,
   createCheckoutSession,
@@ -316,7 +316,8 @@ async function handleChat(
   // Monthly limits: free readers' few messages, and a fair-use cap for paid readers.
   // A message is claimed before any work, so requests sent together can't pass the limit.
   const subscription = await getOrCreateSubscription(userId);
-  const paid = isPaidAndActive(subscription);
+  // Companion (a paying subscriber, or anyone during the free period) gets the larger cap
+  const paid = hasCompanion(subscription);
   const claimsMessage = !isOnboarding;
   if (claimsMessage) {
     const limit = paid ? PAID_MONTHLY_REPLY_CAP : FREE_MESSAGE_LIMIT;
@@ -393,7 +394,7 @@ async function handleChat(
     // start and the messages since (see conversation-history.ts)
     const history = await loadHistory(supabase, conversationId);
 
-    const isPaid = isPaidAndActive(subscription);
+    const isPaid = hasCompanion(subscription);
 
     // The reader's memory, loaded while the prompt is built
     const coreMemoryPromise = loadCoreMemory(supabase);
@@ -517,7 +518,10 @@ async function handleChat(
         let result: string;
         let isError = false;
         try {
-          if (block.name === "manage_syllabi") {
+          if (!isPaid && !allowedWithoutCompanion(block.name, block.input)) {
+            // The tools offered without Companion only look; this holds even if asked otherwise
+            throw new Error("That needs the Companion plan. Existing syllabi and reading paths can be viewed but not changed.");
+          } else if (block.name === "manage_syllabi") {
             invalidateSyllabusIndex(userId);
             result = await executeSyllabusCommand(
               supabase,
@@ -1152,14 +1156,18 @@ const server = http.createServer((req, res) => {
 
         try {
           const sub = await getOrCreateSubscription(userId);
-          const isPaid = isPaidAndActive(sub);
+          const companion = hasCompanion(sub);
 
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
             plan: sub.plan,
             status: sub.status,
+            // Whether they get Companion features, and, when that's only from the free
+            // period, when it ends
+            companion,
+            free_period_ends: !isPaidAndActive(sub) && inFreePeriod() ? FREE_PERIOD_ENDS.toISOString() : null,
             chat_messages_used: sub.chat_messages_used,
-            chat_messages_limit: isPaid ? null : FREE_MESSAGE_LIMIT,
+            chat_messages_limit: companion ? null : FREE_MESSAGE_LIMIT,
             current_period_end: sub.current_period_end,
             cancel_at_period_end: sub.cancel_at_period_end,
           }));

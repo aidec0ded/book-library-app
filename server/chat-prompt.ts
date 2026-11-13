@@ -53,11 +53,14 @@ fetch full content when discussing specific books in a path.
 
 const FREE_PLAN_LISTS = `Syllabi and reading paths (themed reading lists and structured journeys
 through books, with focus questions) are part of the Companion plan, which this
-reader isn't on, so you have no tools for them. If the reader asks for one, say
-in a sentence that it comes with the Companion plan, which they can see on the
-Pricing page, then help in the conversation itself: suggest books in an order
-with a line on why each belongs, and offer to add any they don't own to their
-wishlist. Don't bring the plan up otherwise.
+reader isn't on. Any they made while they had it are still theirs: they're listed
+in your instructions, and you can look at them with manage_syllabi and
+manage_reading_paths and talk about them, but you can't create new ones or change
+them. If the reader asks for a new one or a change, say in a sentence that it comes
+with the Companion plan, which they can see on the Pricing page, then help in the
+conversation itself: suggest books in an order with a line on why each belongs,
+and offer to add any they don't own to their wishlist. Don't bring the plan up
+otherwise.
 
 `;
 
@@ -167,12 +170,61 @@ export function buildReaderContext(libraryIndex: string, readerProfile: string |
   return sections.join("\n\n");
 }
 
-/** Paid-only tools: syllabi, reading paths, excerpts */
-const PAID_TOOL_NAMES = new Set(["manage_syllabi", "manage_reading_paths", "save_excerpt"]);
+/**
+ * Without Companion, a reader keeps the syllabi and reading paths they made while they
+ * had it, so the companion can still look at them, but can't create or change them.
+ * Saving excerpts from chat is Companion only.
+ */
+export const READ_ONLY_LIST_ACTIONS: Record<string, string[]> = {
+  manage_syllabi: ["view"],
+  manage_reading_paths: ["view_path", "get_seminar_content"],
+};
 
-/** The chat tools; free readers get a subset. */
+const FREE_LIST_TOOLS: Anthropic.Beta.Messages.BetaToolUnion[] = [
+  {
+    name: "manage_syllabi",
+    description:
+      "Look at the reader's existing syllabi, made while they had the Companion plan: all of them, or one by name with its books and rationales. You can't create or change syllabi.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["view"] },
+        list_name: { type: "string", description: "A syllabus to show in full. Leave out to list them all." },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "manage_reading_paths",
+    description:
+      "Look at the reader's existing reading paths, made while they had the Companion plan: view_path lists them all, or one by name with its books and progress; get_seminar_content gives a book's pre-reading context, focus questions, and post-reading prompts. You can't create or change paths.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["view_path", "get_seminar_content"] },
+        path_name: { type: "string", description: "A reading path. Leave out with view_path to list them all." },
+        book_title: { type: "string", description: "The book, with get_seminar_content" },
+      },
+      required: ["action"],
+    },
+  },
+];
+
+const COMPANION_ONLY_TOOLS = new Set(["manage_syllabi", "manage_reading_paths", "save_excerpt"]);
+
+/** The chat tools: everything with Companion, otherwise the rest plus read-only lists. */
 export function chatTools(isPaid: boolean): Anthropic.Beta.Messages.BetaToolUnion[] {
-  return isPaid ? ALL_TOOLS : ALL_TOOLS.filter((t) => !("name" in t && PAID_TOOL_NAMES.has(t.name)));
+  if (isPaid) return ALL_TOOLS;
+  return [...ALL_TOOLS.filter((t) => !("name" in t && COMPANION_ONLY_TOOLS.has(t.name))), ...FREE_LIST_TOOLS];
+}
+
+/** Whether a tool call is allowed without Companion. */
+export function allowedWithoutCompanion(tool: string, input: unknown): boolean {
+  if (tool === "save_excerpt") return false;
+  const readOnly = READ_ONLY_LIST_ACTIONS[tool];
+  if (!readOnly) return true;
+  const action = (input as { action?: unknown } | null)?.action;
+  return typeof action === "string" && readOnly.includes(action);
 }
 
 const ALL_TOOLS: Anthropic.Beta.Messages.BetaToolUnion[] = [

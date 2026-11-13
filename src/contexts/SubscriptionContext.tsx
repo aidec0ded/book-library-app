@@ -10,7 +10,14 @@ interface SubscriptionState {
   chatMessagesRemaining: number | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  /** Whether the reader gets Companion features: a subscription, or the free period */
   isPaid: boolean;
+  /** Whether the reader has a paid subscription (billing, not features) */
+  isSubscribed: boolean;
+  /** When Companion ends for a reader who only has it from the free period */
+  freePeriodEnds: string | null;
+  /** A renewal failed and Stripe is retrying; the reader keeps Companion meanwhile */
+  paymentPastDue: boolean;
   isLoading: boolean;
   refreshSubscription: () => Promise<void>;
 }
@@ -24,6 +31,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [chatMessagesLimit, setChatMessagesLimit] = useState<number | null>(5);
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
+  const [companion, setCompanion] = useState<boolean | null>(null);
+  const [freePeriodEnds, setFreePeriodEnds] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchSubscription = useCallback(async () => {
@@ -44,6 +53,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setChatMessagesLimit(data.chat_messages_limit);
       setCurrentPeriodEnd(data.current_period_end);
       setCancelAtPeriodEnd(data.cancel_at_period_end);
+      setCompanion(typeof data.companion === "boolean" ? data.companion : null);
+      setFreePeriodEnds(data.free_period_ends ?? null);
 
       if (session.user?.id) {
         identifyUser(session.user.id, { plan: data.plan });
@@ -69,7 +80,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }
   }, [fetchSubscription]);
 
-  const isPaid = plan !== "free" && (status === "active" || status === "trialing");
+  const isSubscribed = plan !== "free" && (status === "active" || status === "trialing" || status === "past_due");
+  const isPaid = companion ?? isSubscribed;
+  const paymentPastDue = plan !== "free" && status === "past_due";
   const chatMessagesRemaining =
     chatMessagesLimit !== null ? Math.max(0, chatMessagesLimit - chatMessagesUsed) : null;
 
@@ -84,6 +97,9 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         currentPeriodEnd,
         cancelAtPeriodEnd,
         isPaid,
+        isSubscribed,
+        freePeriodEnds,
+        paymentPastDue,
         isLoading,
         refreshSubscription: fetchSubscription,
       }}
