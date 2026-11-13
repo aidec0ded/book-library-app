@@ -27,6 +27,7 @@ const ContactPage = lazy(() => import("@/pages/ContactPage").then((m) => ({ defa
 const PricingPage = lazy(() => import("@/pages/PricingPage").then((m) => ({ default: m.PricingPage })));
 const FAQPage = lazy(() => import("@/pages/FAQPage").then((m) => ({ default: m.FAQPage })));
 const OnboardingPage = lazy(() => import("@/pages/OnboardingPage").then((m) => ({ default: m.OnboardingPage })));
+const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })));
 const GuidePage = lazy(() => import("@/pages/GuidePage").then((m) => ({ default: m.GuidePage })));
 
 function Spinner() {
@@ -101,6 +102,7 @@ export function App() {
         <Route path="pricing" element={<PricingPage />} />
         <Route path="faq" element={<FAQPage />} />
         <Route path="login" element={<LoginPage />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route
           path="onboarding"
           element={

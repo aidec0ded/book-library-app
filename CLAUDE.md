@@ -117,9 +117,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Frontend structure:**
 - `src/main.tsx` — React entry point
-- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/onboarding` (OnboardingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/import` (ImportBooks), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/settings` (Settings), `/guide` (GuidePage), `/chat` and `/chat/:id` (Chat), `/admin` (AdminPage, owner only), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth via OnboardingGate; public pages standalone.
+- `src/App.tsx` — React Router: `/` (LandingPage), `/login` (LoginPage), `/reset-password` (ResetPasswordPage), `/onboarding` (OnboardingPage), `/home` (Home), `/library` (BookList), `/add` (AddBook), `/import` (ImportBooks), `/books/:id` (BookDetail), `/syllabi` (SyllabiPage), `/syllabi/:id` (SyllabusDetail), `/releases` (ReleasesPage), `/profile` (Profile), `/settings` (Settings), `/guide` (GuidePage), `/chat` and `/chat/:id` (Chat), `/admin` (AdminPage, owner only), `/philosophy` (PhilosophyPage), `/features` (FeaturesPage), `/pricing` (PricingPage), `/faq` (FAQPage), `/contact` (ContactPage). Protected routes require auth via OnboardingGate; public pages standalone.
 - `src/pages/LandingPage.tsx` — Public landing page (standalone, no sidebar/Layout wrapper)
-- `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth, with the Turnstile check on email sign-up and sign-in
+- `src/pages/LoginPage.tsx` — Login/signup page with email+password and Google OAuth, with the Turnstile check on email sign-up, sign-in, and "Forgot password?" (sends the reset email; `/login?forgot=1` opens it)
+- `src/pages/ResetPasswordPage.tsx` — Where the reset email lands: signs the reader in from the link, then sets a new password. Takes the `?token_hash=…&type=recovery` link from Supabase's Reset password email template (works on any device) or Supabase's default `?code=` link (only in the browser that asked, because of PKCE)
 - `src/components/Turnstile.tsx` — Cloudflare Turnstile widget for Supabase Auth's captcha protection. Shows nothing until `VITE_TURNSTILE_SITE_KEY` is set
 - `src/pages/PhilosophyPage.tsx` — Public editorial essay on Rekollekt's reading philosophy
 - `src/pages/FeaturesPage.tsx` — Public features page with sticky-scroll layout

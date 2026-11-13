@@ -6,10 +6,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { capture } from "@/lib/posthog";
 import { Turnstile, captchaEnabled } from "@/components/Turnstile";
 
-type Mode = "sign-in" | "sign-up";
+type Mode = "sign-in" | "sign-up" | "forgot";
 
 export function LoginPage() {
-  const [mode, setMode] = useState<Mode>("sign-in");
+  // /login?forgot=1 opens the reset form, e.g. from an expired reset link
+  const [mode, setMode] = useState<Mode>(() =>
+    new URLSearchParams(window.location.search).get("forgot") ? "forgot" : "sign-in",
+  );
+  const [resetSent, setResetSent] = useState(false);
+  const [signInFailed, setSignInFailed] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,13 +37,29 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      if (mode === "sign-in") {
+      if (mode === "forgot") {
+        // Supabase sends nothing, and says nothing, for an address with no account, so
+        // the reply is the same either way
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+          captchaToken: captchaToken ?? undefined,
+        });
+        if (resetError) throw resetError;
+        capture("password_reset_requested");
+        setResetSent(true);
+      } else if (mode === "sign-in") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
           options: { captchaToken: captchaToken ?? undefined },
         });
-        if (signInError) throw signInError;
+        if (signInError) {
+          if (signInError.message.toLowerCase().includes("invalid login credentials")) {
+            setSignInFailed(true);
+            throw new Error("That email and password don't match.");
+          }
+          throw signInError;
+        }
         capture("user_logged_in", { method: "email" });
         navigate("/home");
       } else {
@@ -77,6 +98,32 @@ export function LoginPage() {
     }
   };
 
+  if (resetSent) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="w-full max-w-sm text-center">
+          <h1 className="font-serif text-3xl font-bold tracking-tight">
+            Check your email
+          </h1>
+          <p className="mt-4 text-sm text-muted-foreground">
+            If there's an account for{" "}
+            <span className="font-medium text-foreground">{email}</span>, a link
+            to choose a new password is on its way. It works once, for an hour.
+          </p>
+          <button
+            onClick={() => {
+              setResetSent(false);
+              setMode("sign-in");
+            }}
+            className="mt-6 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (confirmationSent) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -114,10 +161,13 @@ export function LoginPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             {mode === "sign-in"
               ? "Welcome back to your library."
-              : "Start your reading life."}
+              : mode === "forgot"
+                ? "Enter your email and we'll send a link to choose a new password."
+                : "Start your reading life."}
           </p>
         </div>
 
+        {mode !== "forgot" && (<>
         {/* OAuth buttons */}
         <div className="space-y-2">
           <button
@@ -152,6 +202,7 @@ export function LoginPage() {
           <span className="text-xs text-muted-foreground">or</span>
           <hr className="flex-1 border-border" />
         </div>
+        </>)}
 
         {/* Email form */}
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -163,15 +214,32 @@ export function LoginPage() {
             required
             className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground/30 focus:ring-1 focus:ring-foreground/10"
           />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground/30 focus:ring-1 focus:ring-foreground/10"
-          />
+          {mode !== "forgot" && (
+            <input
+              type="password"
+              placeholder="Password"
+              autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-foreground/30 focus:ring-1 focus:ring-foreground/10"
+            />
+          )}
+          {mode === "sign-in" && (
+            <div className="text-right">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("forgot");
+                  setError(null);
+                }}
+                className={`text-xs hover:underline ${signInFailed ? "font-medium text-foreground" : "text-muted-foreground"}`}
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
 
           <Turnstile onToken={setCaptchaToken} resetKey={captchaKey} />
 
@@ -188,14 +256,26 @@ export function LoginPage() {
               ? "..."
               : mode === "sign-in"
                 ? "Sign In"
-                : "Create Account"}
+                : mode === "forgot"
+                  ? "Send reset link"
+                  : "Create Account"}
             <ArrowRight className="h-4 w-4" />
           </button>
         </form>
 
         {/* Toggle mode */}
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          {mode === "sign-in" ? (
+          {mode === "forgot" ? (
+            <button
+              onClick={() => {
+                setMode("sign-in");
+                setError(null);
+              }}
+              className="font-medium text-foreground hover:underline"
+            >
+              Back to sign in
+            </button>
+          ) : mode === "sign-in" ? (
             <>
               No account?{" "}
               <button
