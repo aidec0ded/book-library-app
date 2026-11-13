@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage } from "../server/usage.js";
+import { runMessageBatch, type BatchRequest } from "./claude-batch.js";
 import { config } from "dotenv";
 import { fetchAllRows } from "./fetch-all.js";
 
@@ -59,8 +60,16 @@ interface PoetryResult {
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
+// One Message Batches request per book type, at half price (the background job uses this)
+const batchMode = args.includes("--batch");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
+const modelIdx = args.indexOf("--model");
+// --compare <file>: write each book's new tags beside its existing ones to a JSON file
+// instead of saving them, for trying another model (use with --force and --limit).
+// With both types, the file name gets the type: my.json → my-nonfiction.json
+const compareIdx = args.indexOf("--compare");
+const compareFile = compareIdx !== -1 ? args[compareIdx + 1] : null;
 const typeFilter = args.includes("--nonfiction")
   ? "nonfiction"
   : args.includes("--poetry")
@@ -69,6 +78,7 @@ const typeFilter = args.includes("--nonfiction")
 
 // --- Constants ---
 
+const MODEL = modelIdx !== -1 ? args[modelIdx + 1] : "claude-sonnet-5-5";
 const BATCH_SIZE = 5;
 const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
@@ -370,6 +380,51 @@ function poetryResultToRows(result: PoetryResult, userId: string): TagRow[] {
 
 // --- Main ---
 
+/** The --compare file: each book's existing AI tags and the new ones, by category. */
+async function writeComparison(
+  bookType: string,
+  books: BookForTagging[],
+  rows: TagRow[],
+  categories: string[],
+  file: string,
+): Promise<void> {
+  const { writeFileSync } = await import("node:fs");
+  const ids = [...new Set(rows.map((r) => r.book_id))];
+  const group = (list: { book_id: string; vibe: string; tag_category: string }[]) => {
+    const out = new Map<string, Record<string, string[]>>();
+    for (const r of list) {
+      const book = out.get(r.book_id) ?? {};
+      (book[r.tag_category] ??= []).push(r.vibe);
+      out.set(r.book_id, book);
+    }
+    for (const book of out.values()) for (const k of Object.keys(book)) book[k].sort();
+    return out;
+  };
+  const existingRows: { book_id: string; vibe: string; tag_category: string }[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await supabase
+      .from("book_vibes")
+      .select("book_id, vibe, tag_category")
+      .in("book_id", ids.slice(i, i + 100))
+      .in("tag_category", categories)
+      .eq("ai_assigned", true)
+      .eq("is_canonical", true);
+    existingRows.push(...(data ?? []));
+  }
+  const existing = group(existingRows);
+  const fresh = group(rows);
+  const byId = new Map(books.map((b) => [b.id, b]));
+  const out = ids.map((id) => ({
+    id,
+    title: byId.get(id)?.title,
+    author: byId.get(id)?.author,
+    existing: existing.get(id) ?? {},
+    new: fresh.get(id) ?? {},
+  }));
+  writeFileSync(file, JSON.stringify({ model: MODEL, category: bookType, books: out }, null, 2));
+  console.log(`Wrote ${out.length} comparisons to ${file}`);
+}
+
 async function processType(
   bookType: "nonfiction" | "poetry",
   canonicalTags: CanonicalTag[],
@@ -462,14 +517,76 @@ async function processType(
   let totalTags = 0;
   let totalErrors = 0;
 
-  for (let i = 0; i < booksToTag.length; i += BATCH_SIZE) {
+  const params = (userPrompt: string): Anthropic.MessageCreateParamsNonStreaming => ({
+    model: MODEL,
+    max_tokens: 16000,
+    output_config: { effort: "low" },
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+  const userPromptFor = (batch: BookForTagging[]) =>
+    bookType === "nonfiction" ? buildNonfictionUserPrompt(batch) : buildPoetryUserPrompt(batch);
+  const rowsFrom = (text: string, batchIds: Set<string>): TagRow[] =>
+    bookType === "nonfiction"
+      ? parseNonfictionResponse(text, batchIds, validTags).flatMap((r) => nonfictionResultToRows(r, userIdMap.get(r.id)!))
+      : parsePoetryResponse(text, batchIds, validTags).flatMap((r) => poetryResultToRows(r, userIdMap.get(r.id)!));
+
+  /** Write one request's tags to book_vibes. */
+  const compared: TagRow[] = [];
+  const saveRows = async (rows: TagRow[], label: string) => {
+    if (compareFile) {
+      compared.push(...rows);
+      console.log(`  ${label} ✓ ${rows.length} tags compared`);
+      totalTags += rows.length;
+      return;
+    }
+    // If --force, delete existing AI tags for these books in relevant categories
+    if (force) {
+      await supabase
+        .from("book_vibes")
+        .delete()
+        .in("book_id", [...new Set(rows.map((r) => r.book_id))])
+        .eq("ai_assigned", true)
+        .eq("is_canonical", true)
+        .in("tag_category", categories);
+    }
+    const { error } = await supabase.from("book_vibes").upsert(rows, { onConflict: "book_id,vibe,tag_category" });
+    if (error && error.code !== "23505") {
+      console.log(`  ${label} ✗ DB error: ${error.message}`);
+      totalErrors++;
+    } else {
+      // A unique constraint violation means some were already there
+      console.log(`  ${label} ✓ ${rows.length} tags${error ? " (some duplicates skipped)" : ""}`);
+    }
+    totalTags += rows.length;
+  };
+
+  if (batchMode && !dryRun) {
+    const requests: BatchRequest[] = [];
+    const idsByRequest = new Map<string, Set<string>>();
+    for (let i = 0; i < booksToTag.length; i += BATCH_SIZE) {
+      const batch = booksToTag.slice(i, i + BATCH_SIZE);
+      const customId = `${bookType}-${Math.floor(i / BATCH_SIZE) + 1}`;
+      idsByRequest.set(customId, new Set(batch.map((b) => b.id)));
+      requests.push({ customId, params: params(userPromptFor(batch)) });
+    }
+    const outcome = await runMessageBatch(
+      anthropic,
+      requests,
+      async (customId, text) => {
+        const rows = rowsFrom(text, idsByRequest.get(customId)!);
+        if (rows.length === 0) throw new Error("no valid tags in the response");
+        await saveRows(rows, `[${customId}]`);
+      },
+      { feature: "classification_tagging" },
+    );
+    totalErrors += outcome.failed;
+  } else for (let i = 0; i < booksToTag.length; i += BATCH_SIZE) {
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const batch = booksToTag.slice(i, i + BATCH_SIZE);
     const batchIds = new Set(batch.map((b) => b.id));
-    const userPrompt =
-      bookType === "nonfiction"
-        ? buildNonfictionUserPrompt(batch)
-        : buildPoetryUserPrompt(batch);
+    const userPrompt = userPromptFor(batch);
+    const label = `[${String(batchNum).padStart(3)}/${totalBatches}]`;
 
     if (dryRun) {
       console.log(`--- Batch ${batchNum}/${totalBatches} ---`);
@@ -483,34 +600,14 @@ async function processType(
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await anthropic.messages.create({
-          model: "claude-sonnet-5-5",
-          max_tokens: 16000,
-          output_config: { effort: "low" },
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
-        });
+        const response = await anthropic.messages.create(params(userPrompt));
 
         const textBlock = response.content.find((b) => b.type === "text");
         if (!textBlock || textBlock.type !== "text") {
           throw new Error("No text block in response");
         }
 
-        if (bookType === "nonfiction") {
-          const results = parseNonfictionResponse(
-            textBlock.text,
-            batchIds,
-            validTags,
-          );
-          rows = results.flatMap((r) => nonfictionResultToRows(r, userIdMap.get(r.id)!));
-        } else {
-          const results = parsePoetryResponse(
-            textBlock.text,
-            batchIds,
-            validTags,
-          );
-          rows = results.flatMap((r) => poetryResultToRows(r, userIdMap.get(r.id)!));
-        }
+        rows = rowsFrom(textBlock.text, batchIds);
         break;
       } catch (err) {
         const isRetryable =
@@ -519,63 +616,29 @@ async function processType(
 
         if (isRetryable && attempt < MAX_RETRIES) {
           const backoff = 1000 * Math.pow(2, attempt - 1);
-          console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`,
-          );
+          console.log(`  ${label} Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`);
           await sleep(backoff);
           continue;
         }
 
         const errMsg = err instanceof Error ? err.message : String(err);
-        console.log(
-          `  [${String(batchNum).padStart(3)}/${totalBatches}] ✗ ${errMsg}`,
-        );
+        console.log(`  ${label} ✗ ${errMsg}`);
         totalErrors++;
         break;
       }
     }
 
-    if (rows.length > 0) {
-      // If --force, delete existing AI tags for these books in relevant categories
-      if (force) {
-        const ids = [...new Set(rows.map((r) => r.book_id))];
-        await supabase
-          .from("book_vibes")
-          .delete()
-          .in("book_id", ids)
-          .eq("ai_assigned", true)
-          .eq("is_canonical", true)
-          .in("tag_category", categories);
-      }
-
-      const { error: insertError } = await supabase
-        .from("book_vibes")
-        .upsert(rows, { onConflict: "book_id,vibe,tag_category" });
-
-      if (insertError) {
-        if (insertError.code === "23505") {
-          console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${rows.length} tags (some duplicates skipped)`,
-          );
-        } else {
-          console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] ✗ DB error: ${insertError.message}`,
-          );
-          totalErrors++;
-        }
-      } else {
-        console.log(
-          `  [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${rows.length} tags`,
-        );
-      }
-
-      totalTags += rows.length;
-    }
+    if (rows.length > 0) await saveRows(rows, label);
 
     // Rate limiting between batches
     if (i + BATCH_SIZE < booksToTag.length) {
       await sleep(RATE_LIMIT_MS);
     }
+  }
+
+  if (compareFile && !dryRun) {
+    const file = typeFilter ? compareFile : compareFile.replace(/(\.json)?$/, `-${bookType}.json`);
+    await writeComparison(bookType, booksToTag, compared, categories, file);
   }
 
   if (!dryRun) {

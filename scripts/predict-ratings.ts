@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage } from "../server/usage.js";
+import { runMessageBatch, type BatchRequest } from "./claude-batch.js";
 import { config } from "dotenv";
 import type {
   ReaderProfileData,
@@ -33,6 +34,8 @@ const usageTracking = trackClaudeUsage(anthropic, "predicted_ratings");
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
+// One Message Batches request per reader, at half price (the background job uses this)
+const batchMode = args.includes("--batch");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
 const userIdIdx = args.indexOf("--user-id");
@@ -638,26 +641,73 @@ async function processUser(userId: string): Promise<UserResult> {
   let totalPredictions = 0;
   let totalErrors = 0;
 
-  for (let i = 0; i < booksToPredict.length; i += BATCH_SIZE) {
+  // The system prompt (profile, canon, calibration) is the same for every request in
+  // a run, so with more than one request it's cached and read at a tenth of the price
+  const system: Anthropic.TextBlockParam[] = [
+    { type: "text", text: systemPrompt, ...(totalBatches > 1 ? { cache_control: { type: "ephemeral" as const } } : {}) },
+  ];
+  const params = (userPrompt: string): Anthropic.MessageCreateParamsNonStreaming => ({
+    model: MODEL,
+    // A batch of 20 predictions each carry a 1-2 sentence rationale, which
+    // overruns a 2048-token cap and truncates the JSON mid-string. Higher
+    // caps are free (billed on tokens generated, not the cap).
+    max_tokens: 16000,
+    output_config: { effort: "low" },
+    system,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  /** Write one request's predictions; each book gets its own update. */
+  const savePredictions = async (results: PredictionResult[], label: string) => {
+    let saved = 0;
+    let sum = 0;
+    for (const result of results) {
+      const updateError = await writePrediction(userId, result);
+      if (updateError) {
+        console.log(`${tag} ${label} ✗ DB error for ${result.id}: ${updateError}`);
+        totalErrors++;
+      } else {
+        saved++;
+        sum += result.predicted_rating;
+      }
+    }
+    const avg = saved > 0 ? (sum / saved).toFixed(1) : "0";
+    console.log(`${tag} ${label} ✓ ${saved} predictions (avg ${avg})`);
+    totalPredictions += saved;
+  };
+
+  if (batchMode) {
+    const requests: BatchRequest[] = [];
+    const idsByRequest = new Map<string, Set<string>>();
+    for (let i = 0; i < booksToPredict.length; i += BATCH_SIZE) {
+      const batch = booksToPredict.slice(i, i + BATCH_SIZE);
+      const customId = `predict-${Math.floor(i / BATCH_SIZE) + 1}`;
+      idsByRequest.set(customId, new Set(batch.map((b) => b.id)));
+      requests.push({ customId, params: params(buildUserPrompt(batch, tagMap)) });
+    }
+    const outcome = await runMessageBatch(
+      anthropic,
+      requests,
+      async (customId, text) => {
+        const results = parseResponse(text, idsByRequest.get(customId)!);
+        if (results.length === 0) throw new Error("no valid predictions in the response");
+        await savePredictions(results, `[${customId}]`);
+      },
+      { feature: "predicted_ratings", userId, log: (line) => console.log(`${tag} ${line}`) },
+    );
+    totalErrors += outcome.failed;
+  } else for (let i = 0; i < booksToPredict.length; i += BATCH_SIZE) {
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const batch = booksToPredict.slice(i, i + BATCH_SIZE);
     const batchIds = new Set(batch.map((b) => b.id));
     const userPrompt = buildUserPrompt(batch, tagMap);
+    const label = `[${String(batchNum).padStart(3)}/${totalBatches}]`;
 
     let results: PredictionResult[] | null = null;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await anthropic.messages.create({
-          model: MODEL,
-          // A batch of 20 predictions each carry a 1-2 sentence rationale, which
-          // overruns a 2048-token cap and truncates the JSON mid-string. Higher
-          // caps are free (billed on tokens generated, not the cap).
-          max_tokens: 16000,
-          output_config: { effort: "low" },
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
-        });
+        const response = await anthropic.messages.create(params(userPrompt));
 
         const textBlock = response.content.find((b) => b.type === "text");
         if (!textBlock || textBlock.type !== "text") {
@@ -676,48 +726,19 @@ async function processUser(userId: string): Promise<UserResult> {
 
         if (isRetryable && attempt < MAX_RETRIES) {
           const backoff = 1000 * Math.pow(2, attempt - 1);
-          console.log(
-            `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`,
-          );
+          console.log(`${tag} ${label} Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`);
           await sleep(backoff);
           continue;
         }
 
         const errMsg = err instanceof Error ? err.message : String(err);
-        console.log(
-          `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✗ ${errMsg}`,
-        );
+        console.log(`${tag} ${label} ✗ ${errMsg}`);
         totalErrors++;
         break;
       }
     }
 
-    if (results && results.length > 0) {
-      // Update each book individually (each gets a different predicted_rating).
-      // Scope by user_id as a safety belt against any cross-user id collision.
-      let batchPredictions = 0;
-      let batchSum = 0;
-
-      for (const result of results) {
-        const updateError = await writePrediction(userId, result);
-
-        if (updateError) {
-          console.log(
-            `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✗ DB error for ${result.id}: ${updateError}`,
-          );
-          totalErrors++;
-        } else {
-          batchPredictions++;
-          batchSum += result.predicted_rating;
-        }
-      }
-
-      const avg = batchPredictions > 0 ? (batchSum / batchPredictions).toFixed(1) : "0";
-      console.log(
-        `${tag} [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${batchPredictions} predictions (avg ${avg})`,
-      );
-      totalPredictions += batchPredictions;
-    }
+    if (results && results.length > 0) await savePredictions(results, label);
 
     // Rate limiting between batches
     if (i + BATCH_SIZE < booksToPredict.length) {

@@ -24,6 +24,8 @@ npx tsx scripts/tag-vibes.ts         # AI canonical vibe tagging (17 tags only)
 npx tsx scripts/tag-vibes.ts --dry-run          # preview prompts, no DB writes
 npx tsx scripts/tag-vibes.ts --limit 10         # process only first 10 books
 npx tsx scripts/tag-vibes.ts --force            # re-tag books that already have AI vibes
+npx tsx scripts/tag-vibes.ts --batch            # one Message Batches request at half price (the background job uses this)
+npx tsx scripts/tag-vibes.ts --force --limit 100 --model claude-haiku-5-5 --compare out.json  # try another model: new vibes beside the existing ones, nothing saved
 npx tsx scripts/enrich-isbndb.ts               # enrich books via ISBNdb (cover images, metadata)
 npx tsx scripts/enrich-isbndb.ts --dry-run     # list books that would be enriched, no API calls
 npx tsx scripts/enrich-isbndb.ts --limit 10    # process only first 10 books
@@ -38,6 +40,7 @@ npx tsx scripts/predict-ratings.ts             # generate AI predicted ratings f
 npx tsx scripts/predict-ratings.ts --dry-run   # preview prompt, no API calls or DB writes
 npx tsx scripts/predict-ratings.ts --limit 20  # process only first 20 books
 npx tsx scripts/predict-ratings.ts --force     # re-predict books that already have predictions
+npx tsx scripts/predict-ratings.ts --user-id <uuid> --batch  # one reader, through the Batch API at half price (the background job uses this)
 npx tsx scripts/ingest-releases.ts             # ingest new releases from ISBNdb (3-month window)
 npx tsx scripts/ingest-releases.ts --dry-run   # preview API calls and counts, no DB writes
 npx tsx scripts/ingest-releases.ts --limit 50  # cap total releases upserted
@@ -57,6 +60,7 @@ npx tsx scripts/score-releases.ts --limit 10   # process only first 10 releases
 npx tsx scripts/score-releases.ts --month 2026-02  # score a specific month
 npx tsx scripts/score-releases.ts --force      # re-score already-scored releases
 npx tsx scripts/score-releases.ts --month 2026-11 --user-id <uuid>  # personal scores for one reader, on notable releases (general 6+) only
+npx tsx scripts/score-releases.ts --month 2026-11 --batch --force --limit 150 --batch-size 10 --compare out.json  # check a change: new scores beside the saved ones, nothing saved
 npx tsx scripts/reclassify-genres.ts              # generate genre-review.json via Claude API
 npx tsx scripts/reclassify-genres.ts --dry-run    # list books to process, no API calls
 npx tsx scripts/reclassify-genres.ts --limit 20   # process first 20 books only
@@ -69,6 +73,7 @@ npx tsx scripts/tag-classifications.ts --limit 10 # process only first 10 books 
 npx tsx scripts/tag-classifications.ts --force    # re-tag books that already have AI classifications
 npx tsx scripts/tag-classifications.ts --nonfiction  # nonfiction only (topics/form/depth)
 npx tsx scripts/tag-classifications.ts --poetry      # poetry only (movement/formal_feel/accessibility)
+npx tsx scripts/tag-classifications.ts --batch       # through the Batch API at half price (the background job uses this); --model and --compare as for tag-vibes
 npx tsx scripts/ingest-awards.ts               # ingest literary awards from Wikidata + match to library
 npx tsx scripts/ingest-awards.ts --dry-run     # preview queries and counts, no DB writes
 npx tsx scripts/ingest-awards.ts --match-only  # skip Wikidata, only re-run library matching
@@ -160,7 +165,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ConversationItems.tsx` — Conversation rows with switch, rename, and delete, used by the full page and the floating panel
 - `src/components/ChatEmptyState.tsx` — New conversation screen, with openers based on the book's status and its focus questions
 - `src/components/SaveToBook.tsx` — "Save to book" under a chat message, for keeping all or a selected part on a book's page by hand
-- `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001). The chat prompt is sent as blocks cached separately, least often changed first: instructions (shared by every reader on a plan, with the tools ahead of them), then profile and library, then syllabi, memory, and the date, each with the 1-hour cache; then the book context, then the conversation, cached automatically with the 5-minute cache. Onboarding uses the 5-minute cache throughout. Don't put anything that changes per request ahead of a cached block
+- `server/index.ts` — Chat API server (Node.js HTTP, Claude streaming + memory/list tool loop, port 3001). The chat prompt is sent as blocks cached separately, least often changed first: instructions (shared by every reader on a plan, with the tools ahead of them), then profile and library, then syllabi, memory, and the date, each with the 1-hour cache; then the book context, then the conversation, cached automatically with the 5-minute cache. Onboarding uses the 5-minute cache throughout. Don't put anything that changes per request ahead of a cached block. The instructions and tools are in `server/chat-prompt.ts`
+- `server/chat-prompt.ts` — The chat instructions, the reader context block, and the tools (`chatTools`, a subset for free readers), apart from the request handling so a test can send exactly what the server sends
 - `server/library-index.ts` — Builds the library index for the chat system prompt (cached 10min): what the reader is reading, has read, rated, or marked a favorite, plus a summary of the unread books and wishlist, which the AI finds with `search_library`. Onboarding gets every book. Stable ordering keeps the prompt cache valid
 - `server/library-search.ts` — `search_library` tool executor: the reader's whole library by title/author words, status, tags, and type, sortable by predicted rating; or by meaning (`about`, a description, or `like_title`, books like one in the library) through the `match_books` database function. Results include page counts
 - `server/embeddings.ts` — Voyage AI embeddings (`voyage-4`, 1024 dimensions, through MongoDB Atlas): the client, the text a book is embedded from (title, author, type, genre, summary; nothing that differs between readers, so it's shared), and the job that embeds new and changed books every 10 minutes
@@ -199,8 +205,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/admin/RevenueSection.tsx` — Revenue and profit on the admin page: recurring revenue, profit this month with fixed costs, break-even, each paid reader's margin, recent billing, and the Stripe check
 - `scripts/grant-subscription.ts` — Admin script to grant/revoke complimentary paid subscriptions by email
 - `scripts/fetch-all.ts` — Reads every row of a query page by page (Supabase returns at most 1,000 per request, with no error)
-- `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 fiction vibes, batches of 5, retries, --dry-run/--limit/--force flags)
-- `scripts/tag-classifications.ts` — AI classification tagging for nonfiction (topics/form/depth) and poetry (movement/formal_feel/accessibility), same batch architecture
+- `scripts/claude-batch.ts` — `runMessageBatch`: sends a script's requests as one Message Batches request at half price, waits (canceling after an hour, so the next run picks up the rest), and records each result's cost
+- `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 fiction vibes, 5 books per request, Sonnet 5.5, --dry-run/--limit/--force/--batch flags, --model and --compare for trying another model). Haiku 5.5 was tested in November 2026 and kept Sonnet: see next_steps.md
+- `scripts/tag-classifications.ts` — AI classification tagging for nonfiction (topics/form/depth) and poetry (movement/formal_feel/accessibility), same architecture and flags
 - `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
 - `src/lib/profile.ts` — Profile CRUD + personal canon updates
 - `src/components/BookSearchModal.tsx` — Library search modal for canon editing
@@ -209,7 +216,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
 - `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
 - `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, Opus 5.5)
-- `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (batches of 20, Sonnet 5.5, --dry-run/--limit/--force flags)
+- `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (20 books per request, Sonnet 5.5, the reader's profile cached across requests, --dry-run/--limit/--force/--batch flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 - `src/pages/SyllabiPage.tsx` — Syllabi course catalog index with editorial card layout
 - `src/pages/SyllabusDetail.tsx` — Numbered editorial syllabus detail with inline rationale editing, external book support
@@ -226,7 +233,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `scripts/triage-releases.ts` — Triages a month of releases before scoring: free rules (non-book formats, academic publishers, children's/education subjects, activity books, special editions, very short books, other formats of the same book) then a Haiku 5.5 check on the listing (new / reprint / not for general readers). Sets `triaged_at` and `skip_reason`. Drops about 60% of a month
 - `src/lib/release-scoring.ts` — `scorableOnly` (which releases get general scores) and `personallyScorableOnly` (which get personal scores: general score of `NOTABLE_MIN_GENERAL`, 6, or more), shared by the scorer and the releases scheduler so they agree on what's left to do
 - `server/releases-scheduler.ts` — Every 4 hours: imports any target month with no releases (current month, plus next month from the 25th), then per month triages, gives general scores, and gives personal scores on notable releases to each reader who asked for curation and visited Releases in the last 60 days. Starts the next job as soon as one finishes, and right away when a reader asks (`POST /api/releases/curate`). `planReleasesJob` decides the next job and only reads
-- `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, batches of 10, Sonnet 5.5, --dry-run/--limit/--month/--force flags)
+- `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, 25 releases per request, Sonnet 5.5, the system prompt cached so a reader's profile is paid for once a run, --dry-run/--limit/--month/--force/--batch flags, --batch-size and --compare for checking a change)
 - `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 5.5, --dry-run/--limit/--force/--output/--apply flags)
 - `scripts/ingest-awards.ts` — Wikidata SPARQL ingestion of literary awards (17 awards, 4 query patterns) + library matching (--dry-run/--match-only/--force/--limit flags)
 - `src/lib/awards.ts` — Award queries for book detail (join award_entries + literary_awards)

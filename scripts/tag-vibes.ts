@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage } from "../server/usage.js";
+import { runMessageBatch, type BatchRequest } from "./claude-batch.js";
 import { config } from "dotenv";
 import { fetchAllRows } from "./fetch-all.js";
 import {
@@ -48,11 +49,19 @@ interface VibeResult {
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
+// One Message Batches request for all of them, at half price (the background job uses this)
+const batchMode = args.includes("--batch");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null;
+const modelIdx = args.indexOf("--model");
+// --compare <file>: write each book's new vibes beside its existing ones to a JSON file
+// instead of saving them, for trying another model (use with --force and --limit)
+const compareIdx = args.indexOf("--compare");
+const compareFile = compareIdx !== -1 ? args[compareIdx + 1] : null;
 
 // --- Constants ---
 
+const MODEL = modelIdx !== -1 ? args[modelIdx + 1] : "claude-sonnet-5-5";
 const BATCH_SIZE = 5;
 const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
@@ -94,6 +103,16 @@ function formatBookBlock(book: BookForTagging, index: number): string {
   if (book.notes) lines.push(`Notes: ${truncate(book.notes, 200)}`);
 
   return lines.join("\n");
+}
+
+function requestParams(userPrompt: string): Anthropic.MessageCreateParamsNonStreaming {
+  return {
+    model: MODEL,
+    max_tokens: 16000,
+    output_config: { effort: "low" },
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userPrompt }],
+  };
 }
 
 function buildUserPrompt(batch: BookForTagging[]): string {
@@ -145,6 +164,82 @@ function parseResponse(raw: string, batchIds: Set<string>): VibeResult[] {
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const compared: VibeResult[] = [];
+
+/** Write one request's vibes to book_vibes. */
+async function saveResults(
+  results: VibeResult[],
+  userIdMap: Map<string, string>,
+  label: string,
+): Promise<{ vibes: number; errors: number }> {
+  if (compareFile) {
+    for (const r of results) compared.push({ id: r.id, vibes: r.vibes });
+    console.log(`  ${label} ✓ ${results.length} books compared`);
+    return { vibes: results.reduce((n, r) => n + r.vibes.length, 0), errors: 0 };
+  }
+  // If --force, delete existing AI vibes for these books first
+  if (force) {
+    await supabase
+      .from("book_vibes")
+      .delete()
+      .in("book_id", results.map((r) => r.id))
+      .eq("ai_assigned", true)
+      .eq("is_canonical", true);
+  }
+
+  // Build rows to insert (user_id + tag_category required since migrations 020/021)
+  const rows = results.flatMap((r) =>
+    r.vibes.map((vibe) => ({
+      book_id: r.id,
+      user_id: userIdMap.get(r.id)!,
+      vibe,
+      tag_category: "vibe",
+      ai_assigned: true,
+      user_confirmed: false,
+      is_canonical: true,
+    }))
+  );
+
+  const { error } = await supabase
+    .from("book_vibes")
+    .upsert(rows, { onConflict: "book_id,vibe,tag_category" });
+
+  if (error && error.code !== "23505") {
+    console.log(`  ${label} ✗ DB error: ${error.message}`);
+    return { vibes: 0, errors: 1 };
+  }
+  // A unique constraint violation means some were already there
+  console.log(`  ${label} ✓ ${rows.length} vibes${error ? " (some duplicates skipped)" : ""}`);
+  return { vibes: rows.length, errors: 0 };
+}
+
+/** The --compare file: each book's existing AI vibes and the new ones. */
+async function writeComparison(books: BookForTagging[], file: string): Promise<void> {
+  const { writeFileSync } = await import("node:fs");
+  const ids = compared.map((c) => c.id);
+  const existing = new Map<string, string[]>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await supabase
+      .from("book_vibes")
+      .select("book_id, vibe")
+      .in("book_id", ids.slice(i, i + 100))
+      .eq("tag_category", "vibe")
+      .eq("ai_assigned", true)
+      .eq("is_canonical", true);
+    for (const row of data ?? []) existing.set(row.book_id, [...(existing.get(row.book_id) ?? []), row.vibe]);
+  }
+  const byId = new Map(books.map((b) => [b.id, b]));
+  const rows = compared.map((c) => ({
+    id: c.id,
+    title: byId.get(c.id)?.title,
+    author: byId.get(c.id)?.author,
+    existing: (existing.get(c.id) ?? []).sort(),
+    new: [...c.vibes].sort(),
+  }));
+  writeFileSync(file, JSON.stringify({ model: MODEL, category: "vibe", books: rows }, null, 2));
+  console.log(`Wrote ${rows.length} comparisons to ${file}`);
 }
 
 // --- Main ---
@@ -220,11 +315,34 @@ async function main() {
   let totalVibes = 0;
   let totalErrors = 0;
 
-  for (let i = 0; i < booksToTag.length; i += BATCH_SIZE) {
+  if (batchMode && !dryRun) {
+    const requests: BatchRequest[] = [];
+    const idsByRequest = new Map<string, Set<string>>();
+    for (let i = 0; i < booksToTag.length; i += BATCH_SIZE) {
+      const batch = booksToTag.slice(i, i + BATCH_SIZE);
+      const customId = `vibes-${Math.floor(i / BATCH_SIZE) + 1}`;
+      idsByRequest.set(customId, new Set(batch.map((b) => b.id)));
+      requests.push({ customId, params: requestParams(buildUserPrompt(batch)) });
+    }
+    const outcome = await runMessageBatch(
+      anthropic,
+      requests,
+      async (customId, text) => {
+        const results = parseResponse(text, idsByRequest.get(customId)!);
+        if (results.length === 0) throw new Error("no valid vibes in the response");
+        const saved = await saveResults(results, userIdMap, `[${customId}]`);
+        totalVibes += saved.vibes;
+        totalErrors += saved.errors;
+      },
+      { feature: "vibe_tagging" },
+    );
+    totalErrors += outcome.failed;
+  } else for (let i = 0; i < booksToTag.length; i += BATCH_SIZE) {
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const batch = booksToTag.slice(i, i + BATCH_SIZE);
     const batchIds = new Set(batch.map((b) => b.id));
     const userPrompt = buildUserPrompt(batch);
+    const label = `[${String(batchNum).padStart(3)}/${totalBatches}]`;
 
     if (dryRun) {
       console.log(`--- Batch ${batchNum}/${totalBatches} ---`);
@@ -238,13 +356,7 @@ async function main() {
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await anthropic.messages.create({
-          model: "claude-sonnet-5-5",
-          max_tokens: 16000,
-          output_config: { effort: "low" },
-          system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: userPrompt }],
-        });
+        const response = await anthropic.messages.create(requestParams(userPrompt));
 
         const textBlock = response.content.find((b) => b.type === "text");
         if (!textBlock || textBlock.type !== "text") {
@@ -261,7 +373,7 @@ async function main() {
         if (isRetryable && attempt < MAX_RETRIES) {
           const backoff = 1000 * Math.pow(2, attempt - 1);
           console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`
+            `  ${label} Retry ${attempt}/${MAX_RETRIES} (waiting ${backoff}ms)`
           );
           await sleep(backoff);
           continue;
@@ -271,7 +383,7 @@ async function main() {
         const errMsg =
           err instanceof Error ? err.message : String(err);
         console.log(
-          `  [${String(batchNum).padStart(3)}/${totalBatches}] ✗ ${errMsg}`
+          `  ${label} ✗ ${errMsg}`
         );
         totalErrors++;
         break;
@@ -279,55 +391,9 @@ async function main() {
     }
 
     if (results && results.length > 0) {
-      // If --force, delete existing AI vibes for these books first
-      if (force) {
-        const ids = results.map((r) => r.id);
-        await supabase
-          .from("book_vibes")
-          .delete()
-          .in("book_id", ids)
-          .eq("ai_assigned", true)
-          .eq("is_canonical", true);
-      }
-
-      // Build rows to insert (user_id + tag_category required since migrations 020/021)
-      const rows = results.flatMap((r) =>
-        r.vibes.map((vibe) => ({
-          book_id: r.id,
-          user_id: userIdMap.get(r.id)!,
-          vibe,
-          tag_category: "vibe",
-          ai_assigned: true,
-          user_confirmed: false,
-          is_canonical: true,
-        }))
-      );
-
-      const batchVibeCount = rows.length;
-
-      const { error: insertError } = await supabase
-        .from("book_vibes")
-        .upsert(rows, { onConflict: "book_id,vibe,tag_category" });
-
-      if (insertError) {
-        // Unique constraint violations — skip silently
-        if (insertError.code === "23505") {
-          console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${batchVibeCount} vibes (some duplicates skipped)`
-          );
-          totalVibes += batchVibeCount;
-        } else {
-          console.log(
-            `  [${String(batchNum).padStart(3)}/${totalBatches}] ✗ DB error: ${insertError.message}`
-          );
-          totalErrors++;
-        }
-      } else {
-        console.log(
-          `  [${String(batchNum).padStart(3)}/${totalBatches}] ✓ ${batchVibeCount} vibes`
-        );
-        totalVibes += batchVibeCount;
-      }
+      const saved = await saveResults(results, userIdMap, label);
+      totalVibes += saved.vibes;
+      totalErrors += saved.errors;
     }
 
     // Rate limiting between batches
@@ -335,6 +401,8 @@ async function main() {
       await sleep(RATE_LIMIT_MS);
     }
   }
+
+  if (compareFile) await writeComparison(booksToTag, compareFile);
 
   if (!dryRun) {
     const avg = booksToTag.length > 0 ? (totalVibes / booksToTag.length).toFixed(1) : "0";

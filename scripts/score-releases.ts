@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage, recordClaudeUsage } from "../server/usage.js";
+import { runMessageBatch, type BatchRequest } from "./claude-batch.js";
 import { config } from "dotenv";
 import type {
   ReaderProfileData,
@@ -48,16 +49,22 @@ const singleMonth = monthIdx !== -1 ? args[monthIdx + 1] : null;
 const userIdIdx = args.indexOf("--user-id");
 const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
 usageTracking.setUser(userId);
+const batchSizeIdx = args.indexOf("--batch-size");
+// --compare <file>: write the new scores beside the existing ones to a JSON file instead
+// of saving them, for checking a change (use with --force and --limit)
+const compareIdx = args.indexOf("--compare");
+const compareFile = compareIdx !== -1 ? args[compareIdx + 1] : null;
 
 // --- Constants ---
 
 const MODEL = "claude-sonnet-5-5";
-const BATCH_SIZE = 10;
+// Releases per request. 25 rather than 10 sends the instructions (and for personal
+// scores, the reader's profile) less often; tested against 10 in November 2026
+const BATCH_SIZE = batchSizeIdx !== -1 ? parseInt(args[batchSizeIdx + 1], 10) : 25;
 const RATE_LIMIT_MS = 500;
 const MAX_RETRIES = 3;
 const SYNOPSIS_MAX_CHARS = 400;
 const SUBJECTS_CAP = 6;
-const BATCH_POLL_INTERVAL_MS = 30_000; // 30s between batch status polls
 
 // --- Types ---
 
@@ -87,13 +94,6 @@ interface ScoreResult {
   general_signal: number;
   personal_match?: number;
   rationale: string;
-}
-
-interface BatchRequestEntry {
-  customId: string;
-  batchIndex: number;
-  releases: ReleaseForScoring[];
-  batchIsbns: Set<string>;
 }
 
 // --- Profile formatting (mirrors predict-ratings.ts) ---
@@ -593,6 +593,34 @@ const MONTH_NAMES = [
 
 // --- DB Write Helpers ---
 
+const compared: { release: ReleaseForScoring; result: ScoreResult }[] = [];
+
+/** The --compare file: each release's existing scores and the new ones. */
+async function writeComparison(file: string): Promise<void> {
+  const { writeFileSync } = await import("node:fs");
+  const personal = new Map<string, number>();
+  if (userId) {
+    const ids = compared.map((c) => c.release.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data } = await supabase
+        .from("user_release_scores")
+        .select("release_id, personal_score")
+        .eq("user_id", userId)
+        .in("release_id", ids.slice(i, i + 100));
+      for (const row of data ?? []) personal.set(row.release_id, row.personal_score);
+    }
+  }
+  const rows = compared.map(({ release, result }) => ({
+    isbn: release.isbn13,
+    title: release.title,
+    authors: release.authors,
+    existing: { general: release.general_signal_score, personal: personal.get(release.id) ?? null },
+    new: { general: result.general_signal, personal: result.personal_match ?? null, rationale: result.rationale },
+  }));
+  writeFileSync(file, JSON.stringify({ model: MODEL, batch_size: BATCH_SIZE, user: userId, releases: rows }, null, 2));
+  console.log(`Wrote ${rows.length} comparisons to ${file}`);
+}
+
 async function writeScoreResults(
   results: ScoreResult[],
   label: string,
@@ -604,6 +632,13 @@ async function writeScoreResults(
   for (const result of results) {
     const release = releasesByIsbn.get(result.isbn);
     if (!release) continue;
+
+    if (compareFile) {
+      compared.push({ release, result });
+      scored++;
+      scores.push(computeAiScore(result.general_signal, result.personal_match));
+      continue;
+    }
 
     // The general score is shared by every reader. Keep the one already there, so
     // scoring a second reader doesn't rewrite it, unless --force asked for a rescore.
@@ -686,125 +721,60 @@ const releasesByIsbn = new Map<string, ReleaseForScoring>();
 
 // --- Batch Mode ---
 
+/**
+ * The system prompt as a cached block. A personal prompt (with the reader's profile) is
+ * the same for every request in a run, so later requests read it at a tenth of the
+ * price; the general prompt is below the minimum Claude caches, so it's sent as is.
+ */
+function cachedSystem(systemPrompt: string): Anthropic.TextBlockParam[] {
+  return [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+}
+
+function requestParams(systemPrompt: string, batch: ReleaseForScoring[]): Anthropic.MessageCreateParamsNonStreaming {
+  return {
+    model: MODEL,
+    max_tokens: 16000,
+    output_config: { effort: "low" },
+    system: cachedSystem(systemPrompt),
+    messages: [{ role: "user", content: buildUserPrompt(batch) }],
+  };
+}
+
 async function runBatchMode(
   releases: ReleaseForScoring[],
   systemPrompt: string,
 ): Promise<void> {
-  // Build all batch request entries upfront
-  const entries: BatchRequestEntry[] = [];
-
+  const requests: BatchRequest[] = [];
+  const isbnsByRequest = new Map<string, Set<string>>();
   for (let i = 0; i < releases.length; i += BATCH_SIZE) {
     const batch = releases.slice(i, i + BATCH_SIZE);
-    const batchIndex = Math.floor(i / BATCH_SIZE);
-    entries.push({
-      customId: `score-${batchIndex}`,
-      batchIndex,
-      releases: batch,
-      batchIsbns: new Set(batch.map((r) => r.isbn13)),
-    });
+    const customId = `score-${Math.floor(i / BATCH_SIZE) + 1}`;
+    isbnsByRequest.set(customId, new Set(batch.map((r) => r.isbn13)));
+    requests.push({ customId, params: requestParams(systemPrompt, batch) });
   }
 
-  console.log(`Submitting ${entries.length} requests to Batch API...`);
-
-  const batch = await anthropic.messages.batches.create({
-    requests: entries.map((entry) => ({
-      custom_id: entry.customId,
-      params: {
-        model: MODEL,
-        max_tokens: 16000,
-        output_config: { effort: "low" },
-        system: systemPrompt,
-        messages: [{ role: "user" as const, content: buildUserPrompt(entry.releases) }],
-      },
-    })),
-  });
-
-  console.log(`Batch ${batch.id} submitted (${entries.length} requests). Polling...`);
-
-  // Poll for completion
-  let status = batch;
-  while (status.processing_status !== "ended") {
-    await sleep(BATCH_POLL_INTERVAL_MS);
-    status = await anthropic.messages.batches.retrieve(batch.id);
-    const completed = status.request_counts.succeeded + status.request_counts.errored +
-      status.request_counts.canceled + status.request_counts.expired;
-    const pct = Math.round((completed / entries.length) * 100);
-    console.log(
-      `  ${pct}% complete (${status.request_counts.succeeded} succeeded, ` +
-      `${status.request_counts.errored} errored, ${status.request_counts.processing} processing)`,
-    );
-  }
-
-  console.log(`\nBatch complete. Processing results...`);
-
-  // Build a lookup from custom_id to entry
-  const entryMap = new Map<string, BatchRequestEntry>();
-  for (const entry of entries) {
-    entryMap.set(entry.customId, entry);
-  }
-
-  // Process results
   let totalScored = 0;
   let totalErrors = 0;
   const allScores: number[] = [];
 
-  for await (const response of await anthropic.messages.batches.results(batch.id)) {
-    const entry = entryMap.get(response.custom_id);
-    if (!entry) {
-      console.log(`  Unknown custom_id: ${response.custom_id}, skipping`);
-      totalErrors++;
-      continue;
-    }
+  const outcome = await runMessageBatch(
+    anthropic,
+    requests,
+    async (customId, text) => {
+      const results = parseResponse(text, isbnsByRequest.get(customId)!);
+      if (results.length === 0) throw new Error("no valid scores in the response");
+      const label = `[${customId}]`;
+      const { scored, errors, scores } = await writeScoreResults(results, label);
+      totalScored += scored;
+      totalErrors += errors;
+      allScores.push(...scores);
+      const avg = scored > 0 ? (scores.reduce((a, b) => a + b, 0) / scored).toFixed(1) : "0";
+      console.log(`  ${label} \u2713 ${scored} scored (avg ${avg})`);
+    },
+    { feature: "release_scoring", userId },
+  );
+  totalErrors += outcome.failed;
 
-    const batchLabel = `[${String(entry.batchIndex + 1).padStart(3)}/${entries.length}]`;
-
-    // Batch results don't pass through the tracked client; record them at half price
-    if (response.result.type === "succeeded") {
-      await recordClaudeUsage("release_scoring", response.result.message.model, response.result.message.usage, {
-        userId,
-        batch: true,
-      });
-    }
-
-    if (response.result.type !== "succeeded") {
-      console.log(`  ${batchLabel} \u2717 ${response.result.type}`);
-      totalErrors++;
-      continue;
-    }
-
-    const textBlock = response.result.message.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
-      console.log(`  ${batchLabel} \u2717 No text block in response`);
-      totalErrors++;
-      continue;
-    }
-
-    let results: ScoreResult[];
-    try {
-      results = parseResponse(textBlock.text, entry.batchIsbns);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.log(`  ${batchLabel} \u2717 Parse error: ${errMsg}`);
-      totalErrors++;
-      continue;
-    }
-
-    if (results.length === 0) {
-      console.log(`  ${batchLabel} \u2717 No valid scores in response`);
-      totalErrors++;
-      continue;
-    }
-
-    const { scored, errors, scores } = await writeScoreResults(results, batchLabel);
-    totalScored += scored;
-    totalErrors += errors;
-    allScores.push(...scores);
-
-    const avg = scored > 0 ? (scores.reduce((a, b) => a + b, 0) / scored).toFixed(1) : "0";
-    console.log(`  ${batchLabel} \u2713 ${scored} scored (avg ${avg})`);
-  }
-
-  // Distribution summary
   printSummary(releases.length, totalScored, totalErrors, allScores);
 }
 
@@ -832,13 +802,7 @@ async function runSequentialMode(
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 16000,
-          output_config: { effort: "low" },
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
-        });
+        const response = await anthropic.messages.create(requestParams(systemPrompt, batch));
 
         const textBlock = response.content.find((b) => b.type === "text");
         if (!textBlock || textBlock.type !== "text") {
@@ -980,6 +944,7 @@ async function main() {
   } else {
     await runSequentialMode(releases, systemPrompt);
   }
+  if (compareFile) await writeComparison(compareFile);
 }
 
 main().catch((err) => {

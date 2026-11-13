@@ -10,6 +10,12 @@ const STARTUP_DELAY_MS = 60 * 1000; // 1 minute after server start
 // and running them concurrently alongside the server exceeded the 512MB instance
 // limit. A single cycle lock also keeps a slow cycle from overlapping the next tick.
 let cycleInFlight = false;
+let cycleStartedAt = 0;
+
+// Tagging and predictions go through the Message Batches API (half price), and a cycle
+// waits for each batch, which usually takes minutes but can take up to an hour before
+// the script cancels it. A cycle running longer than this is reported as stuck.
+const CYCLE_STUCK_MS = 4 * 60 * 60 * 1000;
 
 // When background ISBNdb calls have used their share of the day, lookups can still be
 // filled from the shared cache, so enrichment runs, but only hourly until the reset
@@ -65,10 +71,19 @@ async function countUntagged(
 
 async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
   if (cycleInFlight) {
-    console.log("[enrichment] Previous cycle still running, skipping.");
+    const minutes = Math.round((Date.now() - cycleStartedAt) / 60000);
+    console.log(`[enrichment] Previous cycle still running (${minutes}min), skipping.`);
+    // A cycle waiting on a batch is still working, so the job isn't stalled
+    void recordJobRun(
+      "enrichment_check",
+      Date.now() - cycleStartedAt < CYCLE_STUCK_MS
+        ? { ok: true }
+        : { ok: false, error: `A cycle has been running for ${minutes} minutes` },
+    );
     return;
   }
   cycleInFlight = true;
+  cycleStartedAt = Date.now();
   let failure: string | null = null;
 
   try {
@@ -113,7 +128,7 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
     if (untaggedFiction > 0) {
       await run(
         `Vibe tagging (${untaggedFiction} pending)`,
-        "npx tsx scripts/tag-vibes.ts --limit 10",
+        "npx tsx scripts/tag-vibes.ts --batch --limit 500",
       );
     }
 
@@ -132,7 +147,7 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
     if (untaggedNonfiction > 0 || untaggedPoetry > 0) {
       await run(
         `Classification tagging (${untaggedNonfiction + untaggedPoetry} pending)`,
-        "npx tsx scripts/tag-classifications.ts --limit 10",
+        "npx tsx scripts/tag-classifications.ts --batch --limit 500",
       );
     }
 
@@ -167,9 +182,9 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
       if ((unpredicted ?? 0) > 0) {
         await run(
           `Predicted ratings (${unpredicted} pending, user ${uid.slice(0, 8)}...)`,
-          `npx tsx scripts/predict-ratings.ts --user-id ${uid} --limit 20`,
+          `npx tsx scripts/predict-ratings.ts --user-id ${uid} --batch --limit 500`,
         );
-        break; // one user per cycle; the 5-min loop covers the rest
+        break; // one reader per cycle; the next cycle takes the next reader
       }
     }
   } catch (err) {
