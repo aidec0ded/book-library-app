@@ -45,6 +45,7 @@ import type { ISBNdbBook } from "../src/lib/editions.js";
 import { recordClaudeUsage } from "./usage.js";
 import { BUSY_MESSAGE, dailyBudget, dailyBudgetReached, isCapacityError, recordSpend, spentToday, type TokenUsage } from "./spend-guard.js";
 import { requestReleasesCheck } from "./releases-scheduler.js";
+import { profileStatus, requestProfile } from "./profile-scheduler.js";
 import { jobsInWorker, startBackgroundJobs } from "./background-jobs.js";
 import { startHealthReports } from "./health.js";
 import { CHAT_MODEL } from "./models.js";
@@ -793,7 +794,7 @@ const server = http.createServer((req, res) => {
       else if (url === "/api/contact") rules.push("contact");
       else if (url.startsWith("/api/isbndb/")) rules.push("isbndb");
       else if (
-        url === "/api/releases/curate" || url === "/api/stripe/checkout" ||
+        url === "/api/releases/curate" || url === "/api/profile/generate" || url === "/api/stripe/checkout" ||
         url === "/api/stripe/portal" || url === "/api/account/delete"
       ) rules.push("sensitive");
       for (const rule of rules) {
@@ -938,6 +939,38 @@ const server = http.createServer((req, res) => {
 
     // A reader asks for their releases to be curated: personal scores on each month's
     // notable releases, from now on while they keep visiting Releases
+    // Profiles the reader generates: the monthly one when it's due, and Companion's weekly
+    // refresh (server/profile-scheduler.ts). The worker picks requests up within a minute.
+    if ((req.method === "GET" && url === "/api/profile/status") || (req.method === "POST" && url === "/api/profile/generate")) {
+      void (async () => {
+        let userId: string;
+        try {
+          ({ userId } = await authenticateRequest(req.headers.authorization));
+        } catch {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+        try {
+          const companion = hasCompanion(await getOrCreateSubscription(userId));
+          if (req.method === "GET") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(await profileStatus(serviceSupabase, userId, companion)));
+            return;
+          }
+          const result = await requestProfile(serviceSupabase, userId, companion);
+          res.writeHead("error" in result ? 409 : 200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[profile] Error:", msg);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed" }));
+        }
+      })();
+      return;
+    }
+
     if (req.method === "POST" && url === "/api/releases/curate") {
       void (async () => {
         let userId: string;

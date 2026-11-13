@@ -35,10 +35,16 @@ const modelIdx = args.indexOf("--model");
 const effortIdx = args.indexOf("--effort");
 const compareIdx = args.indexOf("--compare");
 const compareFile = compareIdx !== -1 ? args[compareIdx + 1] : null;
+// A weekly refresh the reader asks for: the profile is updated, but predicted ratings
+// aren't marked stale (re-predicting a large library costs more than the profile), and
+// it doesn't count as the monthly profile, which still comes when it's due
+const keepPredictions = args.includes("--keep-predictions");
 
 // --- Constants ---
 
-const MODEL = modelIdx !== -1 ? args[modelIdx + 1] : "claude-opus-5-5";
+// Sonnet 5.5 at high effort: tested November 2026 against Opus 5.5, close in quality at
+// under half the cost (about $0.20 for a 937-book library) and about a minute
+const MODEL = modelIdx !== -1 ? args[modelIdx + 1] : "claude-sonnet-5-5";
 const EFFORT = (effortIdx !== -1 ? args[effortIdx + 1] : "high") as "low" | "medium" | "high";
 
 const SYSTEM_PROMPT = `You are generating a Reader Profile for Rekollekt, a personal book library app. Analyze the reader's library, conversation history, and your accumulated notes to produce a structured profile.
@@ -579,6 +585,8 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
     input_tokens: response.usage.input_tokens,
     output_tokens: response.usage.output_tokens,
     activity_snapshot: activitySnapshot,
+    // "refresh" profiles don't reset the monthly schedule (server/profile-scheduler.ts)
+    kind: keepPredictions ? "refresh" : bootstrap ? "first" : "monthly",
   };
 
   const insertRow: Record<string, unknown> = {
@@ -599,7 +607,8 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   console.log("  ✓ Saved to database");
 
   // Invalidate predictions made under the previous profile so they get refreshed.
-  const staleCount = await markPredictionsStale();
+  // A weekly refresh leaves them for the monthly profile.
+  const staleCount = keepPredictions ? 0 : await markPredictionsStale();
   if (staleCount > 0) {
     console.log(
       `  ✓ Marked ${staleCount} predicted rating${staleCount !== 1 ? "s" : ""} stale (will re-predict on next scheduler cycle)`,

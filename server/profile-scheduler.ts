@@ -3,7 +3,28 @@ import { fetchAllRows } from "../scripts/fetch-all.js";
 import { runScript } from "./jobs.js";
 import { recordJobRun } from "./usage.js";
 
+/**
+ * Reader profiles. A reader's first profile is generated automatically once they have
+ * enough books and ratings. After that a profile is never generated without the reader
+ * asking, so readers who've stopped coming cost nothing:
+ *
+ * - Monthly: when the last monthly profile is 30 days old and there's been enough new
+ *   activity, the check marks one available (profile_requests.available_at, migration
+ *   039), and the app offers it. A monthly profile also re-predicts ratings.
+ * - Weekly refresh, Companion only: 7 days after the last profile of any kind, if
+ *   anything has changed. It leaves predicted ratings alone and doesn't reset the
+ *   monthly schedule.
+ *
+ * The web server records requests; whichever process runs the schedulers (the worker in
+ * production) picks them up every minute and generates them one at a time.
+ */
+
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const REQUEST_POLL_MS = 60 * 1000;
+const REFRESH_MIN_DAYS = 7;
+// A generation that started this long ago without finishing is taken to have died
+// (a restart, say) and is run again
+const STUCK_AFTER_MS = 15 * 60 * 1000;
 const STARTUP_DELAY_MS = 30 * 1000; // 30 seconds after server start
 const MIN_AGE_DAYS = 30;
 const NEW_USER_MIN_BOOKS = 8;
@@ -12,15 +33,21 @@ const NEW_USER_MIN_RATED = 5;
 // Readers queued or generating, so a check can't add the same reader twice
 const inFlightUsers = new Set<string>();
 
-// Profiles generate one at a time: each is an Opus run in its own ~100MB process, and a
-// handful of signups in one check used to start them all at once on a 512MB server
-const profileQueue: { userId: string; command: string; label: string }[] = [];
+// Profiles generate one at a time: each runs in its own ~100MB process, and a handful
+// of signups in one check used to start them all at once on a 512MB server
+interface ProfileJob {
+  userId: string;
+  command: string;
+  label: string;
+  onDone?: (error: string | null) => void;
+}
+const profileQueue: ProfileJob[] = [];
 let profileRunning = false;
 
-function queueProfile(userId: string, command: string, label: string): void {
+function queueProfile(userId: string, command: string, label: string, onDone?: ProfileJob["onDone"]): void {
   if (inFlightUsers.has(userId)) return;
   inFlightUsers.add(userId);
-  profileQueue.push({ userId, command, label });
+  profileQueue.push({ userId, command, label, onDone });
   runNextProfile();
 }
 
@@ -40,6 +67,7 @@ function runNextProfile(): void {
     } else {
       console.log(`${tag} ${job.label} output:\n` + stdout);
     }
+    job.onDone?.(error ? (stderr || error.message).slice(-500) : null);
     runNextProfile();
   });
 }
@@ -98,27 +126,36 @@ interface UserProfile {
   generation_context: Record<string, unknown> | null;
 }
 
-async function fetchLatestProfilePerUser(supabase: SupabaseClient): Promise<UserProfile[]> {
-  // Fetch all profiles, grouped by user — get the latest per user
-  // Service-role client bypasses RLS, so we see all users
-  const { data, error } = await supabase
-    .from("reader_profile")
-    .select("user_id, generated_at, generation_context")
-    .order("generated_at", { ascending: false });
+/** A weekly refresh doesn't count toward the monthly schedule. */
+const isRefresh = (p: UserProfile) => p.generation_context?.kind === "refresh";
 
-  if (error) throw error;
-  if (!data || data.length === 0) return [];
-
-  // Keep only the latest profile per user_id
+/** Each reader's latest profile that wasn't a weekly refresh: the monthly schedule runs from it. */
+async function fetchLatestMonthlyProfilePerUser(supabase: SupabaseClient): Promise<UserProfile[]> {
+  const rows = await fetchAllRows<UserProfile>((from, to) =>
+    supabase
+      .from("reader_profile")
+      .select("user_id, generated_at, generation_context")
+      .order("generated_at", { ascending: false })
+      .range(from, to),
+  );
   const seen = new Set<string>();
   const latest: UserProfile[] = [];
-  for (const row of data) {
-    if (!seen.has(row.user_id)) {
-      seen.add(row.user_id);
-      latest.push(row);
-    }
+  for (const row of rows) {
+    if (isRefresh(row) || seen.has(row.user_id)) continue;
+    seen.add(row.user_id);
+    latest.push(row);
   }
   return latest;
+}
+
+/** What's changed since a profile's activity snapshot, as "label: +n" for each counter that grew past `minDelta` of its threshold. */
+function changesSince(current: ActivitySnapshot, snapshot: ActivitySnapshot, anyChange: boolean): string[] {
+  const changes: string[] = [];
+  for (const { key, delta, label } of THRESHOLDS) {
+    const diff = current[key] - (snapshot[key] ?? 0);
+    if (anyChange ? diff > 0 : diff >= delta) changes.push(`${label}: +${diff}`);
+  }
+  return changes;
 }
 
 async function checkNewUsers(supabase: SupabaseClient): Promise<void> {
@@ -168,7 +205,7 @@ async function checkAndRegenerateAll(supabase: SupabaseClient): Promise<void> {
     // Check for new users without any profile first
     await checkNewUsers(supabase);
 
-    const profiles = await fetchLatestProfilePerUser(supabase);
+    const profiles = await fetchLatestMonthlyProfilePerUser(supabase);
 
     if (profiles.length === 0) {
       console.log("[profile-scheduler] No existing profiles to check for regeneration.");
@@ -212,39 +249,170 @@ async function checkUserProfile(
   const context = profile.generation_context;
   const snapshot = context?.activity_snapshot as ActivitySnapshot | undefined;
 
-  if (!snapshot) {
-    console.log(
-      `${tag} No activity snapshot in last profile, regenerating (profile is old enough).`,
-    );
-    spawnRegeneration(uid);
-    return;
-  }
-
-  // Gather current counts
-  const current = await gatherCurrentCounts(supabase, uid);
-
-  // Check thresholds
-  const triggered: string[] = [];
-  for (const { key, delta, label } of THRESHOLDS) {
-    const diff = current[key] - snapshot[key];
-    if (diff >= delta) {
-      triggered.push(`${label}: +${diff}`);
+  let triggered: string[] = ["no activity snapshot in the last profile"];
+  if (snapshot) {
+    const current = await gatherCurrentCounts(supabase, uid);
+    triggered = changesSince(current, snapshot, false);
+    if (triggered.length === 0) {
+      console.log(`${tag} No activity thresholds met, skipping.`);
+      return;
     }
   }
 
-  if (triggered.length === 0) {
-    console.log(`${tag} No activity thresholds met, skipping.`);
-    return;
-  }
-
-  console.log(
-    `${tag} Thresholds met: ${triggered.join(", ")}. Regenerating profile.`,
-  );
-  spawnRegeneration(uid);
+  // Offer it rather than generate it: the reader generates it when they want it
+  const { data: row } = await supabase.from("profile_requests").select("available_at").eq("user_id", uid).maybeSingle();
+  if (row?.available_at) return;
+  const { error } = await supabase
+    .from("profile_requests")
+    .upsert({ user_id: uid, available_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) throw new Error(`profile_requests: ${error.message}`);
+  console.log(`${tag} Monthly profile due (${triggered.join(", ")}). Offered to the reader.`);
 }
 
-function spawnRegeneration(userId: string): void {
-  queueProfile(userId, `npx tsx scripts/generate-profile.ts --force --user-id ${userId}`, "Profile regeneration");
+// --- Requests from readers ---
+
+interface RequestRow {
+  user_id: string;
+  available_at: string | null;
+  requested_at: string | null;
+  kind: "monthly" | "refresh" | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+}
+
+const after = (a: string | null, b: string | null) => a != null && (b == null || Date.parse(a) > Date.parse(b));
+
+/** A request that hasn't finished since it was made. */
+function isPending(row: RequestRow): boolean {
+  return after(row.requested_at, row.finished_at);
+}
+
+export interface ProfileStatus {
+  has_profile: boolean;
+  last_generated_at: string | null;
+  /** A monthly profile is due and waiting for the reader */
+  monthly_available: boolean;
+  /** Asked for and not finished yet */
+  generating: boolean;
+  /** Companion readers: whether a weekly refresh is possible now */
+  can_refresh: boolean;
+  /** Why not, when it isn't: "too_soon" (see refresh_available_at), "nothing_new", or "companion_only" */
+  refresh_blocked: "too_soon" | "nothing_new" | "companion_only" | null;
+  refresh_available_at: string | null;
+  /** The last request failed */
+  error: string | null;
+}
+
+/** Where a reader's profile stands, for the app's banner and Profile page. */
+export async function profileStatus(
+  supabase: SupabaseClient,
+  userId: string,
+  companion: boolean,
+): Promise<ProfileStatus> {
+  const [{ data: latest }, { data: row }] = await Promise.all([
+    supabase
+      .from("reader_profile")
+      .select("user_id, generated_at, generation_context")
+      .eq("user_id", userId)
+      .order("generated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from("profile_requests").select("*").eq("user_id", userId).maybeSingle(),
+  ]);
+  const request = row as RequestRow | null;
+  const profile = latest as UserProfile | null;
+  const generating = request ? isPending(request) : false;
+  const status: ProfileStatus = {
+    has_profile: profile != null,
+    last_generated_at: profile?.generated_at ?? null,
+    monthly_available: Boolean(request?.available_at) && !generating,
+    generating,
+    can_refresh: false,
+    refresh_blocked: null,
+    refresh_available_at: null,
+    error: request && !generating && after(request.finished_at, null) ? request.error : null,
+  };
+  if (!profile || generating || status.monthly_available) return status;
+
+  if (!companion) {
+    status.refresh_blocked = "companion_only";
+    return status;
+  }
+  const nextAt = Date.parse(profile.generated_at) + REFRESH_MIN_DAYS * 86_400_000;
+  if (Date.now() < nextAt) {
+    status.refresh_blocked = "too_soon";
+    status.refresh_available_at = new Date(nextAt).toISOString();
+    return status;
+  }
+  const snapshot = profile.generation_context?.activity_snapshot as ActivitySnapshot | undefined;
+  if (snapshot && changesSince(await gatherCurrentCounts(supabase, userId), snapshot, true).length === 0) {
+    status.refresh_blocked = "nothing_new";
+    return status;
+  }
+  status.can_refresh = true;
+  return status;
+}
+
+/**
+ * A reader asks for a profile: the monthly one if it's available, otherwise a weekly
+ * refresh if they may have one. Returns the kind queued, or why not.
+ */
+export async function requestProfile(
+  supabase: SupabaseClient,
+  userId: string,
+  companion: boolean,
+): Promise<{ kind: "monthly" | "refresh" } | { error: string }> {
+  const status = await profileStatus(supabase, userId, companion);
+  if (status.generating) return { error: "already_generating" };
+  const kind = status.monthly_available ? "monthly" : status.can_refresh ? "refresh" : null;
+  if (!kind) return { error: status.refresh_blocked ?? (status.has_profile ? "not_available" : "no_profile") };
+  const { error } = await supabase
+    .from("profile_requests")
+    .upsert(
+      { user_id: userId, requested_at: new Date().toISOString(), kind, started_at: null, error: null },
+      { onConflict: "user_id" },
+    );
+  if (error) throw new Error(`profile_requests: ${error.message}`);
+  return { kind };
+}
+
+/** Start any requests not yet started (or started so long ago they must have died). */
+export async function runProfileRequests(supabase: SupabaseClient): Promise<void> {
+  const { data, error } = await supabase.from("profile_requests").select("*").not("requested_at", "is", null);
+  if (error) {
+    console.error("[profile-scheduler] Couldn't check for requests:", error.message);
+    return;
+  }
+  for (const row of (data ?? []) as RequestRow[]) {
+    if (!isPending(row) || inFlightUsers.has(row.user_id)) continue;
+    const startedForThis = after(row.started_at, row.requested_at) || row.started_at === row.requested_at;
+    if (startedForThis && Date.now() - Date.parse(row.started_at!) < STUCK_AFTER_MS) continue;
+
+    const uid = row.user_id;
+    const refresh = row.kind === "refresh";
+    await supabase.from("profile_requests").update({ started_at: new Date().toISOString() }).eq("user_id", uid);
+    queueProfile(
+      uid,
+      `npx tsx scripts/generate-profile.ts --force --user-id ${uid}${refresh ? " --keep-predictions" : ""}`,
+      refresh ? "Weekly refresh" : "Monthly profile",
+      (failure) => {
+        void supabase
+          .from("profile_requests")
+          .update({
+            finished_at: new Date().toISOString(),
+            error: failure ? "The profile couldn't be generated. Try again in a few minutes." : null,
+            // The monthly profile is done; the next one is offered when it's due
+            ...(!failure && !refresh && { available_at: null }),
+          })
+          .eq("user_id", uid)
+          .then(({ error: updateError }) => {
+            if (updateError) console.error("[profile-scheduler] Couldn't record a finished request:", updateError.message);
+          });
+        if (failure) console.error(`[profile-scheduler:${uid.slice(0, 8)}] Request failed:`, failure);
+      },
+    );
+  }
 }
 
 export function startProfileScheduler(supabase: SupabaseClient): void {
@@ -261,4 +429,8 @@ export function startProfileScheduler(supabase: SupabaseClient): void {
   setInterval(() => {
     void checkAndRegenerateAll(supabase);
   }, CHECK_INTERVAL_MS);
+
+  // Readers' requests, from the web server
+  setInterval(() => void runProfileRequests(supabase), REQUEST_POLL_MS);
+  setTimeout(() => void runProfileRequests(supabase), 5_000);
 }

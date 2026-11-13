@@ -138,7 +138,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/posthog.ts` — PostHog analytics wrapper (init, identify, reset, capture, pageview hook). No-op when VITE_POSTHOG_KEY unset.
 - `src/contexts/AuthContext.tsx` — Supabase Auth context with session state + PostHog identify/reset, wraps entire app
 - `server/auth.ts` — Server-side auth utilities (`authenticateRequest` checks a login token with Supabase and returns the user and a per-user Supabase client)
-- `src/components/Layout.tsx` — App shell with sidebar + `<Outlet />`, wraps protected routes in ChatProvider
+- `src/components/Layout.tsx` — App shell with sidebar + `<Outlet />`, wraps protected routes in ChatProvider. Its banner offers a waiting monthly profile and says when a new one is ready
 - `src/components/Sidebar.tsx` — Collapsible navigation sidebar (Library, Syllabi, Shelves, Recommendations, Releases, Chat, Profile)
 - `src/pages/BookList.tsx` — Debounced search, pagination via Supabase `.range()`
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger. Section order follows reading status: unread leads with predicted rating and summary, reading with lists and notes, read with notes
@@ -201,7 +201,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/book-handler.ts` — Book tool command executor (update_status, update_rating, toggle_favorite, delete). Status changes from chat only set a date the reader gave, so "I read that years ago" doesn't record today
 - `server/releases-handler.ts` — Releases tool command executor (browse, top, search)
 - `server/onboarding-prompt.ts` — Onboarding-specific system prompt builder (empty library vs. imported library paths)
-- `server/profile-scheduler.ts` — Activity-gated monthly profile regeneration (checks every 4 hours, generates one profile at a time, finds new readers from `user_subscriptions`)
+- `server/profile-scheduler.ts` — Reader profiles: the first is generated automatically (8 books, 5 rated). After that a profile is only generated when the reader asks: every 4 hours the check offers a monthly profile when the last monthly one is 30 days old with enough new activity (`profile_requests.available_at`), and Companion readers can refresh weekly when something has changed. `profileStatus` and `requestProfile` back `/api/profile/status` and `/api/profile/generate`; the process running the schedulers picks up requests every minute and generates one at a time. A monthly profile re-predicts ratings; a weekly refresh (`--keep-predictions`) doesn't, and doesn't reset the monthly schedule
 - `server/stripe-handler.ts` — Stripe webhook event processing (subscriptions, payments, refunds, disputes; each payment, refund, and dispute also recorded in `billing_events`), checkout/portal session creation. Pinned to API version 2026-01-28.clover, the webhook endpoint's: a subscription's period is on its items, and an invoice's subscription is under `parent.subscription_details`. Change both together
 - `server/stripe-reconciliation.ts` — Hourly in the worker: the last 3 UTC days of Stripe's balance (payments less refunds, and fees) against `billing_events`, into `stripe_reconciliation`
 - `server/health.ts` — Each server's container memory (scripts it started included) and today's peak, reported to `service_health` every 5 minutes, on Render only
@@ -211,14 +211,15 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `scripts/claude-batch.ts` — `runMessageBatch`: sends a script's requests as one Message Batches request at half price, waits (canceling after an hour, so the next run picks up the rest), and records each result's cost
 - `scripts/tag-vibes.ts` — Bulk AI canonical vibe tagging script (17 fiction vibes, 5 books per request, Sonnet 5.5, --dry-run/--limit/--force/--batch flags, --model and --compare for trying another model). Haiku 5.5 was tested in November 2026 and kept Sonnet: see next_steps.md
 - `scripts/tag-classifications.ts` — AI classification tagging for nonfiction (topics/form/depth) and poetry (movement/formal_feel/accessibility), same architecture and flags
-- `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon
+- `src/pages/Profile.tsx` — Reader profile page with editable Personal Canon, and under the date the button to generate a waiting monthly profile or refresh weekly
+- `src/hooks/useProfileGeneration.ts` — Profile status and requests for the banner and Profile page, checking every 10 seconds while one generates
 - `src/lib/profile.ts` — Profile CRUD + personal canon updates
 - `src/components/BookSearchModal.tsx` — Library search modal for canon editing
 - `src/components/ProgressBadge.tsx` — Reading path progress badge (not_started/reading/completed) with click-to-cycle
 - `src/components/SeminarSection.tsx` — Expandable seminar content (pre-reading context, focus questions, post-reading prompts) with inline editing
 - `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
 - `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
-- `scripts/generate-profile.ts` — Claude-powered reader profile generation (monthly, Opus 5.5)
+- `scripts/generate-profile.ts` — Reader profile generation (Sonnet 5.5, high effort, about a minute and $0.20 for a 900-book library; chosen over Opus 5.5 in November 2026). `--keep-predictions` for a weekly refresh
 - `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (20 books per request, Sonnet 5.5, the reader's profile cached across requests, --dry-run/--limit/--force/--batch flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 - `src/pages/SyllabiPage.tsx` — Syllabi course catalog index with editorial card layout
@@ -277,7 +278,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Twenty-nine tables in Supabase:
+Thirty tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -349,6 +350,8 @@ Twenty-nine tables in Supabase:
 **service_health** — Each Render service's latest memory report (`web`, `worker`): container memory, limit, the server process alone, and today's peak. Service role only
 
 **api_quota** — The latest remaining quota a paid API reported, one row per service (`isbndb`: `remaining`, `resets_at`). Service role only
+
+**profile_requests** — One row per reader for profiles they generate (migration 039): `available_at` (a monthly profile is due, cleared once generated), `requested_at` and `kind` (`monthly` or `refresh`), `started_at`, `finished_at`, `error`. Readers can read their own row; the server writes it
 
 **reader_profile** — Periodic AI-generated reader profiles. Each generation inserts a new row; latest fetched with `ORDER BY generated_at DESC LIMIT 1`. Key fields:
 - `generated_at` — when this profile was generated

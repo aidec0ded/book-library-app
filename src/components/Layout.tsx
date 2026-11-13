@@ -6,13 +6,18 @@ import { ChatProvider } from "@/contexts/ChatContext";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { ChatPanel } from "@/components/ChatPanel";
 import { supabase } from "@/lib/supabase";
+import { useProfileGeneration } from "@/hooks/useProfileGeneration";
 
 const PROFILE_SEEN_KEY = "rekollekt_profile_seen_at";
 
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileBanner, setProfileBanner] = useState(false);
+  const [offerDismissed, setOfferDismissed] = useState(false);
   const navigate = useNavigate();
+  // A monthly profile waiting for the reader, generated with a click from the banner
+  const { status: profileStatus, generate, requesting } = useProfileGeneration(() => setProfileBanner(true));
+  const offerProfile = !offerDismissed && (profileStatus?.monthly_available || profileStatus?.generating);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +65,38 @@ export function Layout() {
             Rekollekt
           </Link>
         </header>
+
+        {/* A monthly profile is ready to generate, or generating */}
+        {offerProfile && !profileBanner && (
+          <div className="border-b bg-accent/10 px-4 py-2.5">
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+              {profileStatus?.generating ? (
+                <p className="text-sm text-foreground">
+                  Writing your new reader profile. This takes about a minute; you can keep reading.
+                </p>
+              ) : (
+                <button
+                  onClick={() => void generate()}
+                  disabled={requesting}
+                  className="text-left text-sm text-foreground hover:underline disabled:opacity-60"
+                >
+                  {profileStatus?.error
+                    ? "Your new reader profile didn't finish."
+                    : "There's been enough reading for a new reader profile."}{" "}
+                  <span className="font-medium text-accent">
+                    {requesting ? "Starting…" : profileStatus?.error ? "Try again →" : "Generate it →"}
+                  </span>
+                </button>
+              )}
+              <button
+                onClick={() => setOfferDismissed(true)}
+                className="rounded-md p-0.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Profile update banner */}
         {profileBanner && (

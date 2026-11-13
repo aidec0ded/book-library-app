@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, createContext, useContext } from "react";
+import { useProfileGeneration } from "@/hooks/useProfileGeneration";
 import type { CSSProperties, ReactNode } from "react";
 import {
   Card,
@@ -194,6 +195,41 @@ function ProgressBar({ label, current, target }: { label: string; current: numbe
   );
 }
 
+/**
+ * Under the profile's date: generate the monthly profile when it's waiting, or refresh
+ * weekly on Companion. Readers without Companion see nothing here until a monthly
+ * profile is due.
+ */
+function ProfileRefreshControl({ status, generate, requesting }: ReturnType<typeof useProfileGeneration>) {
+  if (!status) return null;
+  const note = "mt-3 font-sans text-xs text-muted-foreground";
+  if (status.generating) {
+    return <p className={note}>Writing your new profile. It takes about a minute.</p>;
+  }
+  const label = status.monthly_available ? "Generate your new profile" : status.can_refresh ? "Refresh my profile" : null;
+  if (label) {
+    return (
+      <div className="mt-3">
+        <button
+          onClick={() => void generate()}
+          disabled={requesting}
+          className="rounded-full border border-border px-4 py-1.5 font-sans text-xs font-medium text-foreground transition-colors hover:bg-accent/5 disabled:opacity-50"
+        >
+          {requesting ? "Starting…" : label}
+        </button>
+        {status.error && <p className={note}>The last one didn't finish. Try again.</p>}
+      </div>
+    );
+  }
+  if (status.refresh_blocked === "too_soon" && status.refresh_available_at) {
+    return <p className={note}>You can refresh it again on {formatDate(status.refresh_available_at)}.</p>;
+  }
+  if (status.refresh_blocked === "nothing_new") {
+    return <p className={note}>Nothing new since this profile. Read, rate, or talk about a book to refresh it.</p>;
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────
 export function Profile() {
   const [profile, setProfile] = useState<ReaderProfileType | null>(null);
@@ -202,8 +238,8 @@ export function Profile() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProfileProgress | null>(null);
 
-  useEffect(() => {
-    async function load() {
+  const load = useCallback(async () => {
+    {
       try {
         const p = await fetchLatestProfile();
         setProfile(p);
@@ -225,8 +261,14 @@ export function Profile() {
         setLoading(false);
       }
     }
-    void load();
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // A new profile, monthly or a weekly refresh, replaces this one when it's done
+  const generation = useProfileGeneration(() => void load());
 
   const handleCanonUpdate = useCallback(
     async (bookIds: string[]) => {
@@ -353,6 +395,7 @@ export function Profile() {
             <p className="font-sans text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground/60">
               Generated {formatDate(profile.generated_at)}
             </p>
+            <ProfileRefreshControl {...generation} />
           </Anim>
           <Anim from="top" delay={100}>
             <h1 className="mt-6 font-serif text-5xl font-light italic tracking-tight leading-[0.9] sm:text-7xl lg:text-8xl">
