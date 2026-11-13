@@ -462,7 +462,9 @@ async function handleChat(
         tools,
         betas: ["context-management-2025-06-27"],
         max_tokens: 16000,
-        output_config: { effort: "medium" },
+        // Low, not medium: on 12 real messages it wrote as well, acted more readily on
+        // requests, and cost about 5% less (tested November 2026, see next_steps.md)
+        output_config: { effort: "low" },
       });
 
       // Forward text deltas to client. Text from separate rounds is joined
