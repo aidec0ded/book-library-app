@@ -27,7 +27,7 @@ import { StarRating } from "@/components/StarRating";
 import { ChangeEditionModal } from "@/components/ChangeEditionModal";
 import { EditionDetailsForm, type EditionDetails } from "@/components/EditionDetailsForm";
 import { mapToEditionFields, normalizeFormat, parseAuthorNames, type ISBNdbBook } from "@/lib/isbndb";
-import { useChatContext } from "@/contexts/ChatContext";
+import { useChatContext, useLibraryChanges } from "@/contexts/ChatContext";
 import type { Book, BookExcerpt, BookType, Conversation } from "@/lib/types";
 
 const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
@@ -79,6 +79,9 @@ function BookDetailContent({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { openPanel, excerptsVersion, conversations: allConversations } = useChatContext();
+  // Goes up when the companion changes something, so the page shows it without a reload
+  const [chatChanges, setChatChanges] = useState(0);
+  useLibraryChanges(() => setChatChanges((n) => n + 1));
   const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +100,20 @@ function BookDetailContent({ id }: { id: string | undefined }) {
   const [editingDetails, setEditingDetails] = useState(false);
   const [changingEdition, setChangingEdition] = useState(false);
   const [showAllAuthors, setShowAllAuthors] = useState(false);
+
+  // A change from the chat reloads the book quietly, without the loading screen
+  useEffect(() => {
+    if (chatChanges === 0 || !id) return;
+    void supabase
+      .from("books")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle()
+      .then(({ data }) => {
+        // Removed by the companion: the page stays until the reader leaves it
+        if (data) setBook(data);
+      });
+  }, [chatChanges, id]);
 
   useEffect(() => {
     async function fetch() {
@@ -122,7 +139,7 @@ function BookDetailContent({ id }: { id: string | undefined }) {
     fetchExcerptsForBook(id)
       .then(setExcerpts)
       .catch(() => setExcerpts([]));
-  }, [id, excerptsVersion]);
+  }, [id, excerptsVersion, chatChanges]);
 
   // The list changes as conversations start, get renamed, or get deleted
   useEffect(() => {
@@ -292,6 +309,7 @@ function BookDetailContent({ id }: { id: string | undefined }) {
           )
         }
         onError={setSaveError}
+        refreshKey={chatChanges}
       />
     ),
     classification: <VibeEditor bookId={book.id} bookType={book.book_type ?? "fiction"} />,

@@ -70,3 +70,25 @@ export async function fetchBooksByAuthor(name: string): Promise<AuthorBook[]> {
 export function authorLibraryPath(name: string): string {
   return `/library?author=${encodeURIComponent(name)}`;
 }
+
+export interface LibraryTitle {
+  id: string;
+  title: string;
+}
+
+const TITLE_PAGE_SIZE = 1000;
+
+/** Every book's title, for linking titles in chat replies. Supabase returns at most 1,000 rows a request. */
+export async function fetchLibraryTitles(): Promise<LibraryTitle[]> {
+  const titles: LibraryTitle[] = [];
+  for (let from = 0; ; from += TITLE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("books")
+      .select("id, title")
+      .order("id")
+      .range(from, from + TITLE_PAGE_SIZE - 1);
+    if (error) throw error;
+    titles.push(...(data ?? []));
+    if (!data || data.length < TITLE_PAGE_SIZE) return titles;
+  }
+}

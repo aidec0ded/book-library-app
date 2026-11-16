@@ -8,6 +8,8 @@ import { config } from "dotenv";
 import { authenticateRequest, type createUserClient } from "./auth.js";
 import { buildLibraryIndex, invalidateLibraryIndex } from "./library-index.js";
 import { actionRecord, changesBooks, withActions, type ActionRecord } from "./action-log.js";
+import { describeAction } from "./action-labels.js";
+import { registerReply, stopReply } from "./reply-control.js";
 import { executeLibrarySearch, type LibrarySearchCommand } from "./library-search.js";
 import { loadReaderProfile } from "./profile-loader.js";
 import { executeMemoryCommand, loadCoreMemory, type MemoryCommand } from "./memory-handler.js";
@@ -117,6 +119,8 @@ interface ChatRequest {
   is_onboarding?: boolean;
   today?: string;
   book_id?: string;
+  /** Resending a message whose reply failed: don't save the reader's message a second time */
+  retry?: boolean;
 }
 
 function writeSSE(
@@ -322,11 +326,13 @@ async function handleChat(
   // Companion (a paying subscriber, or anyone during the free period) gets the larger cap
   const paid = hasCompanion(subscription);
   const claimsMessage = !isOnboarding;
+  // Sent with the finished reply, so the counter on screen stays current
+  let messagesUsed: number | null = null;
   if (claimsMessage) {
     // Free readers get more in their first 30 days (src/lib/plans.ts)
     const limit = paid ? PAID_MONTHLY_REPLY_CAP : freeMonthlyReplies(accountCreatedAt);
-    const claimed = await claimMessage(serviceSupabase, userId, subscription.chat_messages_used, limit);
-    if (!claimed) {
+    messagesUsed = await claimMessage(serviceSupabase, userId, subscription.chat_messages_used, limit);
+    if (messagesUsed === null) {
       setCorsHeaders(req, res);
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(JSON.stringify(
@@ -342,6 +348,11 @@ async function handleChat(
   }
 
   let replySaved = false;
+  // Pressing Stop ends the reply where it is; see reply-control.ts
+  let stopRequested = false;
+  let currentStream: { abort: () => void } | null = null;
+  let unregisterReply: (() => void) | null = null;
+  let doneSent = false;
 
   // SSE headers
   setCorsHeaders(req, res);
@@ -358,6 +369,7 @@ async function handleChat(
 
     let conversationId = body.conversation_id;
     let bookId: string | null = null;
+    const startedConversation = !conversationId;
     if (!conversationId) {
       const { data: conv, error: convError } = await supabase
         .from("conversations")
@@ -384,15 +396,40 @@ async function handleChat(
       bookId = conv.book_id as string | null;
     }
 
+    unregisterReply = registerReply(conversationId, userId, () => {
+      stopRequested = true;
+      currentStream?.abort();
+    });
+
     writeSSE(res, "meta", { conversation_id: conversationId });
 
-    // Insert user message
-    const { error: msgError } = await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      role: "user",
-      content: body.message,
-    });
-    if (msgError) throw msgError;
+    // A retry resends a message that may already be saved, if the reply to it failed
+    let alreadySaved = false;
+    if (body.retry) {
+      const { data: last } = await supabase
+        .from("messages")
+        .select("role, content")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      alreadySaved = last?.role === "user" && last.content === body.message;
+    }
+
+    let savedUserMessageId: string | null = null;
+    if (!alreadySaved) {
+      const { data: userMsg, error: msgError } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          role: "user",
+          content: body.message,
+        })
+        .select("id")
+        .single();
+      if (msgError) throw msgError;
+      savedUserMessageId = userMsg.id as string;
+    }
 
     // Load conversation history: in full, or for a long conversation its condensed
     // start and the messages since (see conversation-history.ts)
@@ -458,7 +495,7 @@ async function handleChat(
     let accumulatedText = "";
     const actions: ActionRecord[] = [];
 
-    while (true) {
+    while (!stopRequested) {
       let roundText = "";
       const stream = anthropic.beta.messages.stream({
         model: MODEL,
@@ -474,6 +511,7 @@ async function handleChat(
         // requests, and cost about 5% less (tested November 2026, see next_steps.md)
         output_config: { effort: "low" },
       });
+      currentStream = stream;
 
       // Forward text deltas to client. Text from separate rounds is joined
       // with a paragraph break so it doesn't run together.
@@ -487,7 +525,19 @@ async function handleChat(
         writeSSE(res, "text", { content: chunk });
       });
 
-      const finalMessage = await stream.finalMessage();
+      let finalMessage: Anthropic.Beta.Messages.BetaMessage;
+      try {
+        finalMessage = await stream.finalMessage();
+      } catch (err) {
+        if (!(stopRequested && err instanceof Anthropic.APIUserAbortError)) throw err;
+        // Stopped mid-reply: what was written so far is the reply, and is still paid for
+        if (stream.currentMessage) {
+          void logTokenUsage(supabase, userId, conversationId, "chat", MODEL, stream.currentMessage.usage);
+        }
+        break;
+      } finally {
+        currentStream = null;
+      }
 
       // Log token usage (best-effort, fire-and-forget)
       void logTokenUsage(supabase, userId, conversationId, "chat", MODEL, finalMessage.usage);
@@ -587,7 +637,15 @@ async function handleChat(
         }
 
         const record = actionRecord(block.name, block.input, result, isError);
-        if (record) actions.push(record);
+        if (record) {
+          // Shown in the thread as it happens, and saved with the reply
+          const shown = await describeAction(supabase, block.name, block.input, linkedBook).catch(() => null);
+          if (shown) {
+            Object.assign(record, shown);
+            writeSSE(res, "action", { ...shown, ...(record.failed && { failed: true }) });
+          }
+          actions.push(record);
+        }
         // The library index is cached for 10 minutes; the next message should see this change
         if (changesBooks(record)) invalidateLibraryIndex(userId);
 
@@ -604,7 +662,26 @@ async function handleChat(
         content: toolResults,
       });
 
-      // Continue the loop for another round
+      // Stopped while tools ran: they've finished, but don't start another round
+      if (stopRequested) break;
+    }
+
+    // Stopped before writing anything: as if the message was never sent. It comes off the
+    // conversation (and a conversation it started goes too), and it isn't counted.
+    if (stopRequested && !accumulatedText.trim() && actions.length === 0) {
+      if (startedConversation) {
+        await supabase.from("conversations").delete().eq("id", conversationId);
+      } else if (savedUserMessageId) {
+        await supabase.from("messages").delete().eq("id", savedUserMessageId);
+      }
+      doneSent = true;
+      writeSSE(res, "done", { message_id: null, stopped: true, unsent: true });
+      if (claimsMessage) {
+        void releaseMessage(serviceSupabase, userId).catch((releaseError) => {
+          console.error("[chat] Couldn't return a message:", releaseError);
+        });
+      }
+      return;
     }
 
     // Save assistant message
@@ -622,7 +699,13 @@ async function handleChat(
     if (saveError) throw saveError;
     replySaved = true;
 
-    writeSSE(res, "done", { message_id: savedMsg.id });
+    doneSent = true;
+    writeSSE(res, "done", {
+      message_id: savedMsg.id,
+      // Set by the stop handler, which TypeScript can't see changing it
+      ...((stopRequested as boolean) ? { stopped: true } : {}),
+      ...(messagesUsed !== null && { messages_used: messagesUsed }),
+    });
 
     // Title generation: if this is the first exchange (2 messages)
     const { count } = await supabase
@@ -646,6 +729,11 @@ async function handleChat(
     // A spend limit, rate limit, or overload is "try again later", not a failure to show
     const message = isCapacityError(err) ? BUSY_MESSAGE : err instanceof Error ? err.message : String(err);
     if (isCapacityError(err)) console.error("[chat] Anthropic capacity or spend limit:", err instanceof Error ? err.message : err);
+    // After "done" the reply is saved; a later failure (title, condensing) isn't the reader's problem
+    if (doneSent) {
+      console.error("[chat] After the reply was saved:", message);
+      return;
+    }
     writeSSE(res, "error", { message });
 
     // A reader isn't charged a message for a reply they didn't get
@@ -654,9 +742,10 @@ async function handleChat(
         console.error("[chat] Couldn't return a free message:", releaseError);
       });
     }
+  } finally {
+    unregisterReply?.();
+    res.end();
   }
-
-  res.end();
 }
 
 async function generateTitle(
@@ -807,6 +896,23 @@ const server = http.createServer((req, res) => {
           return;
         }
       }
+    }
+
+    if (req.method === "POST" && url === "/api/chat/stop") {
+      void (async () => {
+        try {
+          const { userId } = await authenticateRequest(req.headers.authorization);
+          const body = (await readJsonBody(req)) as { conversation_id?: unknown };
+          const stopped =
+            typeof body?.conversation_id === "string" && stopReply(body.conversation_id, userId);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ stopped }));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Couldn't stop that reply" }));
+        }
+      })();
+      return;
     }
 
     if (req.method === "POST" && url === "/api/chat") {
@@ -1205,6 +1311,8 @@ const server = http.createServer((req, res) => {
             free_period_ends: !isPaidAndActive(sub) && inFreePeriod() ? FREE_PERIOD_ENDS.toISOString() : null,
             chat_messages_used: sub.chat_messages_used,
             chat_messages_limit: companion ? null : freeMonthlyReplies(accountCreatedAt),
+            // Companion's fair-use cap, so the chat can say when it's close
+            chat_messages_cap: companion ? PAID_MONTHLY_REPLY_CAP : null,
             current_period_end: sub.current_period_end,
             cancel_at_period_end: sub.cancel_at_period_end,
           }));

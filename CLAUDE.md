@@ -158,12 +158,16 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping) + edition grouping and language/format normalization
 - `src/components/ui/` — shadcn/ui components (Badge, Card, Input, Select, Separator, Textarea)
 - `src/hooks/useChatSession.ts` — Chat state machine (shared between full page and floating panel)
-- `src/contexts/ChatContext.tsx` — React context: chat session + panel open/close state
+- `src/contexts/ChatContext.tsx` — React context: chat session + panel open/close state. `useLibraryChanges` lets a page reload when the companion changes something while it's open
 - `src/contexts/SubscriptionContext.tsx` — Subscription state (plan, limits, isPaid), fetches from /api/subscription
 - `src/pages/Chat.tsx` — Full-page AI reading companion chat (consumes shared ChatContext)
 - `src/components/ChatPanel.tsx` — Floating chat panel + FAB button (accessible from every page, auto-hides on /chat)
 - `src/lib/chat.ts` — Conversation CRUD + SSE streaming client
-- `src/components/ChatMessage.tsx` — Chat message bubble component (user/assistant)
+- `src/components/ChatMessage.tsx` — Chat message bubble (user/assistant), with the changes the companion made listed under a reply
+- `src/components/ChatMarkdown.tsx` — A reply's markdown, with italicized book titles linked to the book; loaded on its own because the markdown library is large
+- `src/components/ChatThread.tsx` — A conversation's messages, the reply being written, a reply that failed or is still on its way, and "Try again", shared by the full page and the panel
+- `src/components/ChatComposer.tsx` — The message box with Send and Stop, the free reply counter, and the plan's limit in place of the box once it's reached
+- `src/lib/book-titles.ts` — The reader's titles, loaded once for linking titles in replies, and reloaded when the companion adds or removes books
 - `src/components/ConversationList.tsx` — Past conversations panel on the full chat page (collapsible)
 - `src/components/ConversationItems.tsx` — Conversation rows with switch, rename, and delete, used by the full page and the floating panel
 - `src/components/ChatEmptyState.tsx` — New conversation screen, with openers based on the book's status and its focus questions
@@ -184,6 +188,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/syllabus-index.ts` — Builds existing-syllabi context for system prompt (cached 10min, handles external items)
 - `server/excerpt-handler.ts` — Excerpt tool command executor (save, view). In a conversation about a book, saves go to that book
 - `server/conversation-history.ts` — What the AI sees of a conversation: every message until the history passes about 20,000 tokens, then a summary of the start (written in the background after a reply, Sonnet 5.5) plus the most recent ~8,000 tokens in full. The reader still sees every message. Each reply goes back with its record of actions
+- `server/action-labels.ts` — The line a reader sees in the thread for each change the companion makes ("Marked *Dune* as reading"), with a link to the book or list
+- `server/reply-control.ts` — Replies being written, so `POST /api/chat/stop` can end one. A reply otherwise keeps going and is saved when the reader's connection drops
 - `server/action-log.ts` — A short record of each change the companion makes with its tools (searches and views aren't recorded), saved with the reply in `messages.actions` and sent back to the AI as an `<actions>` note at the end of that reply, so it knows in later turns what it already did
 - `server/book-context.ts` — What the AI gets in a conversation about a book: its status, dates, notes, excerpts, list context, summary, and earlier conversations
 - `server/conversation-review.ts` — After a book conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation
@@ -319,7 +325,7 @@ Thirty tables in Supabase:
 - `conversation_id` — FK to conversations, CASCADE delete
 - `role` — 'user' or 'assistant'
 - `content` — message text
-- `actions` (jsonb) — on assistant messages, what the companion did with its tools in that reply: `[{tool, action, result, failed?}]`, from `server/action-log.ts` (migration 037). Null when nothing changed
+- `actions` (jsonb) — on assistant messages, what the companion did with its tools in that reply: `[{tool, action, result, failed?, label?, href?}]`, from `server/action-log.ts` (migration 037). `label` and `href` are what the reader sees under the reply; changes without a label (memory notes) aren't shown. Null when nothing changed
 
 **memory_files** — Persistent memory for the AI reading companion, loaded into every chat prompt and changed with the `update_memory` tool (a custom tool, not Anthropic's built-in memory tool, which makes the AI check memory before every reply). Key fields:
 - `path` (PK) — virtual file path, must start with `/memories/`

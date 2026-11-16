@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
-import { MessageCircle, X, Maximize2, Send, Loader2, AlertCircle, List, Plus } from "lucide-react";
+import { MessageCircle, X, Maximize2, List, Plus } from "lucide-react";
+import { ChatComposer } from "@/components/ChatComposer";
 import { ChatEmptyState } from "@/components/ChatEmptyState";
-import { ChatMessage } from "@/components/ChatMessage";
+import { ChatThread } from "@/components/ChatThread";
 import { ConversationItems } from "@/components/ConversationItems";
 import { useChatContext } from "@/contexts/ChatContext";
-import { useSubscription } from "@/contexts/SubscriptionContext";
-import { COMPANION_MONTHLY_REPLIES } from "@/lib/plans";
 
 export function ChatPanel() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const chat = useChatContext();
   const {
     conversationId,
     book,
@@ -22,23 +22,20 @@ export function ChatPanel() {
     input,
     streaming,
     streamingContent,
-    thinking,
-    error,
+    waitingForReply,
     messageLimitReached,
     setInput,
     send,
+    stop,
     newChat,
     selectConversation,
     loadMoreConversations,
     renameConversation,
     deleteConversation,
-    notifyExcerptSaved,
     panelOpen,
     openPanel,
     closePanel,
-    togglePanel,
-  } = useChatContext();
-  const { isPaid, chatMessagesUsed, chatMessagesLimit, chatMessagesRemaining } = useSubscription();
+  } = chat;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -86,19 +83,10 @@ export function ChatPanel() {
   // Hide entirely on the /chat page
   if (pathname === "/chat" || pathname.startsWith("/chat/")) return null;
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
-
   function handleExpand() {
     closePanel();
     navigate(conversationId ? `/chat/${conversationId}` : "/chat");
   }
-
-  const canSend = input.trim().length > 0 && !streaming;
 
   // FAB only when panel is closed
   if (!panelOpen) {
@@ -124,7 +112,7 @@ export function ChatPanel() {
       {/* Panel */}
       <div
         className={`fixed z-30 flex flex-col border bg-card shadow-xl transition-all duration-200 ease-out
-          bottom-0 left-0 right-0 h-[85vh] rounded-t-xl border-t
+          bottom-0 left-0 right-0 h-[85dvh] rounded-t-xl border-t
           sm:bottom-6 sm:right-6 sm:left-auto sm:h-[500px] sm:w-[400px] sm:rounded-xl sm:border
           ${mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"}
         `}
@@ -209,92 +197,29 @@ export function ChatPanel() {
 
         {/* Messages area */}
         <div className={`flex-1 overflow-y-auto px-3 py-3 ${showingList ? "hidden" : ""}`}>
-          {messages.length === 0 && !streaming && (
+          {messages.length === 0 && !streaming && !chat.error && (
             <ChatEmptyState book={book} compact onSend={send} />
           )}
 
           <div className="space-y-3">
-            {messages.map((msg) => (
-              <ChatMessage
-                key={msg.id}
-                role={msg.role}
-                content={msg.content}
-                save={
-                  msg.id.startsWith("temp-")
-                    ? undefined
-                    : { conversationId, book, onSaved: notifyExcerptSaved }
-                }
-              />
-            ))}
-
-            {streaming && streamingContent && (
-              <ChatMessage
-                role="assistant"
-                content={streamingContent}
-                isStreaming
-              />
-            )}
-
-            {streaming && (!streamingContent || thinking) && (
-              <div className="flex justify-start">
-                <div className="rounded-2xl bg-muted px-4 py-2.5">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <div className="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                {error}
-              </div>
-            )}
-
+            <ChatThread {...chat} compact />
             <div ref={messagesEndRef} />
           </div>
         </div>
 
         {/* Input area */}
         <div className={`border-t px-3 py-2 ${showingList ? "hidden" : ""}`}>
-          {messageLimitReached ? (
-            <div className="py-2 text-center">
-              <p className="text-sm text-muted-foreground">
-                You've used all {chatMessagesLimit} free messages this month.
-              </p>
-              <Link
-                to="/pricing"
-                className="mt-1.5 inline-block text-sm font-medium text-accent hover:underline"
-              >
-                Get {COMPANION_MONTHLY_REPLIES} replies a month with Companion →
-              </Link>
-            </div>
-          ) : (
-            <>
-              {!isPaid && chatMessagesLimit !== null && (
-                <p className="mb-1.5 text-center text-xs text-muted-foreground">
-                  {chatMessagesUsed} of {chatMessagesLimit} messages used
-                </p>
-              )}
-              <div className="flex items-end gap-2">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Say something..."
-                  rows={1}
-                  className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none ring-ring focus-visible:ring-2"
-                />
-                <button
-                  onClick={() => send()}
-                  disabled={!canSend}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
-            </>
-          )}
+          <ChatComposer
+            input={input}
+            setInput={setInput}
+            send={() => send()}
+            stop={stop}
+            streaming={streaming}
+            waitingForReply={waitingForReply}
+            messageLimitReached={messageLimitReached}
+            textareaRef={textareaRef}
+            compact
+          />
         </div>
       </div>
     </>

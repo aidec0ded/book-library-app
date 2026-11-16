@@ -98,6 +98,15 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  /** On a reply, what the companion changed with its tools (server/action-log.ts) */
+  actions?: MessageAction[] | null;
+}
+
+/** One change the companion made, as the reader sees it. Records without a label aren't shown. */
+export interface MessageAction {
+  label?: string;
+  href?: string;
+  failed?: boolean;
 }
 
 export interface BookExcerpt {

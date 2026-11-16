@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { MessageSquare, Plus, Lock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BookCover } from "@/components/BookCover";
 import { fetchSyllabi, createSyllabus } from "@/lib/lists";
-import { useChatContext } from "@/contexts/ChatContext";
+import { useChatContext, useLibraryChanges } from "@/contexts/ChatContext";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 import type { ListWithCount } from "@/lib/types";
 
@@ -37,19 +37,23 @@ export function SyllabiPage() {
   const { openPanel } = useChatContext();
   const { isPaid } = useSubscription();
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await fetchSyllabi();
-        setAllLists(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load");
-      } finally {
-        setLoading(false);
-      }
+  const load = useCallback(async () => {
+    try {
+      const data = await fetchSyllabi();
+      setAllLists(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
     }
-    void load();
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // A list the companion just made or changed
+  useLibraryChanges(() => void load());
 
   const filtered =
     activeTab === "all"

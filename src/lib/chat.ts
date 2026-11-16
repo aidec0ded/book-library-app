@@ -1,6 +1,6 @@
 import { localToday } from "@/lib/reading-dates";
 import { supabase } from "@/lib/supabase";
-import type { Conversation, Message } from "@/lib/types";
+import type { Conversation, Message, MessageAction } from "@/lib/types";
 
 const CONVERSATION_FIELDS = "*, book:books(id, title, status)";
 
@@ -68,17 +68,52 @@ export async function fetchMessages(
   return data;
 }
 
+export interface ChatDone {
+  /** Null when the reader stopped the reply before it wrote anything */
+  message_id: string | null;
+  stopped?: boolean;
+  /** Stopped before writing anything: the message was taken back off the conversation */
+  unsent?: boolean;
+  /** Replies used this month, counting this one */
+  messages_used?: number;
+}
+
+export interface ChatError {
+  message: string;
+  /** The server's reason, for the cases the chat handles itself (limits, a message that's too long) */
+  code?: string;
+  messages_used?: number;
+}
+
 export interface ChatCallbacks {
   onMeta: (data: { conversation_id: string }) => void;
   onText: (data: { content: string }) => void;
   onThinking: () => void;
-  onDone: (data: { message_id: string }) => void;
-  onError: (data: { message: string }) => void;
+  onAction: (action: MessageAction) => void;
+  onDone: (data: ChatDone) => void;
+  onError: (data: ChatError) => void;
+  /** The connection closed before the reply finished. The server keeps going and saves it. */
+  onDisconnect: () => void;
 }
 
 export interface SendMessageOptions {
   isOnboarding?: boolean;
   bookId?: string;
+  /** Resending after a failed reply, so the server doesn't save the message twice */
+  retry?: boolean;
+}
+
+/** Ask the server to stop the reply being written in a conversation. */
+export async function stopReply(conversationId: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  await fetch("/api/chat/stop", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+    },
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
 }
 
 export function sendMessage(
@@ -106,6 +141,7 @@ export function sendMessage(
       if (options?.bookId && !conversationId) {
         body.book_id = options.bookId;
       }
+      if (options?.retry) body.retry = true;
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -122,20 +158,28 @@ export function sendMessage(
       if (!response.ok || !response.body) {
         try {
           const errData = await response.json();
-          if (errData.error === "message_limit_reached") {
-            callbacks.onError({ message: "message_limit_reached" });
+          const code = typeof errData.error === "string" ? errData.error : undefined;
+          if (code === "message_limit_reached") {
+            callbacks.onError({ message: "message_limit_reached", code, messages_used: errData.messages_used });
             return;
           }
           // Busy, the monthly cap, or a message that's too long: the server says what to do
           if (typeof errData.message === "string") {
-            callbacks.onError({ message: errData.message });
+            callbacks.onError({ message: errData.message, code });
+            return;
+          }
+          if (response.status === 413) {
+            callbacks.onError({ message: "That message is too long.", code: "message_too_long" });
             return;
           }
         } catch {
           // Fall through to generic error
         }
         callbacks.onError({
-          message: `Server error: ${response.status}`,
+          message:
+            response.status === 429
+              ? "That's a lot of messages at once. Wait a moment, then try again."
+              : "Something went wrong on our side. Please try again.",
         });
         return;
       }
@@ -143,6 +187,8 @@ export function sendMessage(
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      // A reply ends with "done" or "error"; a stream that just stops lost its connection
+      let finished = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -173,7 +219,7 @@ export function sendMessage(
           if (!data) continue;
 
           try {
-            const parsed = JSON.parse(data) as Record<string, string>;
+            const parsed = JSON.parse(data) as Record<string, unknown>;
             switch (eventType) {
               case "meta":
                 callbacks.onMeta(parsed as { conversation_id: string });
@@ -184,10 +230,15 @@ export function sendMessage(
               case "thinking":
                 callbacks.onThinking();
                 break;
+              case "action":
+                callbacks.onAction(parsed as MessageAction);
+                break;
               case "done":
-                callbacks.onDone(parsed as { message_id: string });
+                finished = true;
+                callbacks.onDone(parsed as unknown as ChatDone);
                 break;
               case "error":
+                finished = true;
                 callbacks.onError(parsed as { message: string });
                 break;
             }
@@ -196,11 +247,11 @@ export function sendMessage(
           }
         }
       }
+      if (!finished) callbacks.onDisconnect();
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
-      callbacks.onError({
-        message: err instanceof Error ? err.message : "Connection failed",
-      });
+      // A dropped connection mid-reply; before any reply started, it's just a failed send
+      callbacks.onDisconnect();
     }
   })();
 

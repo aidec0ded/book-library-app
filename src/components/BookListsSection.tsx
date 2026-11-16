@@ -16,6 +16,8 @@ interface BookListsSectionProps {
   /** Completing a book on a reading path also marks it as read. */
   onBookMarkedRead: () => void;
   onError: (message: string) => void;
+  /** Changes when the lists should be loaded again, after the companion edits them */
+  refreshKey?: number;
 }
 
 export function BookListsSection({
@@ -23,6 +25,7 @@ export function BookListsSection({
   bookStatus,
   onBookMarkedRead,
   onError,
+  refreshKey,
 }: BookListsSectionProps) {
   const [entries, setEntries] = useState<BookListEntry[]>([]);
 
@@ -38,7 +41,7 @@ export function BookListsSection({
     return () => {
       cancelled = true;
     };
-  }, [bookId]);
+  }, [bookId, refreshKey]);
 
   async function handleProgressChange(entryId: string, next: PathProgress) {
     const previous = entries;

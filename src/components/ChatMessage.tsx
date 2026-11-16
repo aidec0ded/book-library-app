@@ -1,11 +1,19 @@
-import { useRef } from "react";
+import { lazy, Suspense, useRef } from "react";
+import { Link } from "react-router-dom";
+import { Check, X } from "lucide-react";
 import { SaveToBook } from "@/components/SaveToBook";
-import type { ConversationBook } from "@/lib/types";
+import type { ConversationBook, MessageAction } from "@/lib/types";
+
+const ChatMarkdown = lazy(() => import("@/components/ChatMarkdown"));
 
 interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  /** A reply that didn't finish, shown faded */
+  incomplete?: boolean;
+  /** What the companion changed with its tools in this reply */
+  actions?: MessageAction[] | null;
   /** Offers "Save to book" under the message. */
   save?: {
     conversationId: string | null;
@@ -14,109 +22,85 @@ interface ChatMessageProps {
   };
 }
 
-/**
- * Lightweight markdown renderer for chat messages.
- * Handles: bold, italic, bullet/numbered lists, paragraphs.
- */
-function renderMarkdown(text: string): React.ReactNode[] {
-  const paragraphs = text.split(/\n\n+/);
-  const nodes: React.ReactNode[] = [];
-
-  for (let i = 0; i < paragraphs.length; i++) {
-    const para = paragraphs[i].trim();
-    if (!para) continue;
-
-    // Check if this paragraph is a list
-    const lines = para.split("\n");
-    const isBulletList = lines.every((l) => /^[-*]\s/.test(l.trim()));
-    const isNumberedList = lines.every((l) => /^\d+[.)]\s/.test(l.trim()));
-
-    if (isBulletList) {
-      nodes.push(
-        <ul key={i} className="my-1 ml-5 list-disc">
-          {lines.map((line, j) => (
-            <li key={j} className="mb-0.5">
-              {inlineMarkdown(line.trim().replace(/^[-*]\s/, ""))}
-            </li>
-          ))}
-        </ul>,
-      );
-    } else if (isNumberedList) {
-      nodes.push(
-        <ol key={i} className="my-1 ml-5 list-decimal">
-          {lines.map((line, j) => (
-            <li key={j} className="mb-0.5">
-              {inlineMarkdown(line.trim().replace(/^\d+[.)]\s/, ""))}
-            </li>
-          ))}
-        </ol>,
-      );
-    } else {
-      nodes.push(
-        <p key={i} className={i < paragraphs.length - 1 ? "mb-2" : ""}>
-          {inlineMarkdown(para)}
-        </p>,
-      );
-    }
-  }
-
-  return nodes;
+/** A label with *italic* names, as the server writes them. */
+function ActionLabel({ label }: { label: string }) {
+  return (
+    <>
+      {label.split(/(\*[^*]+\*)/).map((part, i) =>
+        part.startsWith("*") && part.endsWith("*") && part.length > 2 ? (
+          <em key={i}>{part.slice(1, -1)}</em>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
 }
 
-/** Handle **bold**, *italic*, and line breaks within a block. */
-function inlineMarkdown(text: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
-  // Match **bold**, *italic*, or plain text segments
-  const regex = /\*\*(.+?)\*\*|\*(.+?)\*|([^*]+)/g;
-  let match: RegExpExecArray | null;
-  let key = 0;
+/** What the companion changed, under its reply, each linking to where the change shows. */
+export function ActionList({ actions }: { actions: MessageAction[] }) {
+  const shown = actions.filter((action) => action.label);
+  if (shown.length === 0) return null;
 
-  while ((match = regex.exec(text)) !== null) {
-    if (match[1] !== undefined) {
-      nodes.push(<strong key={key++} className="font-semibold">{match[1]}</strong>);
-    } else if (match[2] !== undefined) {
-      nodes.push(<em key={key++}>{match[2]}</em>);
-    } else if (match[3] !== undefined) {
-      // Handle single newlines as line breaks
-      const parts = match[3].split("\n");
-      for (let i = 0; i < parts.length; i++) {
-        if (i > 0) nodes.push(<br key={key++} />);
-        if (parts[i]) nodes.push(<span key={key++}>{parts[i]}</span>);
-      }
-    }
-  }
-
-  return nodes;
+  return (
+    <ul className="mt-1.5 space-y-1 px-1" aria-label="Changes made">
+      {shown.map((action, i) => {
+        const Icon = action.failed ? X : Check;
+        const text = (
+          <>
+            <Icon className={`h-3 w-3 shrink-0 ${action.failed ? "text-destructive" : "text-accent"}`} />
+            <span>
+              <ActionLabel label={action.label!} />
+              {action.failed && " (didn't go through)"}
+            </span>
+          </>
+        );
+        return (
+          <li key={i} className="text-xs text-muted-foreground">
+            {action.href && !action.failed ? (
+              <Link to={action.href} className="inline-flex items-center gap-1.5 hover:text-foreground hover:underline">
+                {text}
+              </Link>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">{text}</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
-export function ChatMessage({ role, content, isStreaming, save }: ChatMessageProps) {
+export function ChatMessage({ role, content, isStreaming, incomplete, actions, save }: ChatMessageProps) {
   const isUser = role === "user";
   const bubbleRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className={`group flex flex-col ${isUser ? "items-end" : "items-start"}`}>
-      <div
-        ref={bubbleRef}
-        className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
-          isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted"
-        }`}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-line text-sm leading-relaxed">
-            {content}
-          </p>
-        ) : (
-          <div className="text-sm leading-relaxed">
-            {renderMarkdown(content)}
-            {isStreaming && (
-              <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-current align-middle" />
-            )}
-          </div>
-        )}
-      </div>
-      {save && <SaveToBook content={content} bubbleRef={bubbleRef} {...save} />}
+      {(content || isStreaming) && (
+        <div
+          ref={bubbleRef}
+          className={`max-w-[85%] rounded-2xl px-4 py-2.5 ${
+            isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+          } ${incomplete ? "opacity-60" : ""}`}
+        >
+          {isUser ? (
+            <p className="whitespace-pre-line text-sm leading-relaxed">{content}</p>
+          ) : (
+            <div className="break-words text-sm leading-relaxed">
+              {/* Plain text for the moment it takes the markdown renderer to load */}
+              <Suspense fallback={<p className="whitespace-pre-line">{content}</p>}>
+                <ChatMarkdown content={content} />
+              </Suspense>
+              {isStreaming && (
+                <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-current align-middle" />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {actions && actions.length > 0 && <ActionList actions={actions} />}
+      {save && content && <SaveToBook content={content} bubbleRef={bubbleRef} {...save} />}
     </div>
   );
 }

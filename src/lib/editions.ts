@@ -191,7 +191,7 @@ function normalizeAuthorKey(author?: string | null): string {
 // A subtitle starts at a colon, bracket, or spaced dash ("Catch-22" keeps its hyphen)
 const SUBTITLE_RE = /(\s*[:(\[]|\s+[-\u2013\u2014]\s+).*$/;
 
-function normalizeWorkTitle(title: string): string {
+export function normalizeWorkTitle(title: string): string {
   let t = title.toLowerCase().replace(/&/g, " and ");
   // Remove subtitles and parentheticals
   t = t.replace(SUBTITLE_RE, "").trim();
@@ -364,7 +364,7 @@ export function findWorkEditions(
 
 // --- Matching a requested book ---
 
-function normalizeFullTitle(title: string): string {
+export function normalizeFullTitle(title: string): string {
   const t = title
     .toLowerCase()
     .replace(/&/g, " and ")

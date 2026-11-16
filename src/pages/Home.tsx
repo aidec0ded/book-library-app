@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useLibraryChanges } from "@/contexts/ChatContext";
 import { Link } from "react-router-dom";
 import { BookCover } from "@/components/BookCover";
 import { DonutChart } from "@/components/DonutChart";
@@ -53,34 +54,37 @@ export function Home() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
+  const loadLibrary = useCallback(async () => {
+    let hadError = false;
+
+    const [readingResult, suggestionsResult, recentResult, statsResult] =
+      await Promise.all([
+        fetchCurrentlyReading().catch(() => { hadError = true; return []; }),
+        fetchRecommendations(5).catch(() => { hadError = true; return []; }),
+        fetchRecentAdditions().catch(() => { hadError = true; return []; }),
+        fetchLibraryStats().catch(() => { hadError = true; return null; }),
+      ]);
+
+    setCurrentlyReading(readingResult);
+    setSuggestions(suggestionsResult);
+    setRecentAdditions(recentResult);
+    setStats(statsResult);
+    setLoadError(hadError);
+    setLoading(false);
+  }, []);
+
+  // Reading, recent additions, and stats can change when the companion updates a book
+  useLibraryChanges(() => void loadLibrary());
+
   useEffect(() => {
-    async function load() {
-      let hadError = false;
-
-      const [readingResult, suggestionsResult, recentResult, statsResult] =
-        await Promise.all([
-          fetchCurrentlyReading().catch(() => { hadError = true; return []; }),
-          fetchRecommendations(5).catch(() => { hadError = true; return []; }),
-          fetchRecentAdditions().catch(() => { hadError = true; return []; }),
-          fetchLibraryStats().catch(() => { hadError = true; return null; }),
-        ]);
-
-      setCurrentlyReading(readingResult);
-      setSuggestions(suggestionsResult);
-      setRecentAdditions(recentResult);
-      setStats(statsResult);
-      setLoadError(hadError);
-      setLoading(false);
-    }
-
-    void load();
+    void loadLibrary();
 
     // Greeting fetched separately (may be slower due to AI generation)
     void fetchGreeting().then((g) => {
       setGreeting(g);
       setGreetingLoaded(true);
     });
-  }, []);
+  }, [loadLibrary]);
 
   if (loading) {
     return (

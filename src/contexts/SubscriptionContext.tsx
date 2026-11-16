@@ -8,6 +8,8 @@ interface SubscriptionState {
   chatMessagesUsed: number;
   chatMessagesLimit: number | null;
   chatMessagesRemaining: number | null;
+  /** Companion's fair-use cap on replies a month (null without Companion) */
+  chatMessagesCap: number | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   /** Whether the reader gets Companion features: a subscription, or the free period */
@@ -20,6 +22,8 @@ interface SubscriptionState {
   paymentPastDue: boolean;
   isLoading: boolean;
   refreshSubscription: () => Promise<void>;
+  /** The count the server sent with a reply, so the counter stays current between fetches */
+  setChatMessagesUsed: (used: number) => void;
 }
 
 const SubscriptionContext = createContext<SubscriptionState | null>(null);
@@ -28,7 +32,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [plan, setPlan] = useState<"free" | "monthly" | "annual">("free");
   const [status, setStatus] = useState("active");
   const [chatMessagesUsed, setChatMessagesUsed] = useState(0);
-  const [chatMessagesLimit, setChatMessagesLimit] = useState<number | null>(5);
+  const [chatMessagesLimit, setChatMessagesLimit] = useState<number | null>(null);
+  const [chatMessagesCap, setChatMessagesCap] = useState<number | null>(null);
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
   const [companion, setCompanion] = useState<boolean | null>(null);
@@ -51,6 +56,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       setStatus(data.status);
       setChatMessagesUsed(data.chat_messages_used);
       setChatMessagesLimit(data.chat_messages_limit);
+      setChatMessagesCap(typeof data.chat_messages_cap === "number" ? data.chat_messages_cap : null);
       setCurrentPeriodEnd(data.current_period_end);
       setCancelAtPeriodEnd(data.cancel_at_period_end);
       setCompanion(typeof data.companion === "boolean" ? data.companion : null);
@@ -94,6 +100,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         chatMessagesUsed,
         chatMessagesLimit,
         chatMessagesRemaining,
+        chatMessagesCap,
         currentPeriodEnd,
         cancelAtPeriodEnd,
         isPaid,
@@ -102,6 +109,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         paymentPastDue,
         isLoading,
         refreshSubscription: fetchSubscription,
+        setChatMessagesUsed,
       }}
     >
       {children}

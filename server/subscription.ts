@@ -55,7 +55,8 @@ async function moveMessagesUsed(
 }
 
 /**
- * Claim one of a free reader's messages before doing any work, returning false at the limit.
+ * Claim one of a reader's messages before doing any work, returning how many they've now used,
+ * or null at the limit.
  * Checking first and counting afterward let requests sent together all pass the check.
  */
 export async function claimMessage(
@@ -63,13 +64,13 @@ export async function claimMessage(
   userId: string,
   used: number,
   limit: number,
-): Promise<boolean> {
+): Promise<number | null> {
   let current = used;
   while (current < limit) {
-    if (await moveMessagesUsed(supabase, userId, current, current + 1)) return true;
+    if (await moveMessagesUsed(supabase, userId, current, current + 1)) return current + 1;
     current = await readMessagesUsed(supabase, userId);
   }
-  return false;
+  return null;
 }
 
 /** Give a claimed message back, for a reply that failed. */

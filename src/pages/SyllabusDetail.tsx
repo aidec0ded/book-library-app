@@ -25,7 +25,7 @@ import {
   updateItemProgress,
   type SyllabusItemWithBook,
 } from "@/lib/lists";
-import { useChatContext } from "@/contexts/ChatContext";
+import { useChatContext, useLibraryChanges } from "@/contexts/ChatContext";
 import type { Book, List, PathProgress, SeminarContent } from "@/lib/types";
 
 type EditingField = "name" | "description";
@@ -68,23 +68,27 @@ export function SyllabusDetail() {
 
   const isPath = syllabus?.list_type === "reading_path";
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [listData, itemsData] = await Promise.all([
-          fetchSyllabus(id!),
-          fetchSyllabusItems(id!),
-        ]);
-        setSyllabus(listData);
-        setItems(itemsData);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load");
-      } finally {
-        setLoading(false);
-      }
+  const load = useCallback(async () => {
+    try {
+      const [listData, itemsData] = await Promise.all([
+        fetchSyllabus(id!),
+        fetchSyllabusItems(id!),
+      ]);
+      setSyllabus(listData);
+      setItems(itemsData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
     }
-    void load();
   }, [id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // The companion edited this list (or its books) while the page was open
+  useLibraryChanges(() => void load());
 
   useEffect(() => {
     if (!saveError) return;

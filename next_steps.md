@@ -86,13 +86,13 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 **Trust and reliability**
 
-- Show AI actions in the thread — "Added *Dune* to wishlist" with a link, and refresh the page behind the panel. Today actions are invisible
-- Stop and retry — `abortRef` is set but never used, and there's no way to resend after an error
-- Stuck and lost replies — a stream that ends without `done` leaves chat "streaming" until reload, and errors lose the partial reply
+- Show AI actions in the thread **[DONE]** — each change the companion makes appears under its reply as it happens ("Marked *Dune* as reading"), linking to the book or list, and marked when it didn't go through (`server/action-labels.ts`, saved on `messages.actions`). Memory notes aren't shown. The book page, syllabi, a syllabus, and Home behind the panel reload what changed (`useLibraryChanges`); the Library gallery doesn't yet
+- Stop and retry **[DONE]** — Stop ends the reply where it is and keeps what it wrote (`POST /api/chat/stop`, `server/reply-control.ts`); stopped before writing anything, the message goes back into the box as if never sent (a conversation it started is removed) and isn't counted. "Try again" resends a failed message without saving it twice
+- Stuck and lost replies **[DONE]** — a dropped connection shows what the reply had written and waits up to two minutes for the reply the server goes on to save. A failed reply keeps its partial text, faded, with "Try again", which first checks whether the reply was saved after all. A message that never reached the server says so and offers "Try again". Opening a conversation whose last message has no reply waits for it if it's recent, otherwise offers to send it again
 - New Chat during a reply — `newChat` isn't guarded, so the reply can land in the new chat **[DONE]**
-- Formatting — replace the hand-written formatter with proper markdown, and link book titles
-- Free limit — show it before someone types, keep the counter current, and don't lose the typed message
-- Phone layout — `/chat` uses `100vh`, which probably runs behind mobile browser bars. Check on a device
+- Formatting **[DONE]** — replies render as markdown (`react-markdown` with GitHub tables and lists, loaded only when a reply is shown), and italicized titles link to the book when exactly one book in the library has that title. The prompt now asks for titles in italics
+- Free limit **[DONE]** — the counter updates after every reply from the server's count, the limit replaces the message box once it's reached (before anyone types), Companion readers see how many replies are left once 10 or fewer remain, and a message refused for the limit or its length goes back into the box
+- Phone layout **[DONE]** — `/chat` and the panel use `dvh`, which excludes the browser's own bars, and the message box uses 16px text on phones so iPhones don't zoom in when it's tapped. Tested at phone size in a browser, not on a device
 - Conversation titles — generated after the client refreshes its list, so a new chat probably shows no title until the next refresh **[DONE]**
 
 **Excerpts**

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, Loader2 } from "lucide-react";
-import { ChatMessage } from "@/components/ChatMessage";
+import { ArrowRight } from "lucide-react";
+import { ChatThread } from "@/components/ChatThread";
 import { useChatSession } from "@/hooks/useChatSession";
 import { completeOnboarding } from "@/lib/onboarding";
 import { capture } from "@/lib/posthog";
@@ -16,16 +16,8 @@ export function OnboardingPage() {
   const [phase, setPhase] = useState<Phase>(imported ? "chat" : "welcome");
   const [completing, setCompleting] = useState(false);
 
-  const {
-    messages,
-    input,
-    streaming,
-    streamingContent,
-    thinking,
-    error,
-    setInput,
-    send,
-  } = useChatSession({ onboarding: true });
+  const chat = useChatSession({ onboarding: true });
+  const { messages, input, streaming, streamingContent, waitingForReply, messageLimitReached, setInput, send } = chat;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -150,34 +142,13 @@ export function OnboardingPage() {
             </div>
           )}
 
-          {messages.map((msg) => (
-            <ChatMessage
-              key={msg.id}
-              role={msg.role}
-              content={msg.content}
-            />
-          ))}
+          <ChatThread {...chat} allowSave={false} />
 
-          {streaming && streamingContent && (
-            <ChatMessage
-              role="assistant"
-              content={streamingContent}
-              isStreaming
-            />
-          )}
-
-          {streaming && (!streamingContent || thinking) && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-muted px-4 py-2.5">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
+          {messageLimitReached && (
+            <p className="rounded-lg bg-muted px-4 py-3 text-sm text-muted-foreground">
+              That's all the free replies for this month. You can finish setting up and keep
+              adding books to your library yourself.
+            </p>
           )}
 
           <div ref={messagesEndRef} />
@@ -198,7 +169,7 @@ export function OnboardingPage() {
           />
           <button
             onClick={() => send()}
-            disabled={!input.trim() || streaming}
+            disabled={!input.trim() || streaming || waitingForReply}
             className="shrink-0 rounded-xl bg-foreground px-5 py-3 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
           >
             Send

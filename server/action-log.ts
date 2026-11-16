@@ -14,6 +14,9 @@ export interface ActionRecord {
   /** The tool's result, first line only */
   result: string;
   failed?: boolean;
+  /** What the reader sees in the thread (action-labels.ts); absent for changes not shown */
+  label?: string;
+  href?: string;
 }
 
 /** Tool actions that only look things up. */

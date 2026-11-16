@@ -29,7 +29,9 @@
     "posthog-js": "^1.351.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-markdown": "10.1.0",
     "react-router-dom": "^7.13.0",
+    "remark-gfm": "4.0.1",
     "stripe": "^20.3.1",
     "tailwind-merge": "^3.4.0",
     "tsx": "^4.19.2"

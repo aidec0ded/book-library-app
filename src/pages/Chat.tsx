@@ -1,16 +1,15 @@
 import { useEffect, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Send, Loader2, AlertCircle } from "lucide-react";
+import { ChatComposer } from "@/components/ChatComposer";
 import { ChatEmptyState } from "@/components/ChatEmptyState";
-import { ChatMessage } from "@/components/ChatMessage";
+import { ChatThread } from "@/components/ChatThread";
 import { ConversationList } from "@/components/ConversationList";
 import { useChatContext } from "@/contexts/ChatContext";
-import { useSubscription } from "@/contexts/SubscriptionContext";
-import { COMPANION_MONTHLY_REPLIES } from "@/lib/plans";
 
 export function Chat() {
   const { id: linkedId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const chat = useChatContext();
   const {
     conversationId,
     book,
@@ -21,20 +20,18 @@ export function Chat() {
     input,
     streaming,
     streamingContent,
-    thinking,
-    error,
+    waitingForReply,
     messageLimitReached,
     setInput,
     send,
+    stop,
     selectConversation,
     newChat,
     loadMoreConversations,
     renameConversation,
     deleteConversation,
-    notifyExcerptSaved,
     closePanel,
-  } = useChatContext();
-  const { isPaid, chatMessagesUsed, chatMessagesLimit } = useSubscription();
+  } = chat;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -55,11 +52,16 @@ export function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedId]);
 
-  // And follows along once a new conversation has an ID
+  // And follows along once a new conversation has an ID, or leaves its link when it's gone
+  // (a reply stopped before it began takes the conversation it started with it)
+  const previousId = useRef(conversationId);
   useEffect(() => {
     if (conversationId && conversationId !== linkedId) {
       navigate(`/chat/${conversationId}`, { replace: true });
+    } else if (!conversationId && previousId.current && previousId.current === linkedId) {
+      navigate("/chat", { replace: true });
     }
+    previousId.current = conversationId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
@@ -74,17 +76,9 @@ export function Chat() {
     if (id === linkedId) navigate("/chat");
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
-
-  const canSend = input.trim().length > 0 && !streaming;
-
   return (
-    <div className="flex h-[calc(100vh-53px)] flex-col lg:h-screen">
+    // dvh, not vh: on phones vh counts the space behind the browser's own bars
+    <div className="flex h-[calc(100dvh-53px)] flex-col lg:h-dvh">
       <ConversationList
         conversations={conversations}
         activeId={conversationId}
@@ -113,47 +107,12 @@ export function Chat() {
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && !streaming && (
+        {messages.length === 0 && !streaming && !chat.error && (
           <ChatEmptyState book={book} onSend={send} />
         )}
 
         <div className="mx-auto max-w-2xl space-y-4">
-          {messages.map((msg) => (
-            <ChatMessage
-              key={msg.id}
-              role={msg.role}
-              content={msg.content}
-              save={
-                msg.id.startsWith("temp-")
-                  ? undefined
-                  : { conversationId, book, onSaved: notifyExcerptSaved }
-              }
-            />
-          ))}
-
-          {streaming && streamingContent && (
-            <ChatMessage
-              role="assistant"
-              content={streamingContent}
-              isStreaming
-            />
-          )}
-
-          {streaming && (!streamingContent || thinking) && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-muted px-4 py-2.5">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              {error}
-            </div>
-          )}
-
+          <ChatThread {...chat} />
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -161,45 +120,16 @@ export function Chat() {
       {/* Input area */}
       <div className="border-t px-4 py-3">
         <div className="mx-auto max-w-2xl">
-          {messageLimitReached ? (
-            <div className="py-3 text-center">
-              <p className="text-sm text-muted-foreground">
-                You've used all {chatMessagesLimit} free messages this month.
-              </p>
-              <Link
-                to="/pricing"
-                className="mt-2 inline-block text-sm font-medium text-accent hover:underline"
-              >
-                Get {COMPANION_MONTHLY_REPLIES} replies a month with Companion →
-              </Link>
-            </div>
-          ) : (
-            <>
-              {!isPaid && chatMessagesLimit !== null && (
-                <p className="mb-2 text-center text-xs text-muted-foreground">
-                  {chatMessagesUsed} of {chatMessagesLimit} messages used this month
-                </p>
-              )}
-              <div className="flex items-end gap-2">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Say something..."
-                  rows={2}
-                  className="flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none ring-ring focus-visible:ring-2"
-                />
-                <button
-                  onClick={() => send()}
-                  disabled={!canSend}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
-            </>
-          )}
+          <ChatComposer
+            input={input}
+            setInput={setInput}
+            send={() => send()}
+            stop={stop}
+            streaming={streaming}
+            waitingForReply={waitingForReply}
+            messageLimitReached={messageLimitReached}
+            textareaRef={textareaRef}
+          />
         </div>
       </div>
     </div>
