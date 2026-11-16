@@ -70,7 +70,7 @@ const SECTIONS: FAQSection[] = [
     items: [
       {
         q: "What do I get with a subscription?",
-        a: `Everything in the free plan, plus up to ${COMPANION_MONTHLY_REPLIES} replies a month from your reading companion, syllabi and reading paths built with it, insights from book conversations saved to book pages for you, and weekly profile refreshes.`,
+        a: `Everything in the free plan, plus up to ${COMPANION_MONTHLY_REPLIES} replies a month from your reading companion, syllabi and reading paths built with it, insights from your conversations about books saved to their pages for you, and weekly profile refreshes.`,
       },
       {
         q: `Why is Companion limited to ${COMPANION_MONTHLY_REPLIES} replies a month?`,

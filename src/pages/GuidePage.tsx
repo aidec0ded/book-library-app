@@ -259,7 +259,7 @@ const SECTIONS: Section[] = [
           <Li><Bold>Create syllabi</Bold> — Themed reading lists with rationale for each selection</Li>
           <Li><Bold>Build reading paths</Bold> — Structured journeys with seminar content</Li>
           <Li><Bold>Manage wishlist</Bold> — Add books you want to read</Li>
-          <Li><Bold>Save insights</Bold> — "Save to book" under any message keeps it on a book's page, and on the paid plan what's worth keeping from book conversations is saved automatically</Li>
+          <Li><Bold>Save insights</Bold> — "Save to book" under any message keeps it on a book's page, and on the paid plan what's worth keeping from your conversations about books is saved to their pages automatically</Li>
           <Li><Bold>Browse releases</Bold> — Search upcoming books scored against your profile</Li>
           <Li><Bold>Remember you</Bold> — Persistent memory across conversations</Li>
         </ul>

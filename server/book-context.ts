@@ -57,6 +57,7 @@ export async function buildBookContext(
       .from("book_excerpts")
       .select("content")
       .eq("book_id", bookId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: true }),
     supabase
       .from("list_items")

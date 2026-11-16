@@ -63,6 +63,7 @@ export async function executeExcerptCommand(
         .from("book_excerpts")
         .select("content, created_at")
         .eq("book_id", book.id)
+        .is("deleted_at", null)
         .order("created_at", { ascending: true });
 
       if (fetchError) throw fetchError;

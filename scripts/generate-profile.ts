@@ -100,6 +100,7 @@ Guidelines:
 - nonfiction_identity and poetry_identity: set to null if the library has fewer than 5 books of that type. Otherwise, write a substantive essay.
 - nonfiction_interests: 3-8 topic areas (e.g. "cognitive science", "political philosophy", "memoir"). Empty array if no nonfiction.
 - poet_affinities: 3-8 poet names you most connect with. Empty array if no poetry.
+- Saved excerpts are what was kept from your conversations about particular books, by you or after a conversation ended: mostly your own reactions, interpretations, and connections, sometimes a passage from the companion you wanted to keep. Either way they mattered enough to keep, which makes them some of the best evidence of how books actually affect you, so let them shape the profile, especially emotional_patterns and reader_identity. Draw on them in your own words rather than quoting them back.
 - Look for cross-type connections: does your fiction taste mirror your nonfiction interests? Do the poets you read share sensibilities with your favorite novelists?`;
 
 // --- Data Gathering ---
@@ -208,6 +209,30 @@ async function fetchRecentMessages(
 
   if (error) throw error;
   return (data ?? []).reverse();
+}
+
+// The most recent excerpts, each cut to this length; together about 6,000 tokens at most
+const MAX_EXCERPTS = 60;
+const EXCERPT_CHARACTERS = 400;
+
+/** What the reader kept from conversations, newest first, with the book each is about. */
+async function fetchExcerpts(): Promise<{ content: string; title: string; author: string }[]> {
+  let query = supabase
+    .from("book_excerpts")
+    .select("content, books(title, author)")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(MAX_EXCERPTS);
+
+  if (userId) query = query.eq("user_id", userId);
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+  return (data ?? []).flatMap((row) => {
+    const book = row.books as unknown as { title: string; author: string } | null;
+    return book ? [{ content: row.content, title: book.title, author: book.author }] : [];
+  });
 }
 
 interface PreviousProfile {
@@ -434,12 +459,13 @@ async function main() {
   }
 
   // Gather data
-  const [books, tagMap, memoryFiles, recentMessages, previousProfile] =
+  const [books, tagMap, memoryFiles, recentMessages, excerpts, previousProfile] =
     await Promise.all([
       fetchAllBooks(),
       fetchCanonicalTags(),
       bootstrap ? Promise.resolve([]) : fetchMemoryFiles(),
       bootstrap ? Promise.resolve([]) : fetchRecentMessages(100),
+      bootstrap ? Promise.resolve([]) : fetchExcerpts(),
       fetchPreviousProfile(),
     ]);
 
@@ -461,6 +487,13 @@ async function main() {
           .join("\n\n")
       : "No conversations yet.";
 
+  const excerptText =
+    excerpts.length > 0
+      ? excerpts
+          .map((e) => `- "${e.title}" by ${e.author}: ${e.content.slice(0, EXCERPT_CHARACTERS)}`)
+          .join("\n")
+      : "None saved yet.";
+
   const userPrompt = `Generate a reader profile from the following data.
 
 ## Library (${books.length} books)
@@ -475,6 +508,10 @@ ${memoryText}
 
 ${conversationText}
 
+## Saved Excerpts (most recent ${MAX_EXCERPTS} at most)
+
+${excerptText}
+
 ## Previous Shift Log (preserve these entries)
 
 ${JSON.stringify(previousShiftLog, null, 2)}`;
@@ -482,7 +519,7 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   const mode = dryRun ? "dry-run" : "live";
   console.log(`  Mode: ${mode} | Model: ${MODEL} | Effort: ${EFFORT}${userId ? ` | User: ${userId}` : ""}`);
   console.log(
-    `  Context: ${books.length} books | ${memoryFiles.length} memory files | ${recentMessages.length} messages`,
+    `  Context: ${books.length} books | ${memoryFiles.length} memory files | ${recentMessages.length} messages | ${excerpts.length} excerpts`,
   );
   if (previousProfile) {
     console.log(`  Previous profile: yes`);

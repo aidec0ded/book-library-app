@@ -192,7 +192,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/reply-control.ts` — Replies being written, so `POST /api/chat/stop` can end one. A reply otherwise keeps going and is saved when the reader's connection drops
 - `server/action-log.ts` — A short record of each change the companion makes with its tools (searches and views aren't recorded), saved with the reply in `messages.actions` and sent back to the AI as an `<actions>` note at the end of that reply, so it knows in later turns what it already did
 - `server/book-context.ts` — What the AI gets in a conversation about a book: its status, dates, notes, excerpts, list context, summary, and earlier conversations
-- `server/conversation-review.ts` — After a book conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation
+- `server/conversation-review.ts` — After a conversation goes quiet for 30 minutes, saves up to two excerpts and a one-line summary (paid plan, every 10 minutes, Sonnet 5.5), so the companion never announces a save mid-conversation. A conversation started from a book page saves to that book; any other (but onboarding) only gets a review when it names library books by title, and saves to those. The review sees what's already saved and what the reader deleted, so deleted excerpts don't come back
 - `server/subscription.ts` — Plan checks: `isPaidAndActive` (a paying subscriber; past due counts, so a failed renewal doesn't cut access while Stripe retries), `hasCompanion` (that, or anyone during the free launch period, until `FREE_PERIOD_ENDS`, midnight 1 January 2027 Pacific), plus claiming and returning a reader's chat messages (free readers' 30 a month for their first 30 days, then 10; Companion's fair-use cap of 100) so requests sent together can't pass the limit. Without Companion, chat gets read-only syllabus and reading path tools (`chatTools`, `allowedWithoutCompanion` in `server/chat-prompt.ts`), so readers keep and can discuss lists made while they had it. Subscribing during the free period starts billing when it ends (a Stripe trial)
 - `server/request-body.ts` — Reads a request body, refusing anything over 100KB so a huge request can't fill the server's memory
 - `server/spend-guard.ts` — The daily stop for chat spending: a running total of today's chat cost (from `chat_token_usage` at startup, then each call as it's logged); past `DAILY_CHAT_BUDGET_USD` (default $25) chat and greetings answer "busy" until 00:00 UTC. Also turns Anthropic spend limits, rate limits, and overload into the same "busy" message
@@ -226,7 +226,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/SeminarSection.tsx` — Expandable seminar content (pre-reading context, focus questions, post-reading prompts) with inline editing
 - `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
 - `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
-- `scripts/generate-profile.ts` — Reader profile generation (Sonnet 5.5, high effort, about a minute and $0.20 for a 900-book library; chosen over Opus 5.5 in November 2026). `--keep-predictions` for a weekly refresh
+- `scripts/generate-profile.ts` — Reader profile generation from the library, memory, recent messages, and saved excerpts (Sonnet 5.5, high effort, about a minute and $0.20 for a 900-book library; chosen over Opus 5.5 in November 2026). `--keep-predictions` for a weekly refresh
 - `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (20 books per request, Sonnet 5.5, the reader's profile cached across requests, --dry-run/--limit/--force/--batch flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 - `src/pages/SyllabiPage.tsx` — Syllabi course catalog index with editorial card layout
@@ -319,7 +319,7 @@ Thirty tables in Supabase:
 - `summary` — one line on what it explored, from the review step
 - `last_message_at` — latest activity, updated by a trigger on `messages`; the conversation list sorts by it
 - `history_summary`, `history_summarized_until` — the condensed start of a long conversation and the time of the last message it covers; the AI gets the summary plus the messages after it (migration 032)
-- `needs_review` — set by the same trigger on book-linked conversations, cleared by the review step
+- `needs_review` — set by the same trigger on every conversation but onboarding (migration 040), cleared by the review step
 
 **messages** — Chat messages within conversations. Key fields:
 - `conversation_id` — FK to conversations, CASCADE delete
@@ -369,6 +369,7 @@ Thirty tables in Supabase:
 - `book_id` — FK to books, CASCADE delete
 - `conversation_id` — FK to conversations, SET NULL on delete, so excerpts outlive their conversation
 - `content` — the saved text, usually a polished 1-3 sentence insight
+- `deleted_at` — set when the reader deletes it: hidden everywhere, but kept so the review step doesn't save it again (migration 040). Every read filters on it
 
 **lists** — User-created syllabi and reading paths. Key fields:
 - `name` — required, non-empty

@@ -99,10 +99,10 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 - "Save to book" on any message, so saving doesn't depend on the AI offering. No user has ever saved an excerpt, and only one assistant message has ever offered **[DONE]**
 - Save without announcing — the "no narration" rule is deliberate, because announcing saves felt clunky. What's worth keeping is saved after a book conversation goes quiet, and the live chat only saves when asked. Chats started from a book page save to that book, with no title matching **[DONE]**
-- Automatic saving for general chats — only conversations started from a book page are reviewed. Extend it to general chats that discuss a book once this has proven itself
-- Deleted excerpts can come back — resuming a conversation reviews it again, and the review can't see what the reader deleted. Keep deleted text as a tombstone if this happens in practice
+- Automatic saving for general chats **[DONE]** — every conversation but onboarding is now reviewed once it goes quiet. A general chat is only sent for review when it names books in the library (matched by title; one-word titles only when written like a title, and titles under 4 letters such as *It* never), and each excerpt goes to one of those books, so a chat about something else costs nothing. Tested November 2026 on the owner's real chats, nothing saved: the Ligotti chat got two excerpts on the right books, a parenting chat none, *Why We Get Sick* one, at 1–3 cents each
+- Deleted excerpts can come back **[DONE]** — deleting an excerpt now hides it (`book_excerpts.deleted_at`, migration 040) instead of removing it, and the review is shown what the reader deleted for each book and told never to save it or anything close again. Tested by re-running a review with one of its excerpts marked deleted: it chose a different thought both times. Deleting the book or the account still removes them for good
 - Tell the reader when a save fails — a title that doesn't match is currently never mentioned, and a partial match can attach to the wrong book **[DONE]** for the AI, which is now told to say so
-- Feed excerpts into the profile — book context has them now **[DONE]**, but profile generation still doesn't read them
+- Feed excerpts into the profile **[DONE]** — profile generation reads the 60 most recent excerpts with their books (up to 400 characters each), told they're among the best evidence of how books affect the reader
 - Free readers can save by hand (decided), since it costs nothing to run. Saving done by the AI stays on the paid plan, since it costs API calls **[DONE]**
 
 **Long-term continuity**
