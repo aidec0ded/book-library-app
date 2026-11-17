@@ -170,6 +170,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 - Empty states for new users — Home, Recommendations, Profile show blank if no data; guide users instead **[DONE]**
 - Profile generation notification — toast/banner on next visit when profile generates or regenerates **[DONE]**
 - Filter by predicted rating on All tab **[DONE]**
+- Public pages and in-app guidance pass before launch (owner, November 2026) — go through the landing, Features, Pricing, FAQ, and Guide pages with two aims: make the site as easy as possible to start using, and show off what's distinctive. Known gaps to cover: how excerpts get saved (by hand with "Save to book", by asking in a chat, or automatically about 30–40 minutes after a conversation that mentions a library book goes quiet, at most two, often none); the Memory section in Settings; "Download everything"; that the companion can look up past conversations and a book's full details
 
 **Tier 3: Polish**
 
