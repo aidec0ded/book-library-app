@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { fetchAllRows } from "./fetch-all";
 
 interface ExportBook {
   title: string;
@@ -64,27 +65,38 @@ function bookToRow(book: ExportBook): string {
   return fields.map(escapeCSV).join(",");
 }
 
-export async function exportLibraryCSV(): Promise<{ count: number }> {
-  const { data: books, error } = await supabase
-    .from("books")
-    .select(
-      "title, author, isbn, rating, status, date_started, date_finished, publication_year, page_count, publisher, format, notes, book_type, genre, is_favorite",
-    )
-    .order("title");
+/** The reader's whole library as CSV, every row. */
+export async function libraryCSV(): Promise<{ csv: string; count: number }> {
+  const books = await fetchAllRows<ExportBook>((from, to) =>
+    supabase
+      .from("books")
+      .select(
+        "title, author, isbn, rating, status, date_started, date_finished, publication_year, page_count, publisher, format, notes, book_type, genre, is_favorite",
+      )
+      .order("title")
+      .order("id")
+      .range(from, to),
+  );
+  const csv = [CSV_COLUMNS.join(","), ...books.map(bookToRow)].join("\n");
+  return { csv, count: books.length };
+}
 
-  if (error) throw error;
-  if (!books || books.length === 0) throw new Error("No books to export.");
-
-  const rows = (books as ExportBook[]).map(bookToRow);
-  const csv = [CSV_COLUMNS.join(","), ...rows].join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
+/** Saves a file to the reader's device. */
+export function download(data: Blob, filename: string): void {
+  const url = URL.createObjectURL(data);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `rekollekt-library-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // Revoked after the download starts, not before: some browsers read the URL late
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
 
-  return { count: books.length };
+export const today = () => new Date().toISOString().slice(0, 10);
+
+export async function exportLibraryCSV(): Promise<{ count: number }> {
+  const { csv, count } = await libraryCSV();
+  if (count === 0) throw new Error("No books to export.");
+  download(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `rekollekt-library-${today()}.csv`);
+  return { count };
 }

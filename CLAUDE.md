@@ -133,7 +133,11 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/ImportBooks.tsx` — Goodreads CSV import: upload, shelf selection, dedup, batch insert with progress
 - `src/pages/GuidePage.tsx` — In-app guide page for new users
 - `src/pages/AdminPage.tsx` — Owner telemetry page: revenue, profit, and break-even, spend today and this month against the daily stop, daily cost by area, cost by feature and per reader, signups, messages, books added by source, ISBNdb/Voyage/database usage, and background job health. Data from `/api/admin/overview` (the `admin_overview` database function), which only answers for accounts in `ADMIN_USER_IDS`
-- `src/pages/Settings.tsx` — Account settings: subscription management, memory, password reset, library export, delete account
+- `src/pages/Settings.tsx` — Account settings: subscription management, memory, password reset, export, delete account
+- `src/lib/export.ts` — The library CSV (every row) and the download helper
+- `src/lib/export-all.ts` — "Download everything": reads the reader's conversations, messages, excerpts, memory, profiles, lists, and shelves, and downloads them with the library CSV as one .zip (`fflate`, loaded only then)
+- `src/lib/export-files.ts` — The files in that .zip (README, library CSV, Markdown per conversation, excerpts, memory, profiles, lists, and `rekollekt.json`), with no browser dependencies so it can be run outside the browser
+- `src/lib/fetch-all.ts` — `fetchAllRows`: every row of a query in the browser, page by page (Supabase returns at most 1,000 per request, with no error)
 - `src/components/MemorySettings.tsx` — The Memory section of Settings: each of the companion's notes about the reader, with edit and delete, and "Forget everything". An edit only saves over the version the reader opened, so a change the companion made meanwhile isn't lost
 - `src/lib/memory.ts` — Memory reads and writes for the Settings page (straight to `memory_files`, under Row Level Security)
 - `src/lib/memory-limit.ts` — `MAX_MEMORY_CHARS` (12,000) and a note's name as readers see it, shared by the server and the Settings page
@@ -278,7 +282,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Analytics** — PostHog client-side integration tracking pageviews, auth events, onboarding funnel, chat engagement, book additions, imports, releases, checkout, and shelf creation. Graceful no-op when key unset.
 
-**Account Management** — Settings page with what the companion remembers (view, edit, delete), password reset, library CSV export, subscription management via Stripe Customer Portal, and account deletion with confirmation.
+**Account Management** — Settings page with what the companion remembers (view, edit, delete), password reset, export of everything (a .zip of readable files and JSON) or just the library CSV, subscription management via Stripe Customer Portal, and account deletion with confirmation.
 
 ### Future
 

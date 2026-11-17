@@ -95,7 +95,7 @@ const SECTIONS: FAQSection[] = [
     items: [
       {
         q: "Can I export my data?",
-        a: "CSV export is available from Settings. You can export your full library with all metadata at any time.",
+        a: "Yes, any time, from Settings. \"Download everything\" gives you a .zip with your library, your conversations, the excerpts you've kept, what your companion remembers, your reader profiles, and your syllabi and reading paths, as files you can read, plus one file with all of it for other apps. Or download just your library as a CSV.",
       },
       {
         q: "How do I delete my account?",

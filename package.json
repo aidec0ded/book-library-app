@@ -25,6 +25,7 @@
     "clsx": "^2.1.1",
     "csv-parse": "^5.6.0",
     "dotenv": "^16.4.7",
+    "fflate": "0.8.3",
     "lucide-react": "^0.563.0",
     "posthog-js": "^1.351.0",
     "react": "^19.2.4",

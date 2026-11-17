@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSubscription } from "@/contexts/SubscriptionContext";
 import { supabase } from "@/lib/supabase";
 import { exportLibraryCSV } from "@/lib/export";
+import { exportEverything } from "@/lib/export-all";
 import { FREE_REPLIES_SUMMARY } from "@/lib/plans";
 
 export function Settings() {
@@ -36,7 +37,7 @@ export function Settings() {
   const [passwordLoading, setPasswordLoading] = useState(false);
 
   // Export state
-  const [exportLoading, setExportLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState<"all" | "csv" | null>(null);
   const [exportStatus, setExportStatus] = useState<{
     type: "success" | "error";
     message: string;
@@ -90,23 +91,33 @@ export function Settings() {
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (what: "all" | "csv") => {
     setExportStatus(null);
-    setExportLoading(true);
+    setExportLoading(what);
+    const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
     try {
-      const { count } = await exportLibraryCSV();
-      setExportStatus({
-        type: "success",
-        message: `Exported ${count} book${count === 1 ? "" : "s"}.`,
-      });
+      if (what === "csv") {
+        const { count } = await exportLibraryCSV();
+        setExportStatus({ type: "success", message: `Downloaded ${plural(count, "book")}.` });
+      } else {
+        const c = await exportEverything();
+        const parts = [
+          plural(c.books, "book"),
+          plural(c.conversations, "conversation"),
+          c.excerpts > 0 && plural(c.excerpts, "excerpt"),
+          c.memory > 0 && plural(c.memory, "memory note"),
+          c.profiles > 0 && plural(c.profiles, "reader profile"),
+          c.lists > 0 && plural(c.lists, "syllabus or reading path", "syllabi and reading paths"),
+        ].filter(Boolean);
+        setExportStatus({ type: "success", message: `Downloaded ${parts.join(", ")}.` });
+      }
     } catch (err) {
       setExportStatus({
         type: "error",
-        message:
-          err instanceof Error ? err.message : "Failed to export library.",
+        message: err instanceof Error ? err.message : "The export didn't go through. Try again.",
       });
     } finally {
-      setExportLoading(false);
+      setExportLoading(null);
     }
   };
 
@@ -360,10 +371,12 @@ export function Settings() {
       {/* Export */}
       <Card className="mb-8">
         <CardContent className="pt-6">
-          <h2 className="mb-2 text-lg font-semibold">Export library</h2>
+          <h2 className="mb-2 text-lg font-semibold">Export your data</h2>
           <p className="mb-4 text-sm text-muted-foreground">
-            Download your entire library as a CSV file — titles, authors,
-            ratings, status, notes, and metadata. Your data is yours.
+            Download everything you've made here as a .zip: your library, your conversations, the excerpts
+            you've kept, what your companion remembers, your reader profiles, and your syllabi and reading
+            paths, as files you can open and read, plus one file with all of it for other apps. Or just your
+            library as a CSV. Your data is yours.
           </p>
 
           {exportStatus && (
@@ -378,13 +391,22 @@ export function Settings() {
             </p>
           )}
 
-          <button
-            onClick={handleExport}
-            disabled={exportLoading}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
-          >
-            {exportLoading ? "Exporting..." : "Download CSV"}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => handleExport("all")}
+              disabled={exportLoading !== null}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
+            >
+              {exportLoading === "all" ? "Preparing..." : "Download everything"}
+            </button>
+            <button
+              onClick={() => handleExport("csv")}
+              disabled={exportLoading !== null}
+              className="rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
+            >
+              {exportLoading === "csv" ? "Exporting..." : "Library only (CSV)"}
+            </button>
+          </div>
         </CardContent>
       </Card>
 

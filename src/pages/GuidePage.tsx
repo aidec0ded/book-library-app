@@ -362,7 +362,7 @@ const SECTIONS: Section[] = [
         <Heading>Settings</Heading>
         <ul className="mb-4 space-y-2">
           <Li><Bold>Password</Bold> — Change your password (Google OAuth users see a note that password is managed through Google)</Li>
-          <Li><Bold>Library Export</Bold> — Download your library as a CSV</Li>
+          <Li><Bold>Export</Bold> — Download everything you've made here as a .zip, or just your library as a CSV</Li>
           <Li><Bold>Subscription</Bold> — View plan and billing. Paid users access the Stripe Customer Portal. Free users see upgrade options.</Li>
           <Li><Bold>Delete Account</Bold> — Permanently remove your account and all data (requires confirmation phrase)</Li>
         </ul>
