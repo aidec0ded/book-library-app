@@ -154,13 +154,14 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/BookDetail.tsx` — Full book metadata display with inline editing (status, rating, favorite, notes) + predicted rating display + "Discuss this book" chat trigger. Section order follows reading status: unread leads with predicted rating and summary, reading with lists and notes, read with notes
 - `src/lib/supabase.ts` — Supabase client (uses `VITE_SUPABASE_ANON_KEY`)
 - `src/lib/books.ts` — Book update helper (type-constrained to editable fields)
-- `src/lib/reading-dates.ts` — Pure reading date logic shared by browser and server: date changes that go with a status change, validation, the reader's local date
+- `src/lib/reading-dates.ts` — Pure reading date logic shared by browser and server: date changes that go with a status change, validation, the reader's local date, and reading a typed date (`parseTypedDate`: "10/20/2023", "Oct 20 2023", "2023-10-20")
 - `src/lib/vibes.ts` — Vibe CRUD operations (fetch, add, remove, confirm)
 - `src/components/VibeEditor.tsx` — Inline vibe editor with AI badge styling and confirm/remove actions
 - `src/pages/AddBook.tsx` — ISBNdb search, edition picker, preview, and add-to-library flow
 - `src/components/EditionPicker.tsx` — Edition list with format and language filters (shared by Add Book and Change edition)
 - `src/components/BookListsSection.tsx` — "On your lists" section on the book page: the reader's syllabi and reading paths with this book, its position, progress, and focus questions
-- `src/components/ReadingDates.tsx` — Start and finish dates on the book page, with inline editing
+- `src/components/ReadingDates.tsx` — Start and finish dates on the book page, with inline editing. The end date's calendar opens on the start date's month
+- `src/components/DateField.tsx` — A date typed or picked from a calendar with month and year menus, in place of the browser's date input (where typing a year resets on each key in some browsers)
 - `src/components/AlsoByAuthor.tsx` — "Also by" section on the book page: the reader's other books by an author, in-progress and unread first
 - `src/components/ChangeEditionModal.tsx` — Switch a library book to another edition from the book page
 - `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, publication year, ISBN, and cover image URL

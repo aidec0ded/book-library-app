@@ -1,15 +1,7 @@
 import { useState } from "react";
 import { Pencil } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { DateField, formatDate } from "@/components/DateField";
 import { localToday, readingDatesError, type ReadingDates as Dates } from "@/lib/reading-dates";
-
-function formatDate(date: string): string {
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 interface ReadingDatesProps {
   status: string | null;
@@ -50,9 +42,10 @@ export function ReadingDates({ status, dates, onSave }: ReadingDatesProps) {
 
   if (editing) {
     const today = localToday();
+    // Each date bounds the other, and the end date's calendar opens on the start's month
     const fields = [
-      { label: "Started", value: started, set: setStarted },
-      { label: finishedLabel, value: finished, set: setFinished },
+      { label: "Started", value: started, set: setStarted, max: finished && finished < today ? finished : today },
+      { label: finishedLabel, value: finished, set: setFinished, min: started || undefined, openOn: started || undefined },
     ];
     return (
       <div className="space-y-3">
@@ -74,13 +67,14 @@ export function ReadingDates({ status, dates, onSave }: ReadingDatesProps) {
                 </button>
               )}
             </div>
-            <Input
+            <DateField
               id={`reading-date-${field.label}`}
-              type="date"
-              max={today}
               value={field.value}
-              onChange={(e) => {
-                field.set(e.target.value);
+              max={field.max ?? today}
+              min={field.min}
+              openOn={field.openOn}
+              onChange={(value) => {
+                field.set(value);
                 setError(null);
               }}
             />
