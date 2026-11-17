@@ -261,7 +261,7 @@ const SECTIONS: Section[] = [
           <Li><Bold>Manage wishlist</Bold> — Add books you want to read</Li>
           <Li><Bold>Save insights</Bold> — "Save to book" under any message keeps it on a book's page, and on the paid plan what's worth keeping from your conversations about books is saved to their pages automatically</Li>
           <Li><Bold>Browse releases</Bold> — Search upcoming books scored against your profile</Li>
-          <Li><Bold>Remember you</Bold> — Persistent memory across conversations</Li>
+          <Li><Bold>Remember you</Bold> — Short notes about you, carried across conversations. See, change, or delete them under Memory in Settings</Li>
         </ul>
 
         <Sub>Conversation Starters</Sub>

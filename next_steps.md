@@ -107,7 +107,7 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 **Long-term continuity**
 
-- "What your companion remembers" — view, edit, and delete memory. Readers can't see it today
+- "What your companion remembers" — view, edit, and delete memory. Readers can't see it today **[DONE]** — a Memory section in Settings shows each of the companion's notes (rendered, with a friendly name: `reader.md` is "About you"), with Edit, Delete, and "Forget everything", and how much of the 12,000 characters is used. An edit only saves over the version the reader opened, so a note the companion changed meanwhile isn't overwritten. Readers could always write memory directly under Row Level Security, so the chat prompt and profile generation now cut it at the limit themselves. Not built: a switch to turn memory off
 - Export — conversations, memory, excerpts, and the profile. The only export is the book CSV
 - AI tools to read a book's details and search past conversations
 - Conversation summaries, and condensing the older parts of very long conversations **[DONE]** for condensing; see "Long conversations" under Free Launch. One-line summaries of book conversations come from the review step

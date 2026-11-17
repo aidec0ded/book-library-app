@@ -133,7 +133,10 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/pages/ImportBooks.tsx` — Goodreads CSV import: upload, shelf selection, dedup, batch insert with progress
 - `src/pages/GuidePage.tsx` — In-app guide page for new users
 - `src/pages/AdminPage.tsx` — Owner telemetry page: revenue, profit, and break-even, spend today and this month against the daily stop, daily cost by area, cost by feature and per reader, signups, messages, books added by source, ISBNdb/Voyage/database usage, and background job health. Data from `/api/admin/overview` (the `admin_overview` database function), which only answers for accounts in `ADMIN_USER_IDS`
-- `src/pages/Settings.tsx` — Account settings: password reset, library export, subscription management, delete account
+- `src/pages/Settings.tsx` — Account settings: subscription management, memory, password reset, library export, delete account
+- `src/components/MemorySettings.tsx` — The Memory section of Settings: each of the companion's notes about the reader, with edit and delete, and "Forget everything". An edit only saves over the version the reader opened, so a change the companion made meanwhile isn't lost
+- `src/lib/memory.ts` — Memory reads and writes for the Settings page (straight to `memory_files`, under Row Level Security)
+- `src/lib/memory-limit.ts` — `MAX_MEMORY_CHARS` (12,000) and a note's name as readers see it, shared by the server and the Settings page
 - `src/lib/onboarding.ts` — Onboarding status check and completion
 - `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation
 - `src/lib/posthog.ts` — PostHog analytics wrapper (init, identify, reset, capture, pageview hook). No-op when VITE_POSTHOG_KEY unset.
@@ -275,7 +278,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 **Analytics** — PostHog client-side integration tracking pageviews, auth events, onboarding funnel, chat engagement, book additions, imports, releases, checkout, and shelf creation. Graceful no-op when key unset.
 
-**Account Management** — Settings page with password reset, library CSV export, subscription management via Stripe Customer Portal, and account deletion with confirmation.
+**Account Management** — Settings page with what the companion remembers (view, edit, delete), password reset, library CSV export, subscription management via Stripe Customer Portal, and account deletion with confirmation.
 
 ### Future
 
@@ -327,7 +330,7 @@ Thirty tables in Supabase:
 - `content` — message text
 - `actions` (jsonb) — on assistant messages, what the companion did with its tools in that reply: `[{tool, action, result, failed?, label?, href?}]`, from `server/action-log.ts` (migration 037). `label` and `href` are what the reader sees under the reply; changes without a label (memory notes) aren't shown. Null when nothing changed
 
-**memory_files** — Persistent memory for the AI reading companion, loaded into every chat prompt and changed with the `update_memory` tool (a custom tool, not Anthropic's built-in memory tool, which makes the AI check memory before every reply). Key fields:
+**memory_files** — Persistent memory for the AI reading companion, loaded into every chat prompt and changed with the `update_memory` tool (a custom tool, not Anthropic's built-in memory tool, which makes the AI check memory before every reply) or by the reader in Settings. Readers can write their rows directly, so the chat prompt and profile generation hold memory to the 12,000-character limit themselves. Key fields:
 - `path` (PK) — virtual file path, must start with `/memories/`
 - `content` — file contents, managed by Claude via `update_memory`. A reader's files together hold at most 12,000 characters
 - `updated_at` — auto-updated via trigger

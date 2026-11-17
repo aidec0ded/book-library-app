@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { MAX_MEMORY_CHARS } from "../src/lib/memory-limit.js";
 
 // The chat's update_memory tool. Its commands follow the shapes of Anthropic's
 // memory tool (create sends file_text, insert sends insert_text, rename sends
@@ -20,12 +21,10 @@ export interface MemoryCommand {
 
 const ROOT = "/memories";
 
-/**
- * All of a reader's memory goes into every chat prompt (see loadCoreMemory), so it
- * has a size limit: about 3,000 tokens. Writes that would pass it are refused, and
- * the companion condenses instead.
- */
-export const MAX_MEMORY_CHARS = 12_000;
+// All of a reader's memory goes into every chat prompt (see loadCoreMemory), so it has a
+// size limit: about 3,000 tokens. The companion's writes that would pass it are refused,
+// and it condenses instead; the Settings page checks it too.
+export { MAX_MEMORY_CHARS };
 
 interface MemoryFile {
   path: string;
@@ -66,10 +65,22 @@ export async function loadCoreMemory(supabase: SupabaseClient): Promise<string> 
 Nothing yet. This is where update_memory saves what you learn about them.`;
   }
   const used = files.reduce((n, f) => n + f.content.length, 0);
+
+  // Readers can write their memory directly (Row Level Security allows it, for the
+  // Settings page), so the limit is enforced here too: past it, the rest is left out.
+  let room = MAX_MEMORY_CHARS;
+  const sections: string[] = [];
+  for (const f of files) {
+    if (room <= 0) break;
+    const text = f.content.trim();
+    sections.push(`### ${f.path}\n${text.length > room ? `${text.slice(0, room)}\n[cut off: memory is over its limit]` : text}`);
+    room -= text.length;
+  }
+
   return [
     `${heading}
 Your memory files, as they stand (${used.toLocaleString("en-US")} of ${MAX_MEMORY_CHARS.toLocaleString("en-US")} characters used).`,
-    ...files.map((f) => `### ${f.path}\n${f.content.trim()}`),
+    ...sections,
   ].join("\n\n");
 }
 

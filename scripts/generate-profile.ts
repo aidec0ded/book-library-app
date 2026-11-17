@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage } from "../server/usage.js";
+import { MAX_MEMORY_CHARS } from "../src/lib/memory-limit.js";
 import { config } from "dotenv";
 
 config();
@@ -477,7 +478,8 @@ async function main() {
 
   const memoryText =
     memoryFiles.length > 0
-      ? memoryFiles.map((f) => `### ${f.path}\n${f.content}`).join("\n\n")
+      ? // Readers can write memory directly, so it's held to its limit here as in chat
+        memoryFiles.map((f) => `### ${f.path}\n${f.content}`).join("\n\n").slice(0, MAX_MEMORY_CHARS + 500)
       : "No memory files yet.";
 
   const conversationText =
