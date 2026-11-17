@@ -163,6 +163,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ReadingDates.tsx` — Start and finish dates on the book page, with inline editing. The end date's calendar opens on the start date's month
 - `src/components/DateField.tsx` — A date typed or picked from a calendar with month and year menus, in place of the browser's date input (where typing a year resets on each key in some browsers)
 - `src/components/AlsoByAuthor.tsx` — "Also by" section on the book page: the reader's other books by an author, in-progress and unread first
+- `src/components/MoreLikeThis.tsx` — "More like this" on the book page, from the reader's own library through the book embeddings (`fetchSimilarBooks` in `src/lib/books.ts`, the `match_books` function; no AI call). For a book not started: the closest books they've read, with their ratings. Otherwise: the closest unread and wishlist books. Leaves out the same author and other editions, and matches under 0.55
 - `src/components/ChangeEditionModal.tsx` — Switch a library book to another edition from the book page
 - `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, publication year, ISBN, and cover image URL
 - `src/lib/isbndb.ts` — ISBNdb API client (search, lookup, ISBN detection, field mapping) + edition grouping and language/format normalization

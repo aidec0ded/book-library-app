@@ -15,6 +15,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { VibeEditor } from "@/components/VibeEditor";
 import { AlsoByAuthor } from "@/components/AlsoByAuthor";
+import { MoreLikeThis } from "@/components/MoreLikeThis";
 import { BookListsSection } from "@/components/BookListsSection";
 import { ReadingDates } from "@/components/ReadingDates";
 import { authorLibraryPath, updateBook, deleteBook, formatRating } from "@/lib/books";
@@ -808,6 +809,8 @@ function BookDetailContent({ id }: { id: string | undefined }) {
         {authors.slice(0, MAX_AUTHOR_SECTIONS).map((name) => (
           <AlsoByAuthor key={name} bookId={book.id} author={name} />
         ))}
+
+        <MoreLikeThis book={book} />
       </div>
     </div>
   );
