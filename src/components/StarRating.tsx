@@ -81,11 +81,13 @@ export function StarRating({ value, onChange, disabled }: StarRatingProps) {
             e.preventDefault();
             const next = current - PRECISION;
             onChange(next < PRECISION ? null : next);
+          } else if ((e.key === "Delete" || e.key === "Backspace") && value != null) {
+            e.preventDefault();
+            onChange(null);
           }
         }}
       >
         {Array.from({ length: TOTAL_STARS }, (_, i) => {
-          const starIndex = i + 1;
           const fill = clamp(displayRating - i, 0, 1);
 
           return (
@@ -111,12 +113,24 @@ export function StarRating({ value, onChange, disabled }: StarRatingProps) {
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {hoverRating != null
-          ? formatLabel(hoverRating)
-          : value != null
-            ? formatLabel(value)
-            : "Unrated"}
+      <p className="flex items-baseline gap-2 text-xs text-muted-foreground">
+        <span>
+          {hoverRating != null
+            ? formatLabel(hoverRating)
+            : value != null
+              ? formatLabel(value)
+              : "Unrated"}
+        </span>
+        {value != null && !disabled && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="hover:text-foreground hover:underline"
+            aria-label="Clear rating"
+          >
+            Clear
+          </button>
+        )}
       </p>
     </div>
   );
