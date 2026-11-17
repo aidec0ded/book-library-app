@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SeminarContent } from "../src/lib/types.js";
+import { findBookByTitle } from "./book-lookup.js";
 
 interface BookRow {
   id: string;
@@ -33,40 +34,29 @@ function section(heading: string, lines: string[]): string[] {
   return lines.length > 0 ? [`\n### ${heading}`, ...lines] : [];
 }
 
+const BOOK_FIELDS =
+  "id, title, author, book_type, status, rating, predicted_rating, is_favorite, date_started, date_finished, summary, notes";
+
 /**
- * Everything the reader has about one book, for a conversation about it. The library index
- * only has a line per book, so without this the AI would be going on the title alone.
+ * What the reader has about one book: its facts, notes, saved excerpts, earlier
+ * conversations about it (other than this one), the lists it's on, and its summary.
  */
-export async function buildBookContext(
-  supabase: SupabaseClient,
-  bookId: string,
-  conversationId: string,
-): Promise<{ book: LinkedBook; text: string } | null> {
-  const { data: book } = await supabase
-    .from("books")
-    .select(
-      "id, title, author, book_type, status, rating, predicted_rating, is_favorite, date_started, date_finished, summary, notes",
-    )
-    .eq("id", bookId)
-    .maybeSingle<BookRow>();
-
-  if (!book) return null;
-
+async function describeBook(supabase: SupabaseClient, book: BookRow, conversationId: string): Promise<string[]> {
   const [{ data: excerpts }, { data: items }, { data: conversations }] = await Promise.all([
     supabase
       .from("book_excerpts")
       .select("content")
-      .eq("book_id", bookId)
+      .eq("book_id", book.id)
       .is("deleted_at", null)
       .order("created_at", { ascending: true }),
     supabase
       .from("list_items")
       .select("position, rationale, seminar_content, path_progress, list:lists(name, list_type)")
-      .eq("book_id", bookId),
+      .eq("book_id", book.id),
     supabase
       .from("conversations")
       .select("title, summary, last_message_at")
-      .eq("book_id", bookId)
+      .eq("book_id", book.id)
       .neq("id", conversationId)
       .order("last_message_at", { ascending: false })
       .limit(5),
@@ -104,6 +94,28 @@ export async function buildBookContext(
     return about ? [`- ${conversation.last_message_at.slice(0, 10)}: ${about}`] : [];
   });
 
+  return [
+    `\n${facts.join("\n")}`,
+    ...section("The reader's notes", book.notes ? [book.notes] : []),
+    ...section("Saved from earlier conversations", (excerpts ?? []).map((e) => `- ${e.content}`)),
+    ...section("Earlier conversations about this book", past),
+    ...section("On the reader's lists", lists),
+    ...section("Publisher's summary", book.summary ? [book.summary] : []),
+  ];
+}
+
+/**
+ * Everything the reader has about one book, for a conversation about it. The library index
+ * only has a line per book, so without this the AI would be going on the title alone.
+ */
+export async function buildBookContext(
+  supabase: SupabaseClient,
+  bookId: string,
+  conversationId: string,
+): Promise<{ book: LinkedBook; text: string } | null> {
+  const { data: book } = await supabase.from("books").select(BOOK_FIELDS).eq("id", bookId).maybeSingle<BookRow>();
+  if (!book) return null;
+
   const guidance =
     book.status === "reading"
       ? `The reader is partway through. Don't reveal anything past where they've reached, and ask where that is if you don't know.`
@@ -114,13 +126,27 @@ export async function buildBookContext(
   const text = [
     `## This Conversation's Book`,
     `\nThis conversation is about "${book.title}" by ${book.author}, which the reader opened from its page in their library. ${guidance} What follows is what they already have, so build on it rather than repeating it back.`,
-    `\n${facts.join("\n")}`,
-    ...section("The reader's notes", book.notes ? [book.notes] : []),
-    ...section("Saved from earlier conversations", (excerpts ?? []).map((e) => `- ${e.content}`)),
-    ...section("Earlier conversations about this book", past),
-    ...section("On the reader's lists", lists),
-    ...section("Publisher's summary", book.summary ? [book.summary] : []),
+    ...(await describeBook(supabase, book, conversationId)),
   ].join("\n");
 
   return { book: { id: book.id, title: book.title }, text };
+}
+
+export interface GetBookCommand {
+  title: string;
+  author?: string;
+}
+
+/** The get_book tool: everything the reader has about a book in their library. */
+export async function executeGetBook(
+  supabase: SupabaseClient,
+  command: GetBookCommand,
+  conversationId: string,
+): Promise<string> {
+  if (!command.title?.trim()) throw new Error("get_book needs a title");
+  const book = await findBookByTitle<BookRow & Record<string, unknown>>(supabase, command.title, BOOK_FIELDS, command.author);
+  if (!book) {
+    return `"${command.title}" isn't in the reader's library. search_library can look by author or subject.`;
+  }
+  return [`"${book.title}" by ${book.author}`, ...(await describeBook(supabase, book, conversationId))].join("\n");
 }

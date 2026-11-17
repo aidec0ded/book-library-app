@@ -53,10 +53,11 @@ export async function findBookByTitle<T extends Record<string, unknown>>(
   supabase: SupabaseClient,
   title: string,
   select = "id, title",
+  author?: string | null,
 ): Promise<(T & { id: string; title: string }) | null> {
   const fields = withMatchFields(select);
   const candidates = await fetchLibraryCandidates(supabase, title, fields);
-  const match = findBestLibraryMatch(title, null, candidates);
+  const match = findBestLibraryMatch(title, author ?? null, candidates);
   if (match) return match as unknown as T & { id: string; title: string };
 
   const escaped = title.replace(/[\\%_]/g, "\\$&");

@@ -23,6 +23,8 @@ export interface ActionRecord {
 const READ_ONLY: Record<string, true | string[]> = {
   search_library: true,
   search_releases: true,
+  get_book: true,
+  search_conversations: true,
   manage_syllabi: ["view"],
   manage_reading_paths: ["view_path", "get_seminar_content"],
   manage_wishlist: ["view"],

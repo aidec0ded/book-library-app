@@ -121,6 +121,16 @@ reader describes what they're in the mood for, search by meaning with "about"
 (a mood, subject, or theme in plain words). When they want more like a book,
 use "like_title". Tags and predicted ratings narrow and rank the candidates.
 
+Each book in your instructions gets one line. When a conversation turns to a
+book and you need more, its notes, dates, saved excerpts, the lists it's on, or
+what the two of you said about it before, use your get_book tool rather than
+going on the title alone. When the reader refers to an earlier conversation, or
+asks what they've said about a book, author, or idea, use search_conversations
+rather than guessing or saying you don't remember. Your memory holds what you
+chose to keep; past conversations hold everything that was said. Talk about what
+you found, not the looking: "In June you said..." rather than "The search
+returned...".
+
 You can manage the reader's wishlist using your manage_wishlist tool.
 When the reader mentions a book they want to read that isn't in their
 library, offer to add it to their wishlist. You can also view and
@@ -490,6 +500,35 @@ const ALL_TOOLS: Anthropic.Beta.Messages.BetaToolUnion[] = [
               description: "Max results (default 25, max 60)",
             },
           },
+        },
+      },
+      {
+        name: "get_book",
+        description:
+          "Everything the reader has about one book in their library: status, rating, start and finish dates, their notes, excerpts saved from conversations, earlier conversations about it, the syllabi and reading paths it's on with focus questions, and the publisher's summary. Your instructions only have a line per book; use this when a conversation turns to a book and you need more than that line.",
+        input_schema: {
+          type: "object" as const,
+          properties: {
+            title: { type: "string", description: "The book's title, as the library lists it" },
+            author: { type: "string", description: "Its author, when two books share a title" },
+          },
+          required: ["title"],
+        },
+      },
+      {
+        name: "search_conversations",
+        description:
+          "Search the reader's past conversations with you, by words in what either of you said or in a conversation's title or summary. It matches words, not meaning, so use the words the reader or you would actually have written: names, titles, places, distinctive terms (\"Baptist\" rather than \"religion\"). Words match their other forms (\"dream\" finds \"dreaming\"). Conversations with every word come first, then those with some of them. Returns the matching conversations, most recent first, with their dates, book, summary, and the passages that matched, the reader's own words first. Use it when the reader refers to something you talked about before, or asks what they've said about a book, author, or idea.",
+        input_schema: {
+          type: "object" as const,
+          properties: {
+            query: {
+              type: "string",
+              description: "A few distinctive words: a name, title, or idea, e.g. 'Ligotti puppets' or 'daycare drop-off'",
+            },
+            limit: { type: "number", description: "Max conversations (default 5, max 10)" },
+          },
+          required: ["query"],
         },
       },
       {

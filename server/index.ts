@@ -37,7 +37,8 @@ import {
 import { buildSyllabusIndex, invalidateSyllabusIndex } from "./syllabus-index.js";
 import { getGreeting, parseReaderTime } from "./greeting-handler.js";
 import { isIsoDate } from "../src/lib/reading-dates.js";
-import { buildBookContext, type LinkedBook } from "./book-context.js";
+import { buildBookContext, executeGetBook, type GetBookCommand, type LinkedBook } from "./book-context.js";
+import { executeConversationSearch, type ConversationSearchCommand } from "./conversation-search.js";
 import { claimMessage, FREE_PERIOD_ENDS, hasCompanion, inFreePeriod, isPaidAndActive, releaseMessage } from "./subscription.js";
 import { BodyTooLargeError, readJsonBody, readRawBody } from "./request-body.js";
 import { clientIp, hit, rejectRateLimited, type RULES } from "./rate-limit.js";
@@ -603,6 +604,14 @@ async function handleChat(
             result = await executeLibrarySearch(
               supabase,
               block.input as LibrarySearchCommand,
+            );
+          } else if (block.name === "get_book") {
+            result = await executeGetBook(supabase, block.input as GetBookCommand, conversationId);
+          } else if (block.name === "search_conversations") {
+            result = await executeConversationSearch(
+              supabase,
+              block.input as ConversationSearchCommand,
+              conversationId,
             );
           } else if (block.name === "search_releases") {
             result = await executeReleasesCommand(
