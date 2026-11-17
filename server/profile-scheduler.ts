@@ -196,7 +196,7 @@ async function checkNewUsers(supabase: SupabaseClient): Promise<void> {
 }
 
 function spawnFirstProfile(userId: string): void {
-  queueProfile(userId, `npx tsx scripts/generate-profile.ts --force --bootstrap --user-id ${userId}`, "First profile");
+  queueProfile(userId, `npx tsx scripts/generate-profile.ts --force --first --user-id ${userId}`, "First profile");
 }
 
 async function checkAndRegenerateAll(supabase: SupabaseClient): Promise<void> {

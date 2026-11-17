@@ -2,7 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage } from "../server/usage.js";
 import { MAX_MEMORY_CHARS } from "../src/lib/memory-limit.js";
+import { fetchAllRows } from "./fetch-all.js";
 import { config } from "dotenv";
+import { writeFileSync } from "node:fs";
 
 config();
 
@@ -25,7 +27,13 @@ const usageTracking = trackClaudeUsage(anthropic, "profile");
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
+// Library only: no memory, conversations, or excerpts
 const bootstrap = args.includes("--bootstrap");
+// The reader's first profile (recorded as such; the profile scheduler starts it)
+const first = args.includes("--first");
+// With --dry-run, writes the whole prompt to this file
+const promptOutIdx = args.indexOf("--prompt-out");
+const promptOut = promptOutIdx !== -1 ? args[promptOutIdx + 1] : null;
 
 const userIdIdx = args.indexOf("--user-id");
 const userId = userIdIdx !== -1 ? args[userIdIdx + 1] : null;
@@ -95,14 +103,44 @@ Return ONLY valid JSON matching this exact structure (no markdown, no explanatio
 
 Guidelines:
 - thematic_pillars: 4-7 pillars. Each with 2-3 example_books as title-only strings (no author). Pillars can span book types — a "Power and Systems" pillar might include both fiction and nonfiction.
-- shift_log: PRESERVE all existing entries provided, then add 0-2 new ones if warranted. Each entry needs "noted_at" (ISO timestamp) and "description".
+- shift_log: PRESERVE all existing entries provided, then add 0-2 new ones if warranted. Each entry needs "noted_at" (ISO timestamp: today's date for a new entry, since it's when the shift was noted) and "description".
 - Be specific: name authors, titles, styles. Avoid generic platitudes.
 - The reader_identity should feel like it was written by a perceptive friend who knows you well.
 - nonfiction_identity and poetry_identity: set to null if the library has fewer than 5 books of that type. Otherwise, write a substantive essay.
 - nonfiction_interests: 3-8 topic areas (e.g. "cognitive science", "political philosophy", "memoir"). Empty array if no nonfiction.
 - poet_affinities: 3-8 poet names you most connect with. Empty array if no poetry.
 - Saved excerpts are what was kept from your conversations about particular books, by you or after a conversation ended: mostly your own reactions, interpretations, and connections, sometimes a passage from the companion you wanted to keep. Either way they mattered enough to keep, which makes them some of the best evidence of how books actually affect you, so let them shape the profile, especially emotional_patterns and reader_identity. Draw on them in your own words rather than quoting them back.
+- Conversations come newest first: the most recent in full, older ones a line each. The reader's own words are the strongest evidence there is, of what books did to them, what they want from reading, and the life they read in, so weigh them heavily, including the corrections they make. The companion's lines are cut short and only give context: never credit the reader with the companion's interpretations unless the reader took them up. A conversation marked "getting started" is the reader introducing themselves and their reading when they joined.
 - Look for cross-type connections: does your fiction taste mirror your nonfiction interests? Do the poets you read share sensibilities with your favorite novelists?`;
+
+// The response's shape, enforced by structured output, so a quote mark the model forgets
+// to escape can't break the JSON (it did once quoting the reader's own words)
+const nullableString = { anyOf: [{ type: "string" }, { type: "null" }] };
+const strings = { type: "array", items: { type: "string" } };
+const object = (properties: Record<string, unknown>) => ({
+  type: "object",
+  properties,
+  required: Object.keys(properties),
+  additionalProperties: false,
+});
+const PROFILE_SCHEMA = object({
+  reader_identity: { type: "string" },
+  thematic_pillars: {
+    type: "array",
+    items: object({ name: { type: "string" }, description: { type: "string" }, example_books: strings }),
+  },
+  taste_evolution: object({
+    current_gravitational_pulls: { type: "string" },
+    shift_log: { type: "array", items: object({ noted_at: { type: "string" }, description: { type: "string" } }) },
+    consistent_throughlines: { type: "string" },
+  }),
+  emotional_patterns: { type: "string" },
+  reading_life_snapshot: object({ reading_pace_description: { type: "string" } }),
+  nonfiction_identity: nullableString,
+  nonfiction_interests: strings,
+  poetry_identity: nullableString,
+  poet_affinities: strings,
+});
 
 // --- Data Gathering ---
 
@@ -195,21 +233,120 @@ async function fetchMemoryFiles(): Promise<{ path: string; content: string }[]> 
   return data ?? [];
 }
 
-async function fetchRecentMessages(
-  limit: number,
-): Promise<{ role: string; content: string; created_at: string }[]> {
-  let query = supabase
-    .from("messages")
-    .select("role, content, created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
+interface ConversationRow {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  started_at: string;
+  last_message_at: string | null;
+  is_onboarding: boolean;
+  book: { title: string; author: string } | null;
+}
 
-  if (userId) query = query.eq("user_id", userId);
+interface MessageRow {
+  conversation_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}
 
-  const { data, error } = await query;
+/** Every conversation with its messages, newest conversation first. */
+async function fetchConversations(): Promise<{ conversation: ConversationRow; messages: MessageRow[] }[]> {
+  const [conversations, messages] = await Promise.all([
+    fetchAllRows<ConversationRow>((from, to) => {
+      let query = supabase
+        .from("conversations")
+        .select("id, title, summary, started_at, last_message_at, is_onboarding, book:books(title, author)")
+        .order("id")
+        .range(from, to);
+      if (userId) query = query.eq("user_id", userId);
+      return query as unknown as PromiseLike<{ data: ConversationRow[] | null; error: { message: string } | null }>;
+    }),
+    fetchAllRows<MessageRow>((from, to) => {
+      let query = supabase
+        .from("messages")
+        .select("conversation_id, role, content, created_at")
+        .order("created_at")
+        .order("id")
+        .range(from, to);
+      if (userId) query = query.eq("user_id", userId);
+      return query;
+    }),
+  ]);
 
-  if (error) throw error;
-  return (data ?? []).reverse();
+  const byConversation = new Map<string, MessageRow[]>();
+  for (const m of messages) {
+    if (!m.content.trim()) continue;
+    byConversation.set(m.conversation_id, [...(byConversation.get(m.conversation_id) ?? []), m]);
+  }
+  return conversations
+    .filter((c) => byConversation.has(c.id))
+    .map((conversation) => ({ conversation, messages: byConversation.get(conversation.id)! }))
+    .sort((a, b) =>
+      (b.conversation.last_message_at ?? b.conversation.started_at).localeCompare(
+        a.conversation.last_message_at ?? a.conversation.started_at,
+      ),
+    );
+}
+
+// Conversations go in newest first. Each is shown in full (the reader's messages up to
+// READER_CHARACTERS, the companion's shortened to COMPANION_CHARACTERS for context) until
+// FULL_BUDGET is used; older ones get a line each, up to LINE_BUDGET. Together about
+// 19,000 tokens at most, against 12,500 for the 100 messages of 500 characters used before.
+const FULL_BUDGET = 60_000;
+const LINE_BUDGET = 15_000;
+const READER_CHARACTERS = 2_000;
+const COMPANION_CHARACTERS = 300;
+
+const cut = (text: string, length: number) => {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > length ? `${flat.slice(0, length - 1)}…` : flat;
+};
+
+function conversationHeading(c: ConversationRow): string {
+  const startDay = c.started_at.slice(0, 10);
+  const endDay = (c.last_message_at ?? c.started_at).slice(0, 10);
+  const dates = endDay !== startDay ? `${startDay} to ${endDay}` : startDay;
+  const about = c.book ? `, about "${c.book.title}" by ${c.book.author}` : c.is_onboarding ? ", getting started" : "";
+  return `"${cut(c.title || "Untitled", 90)}", ${dates}${about}`;
+}
+
+/** The conversations section of the prompt, and how many conversations are in full. */
+function formatConversations(
+  conversations: { conversation: ConversationRow; messages: MessageRow[] }[],
+): { text: string; inFull: number } {
+  const full: string[] = [];
+  const lines: string[] = [];
+  let used = 0;
+  let lineChars = 0;
+  for (const { conversation, messages } of conversations) {
+    const head = [`### ${conversationHeading(conversation)}`, ...(conversation.summary ? [`Summary: ${conversation.summary}`] : [])];
+    const body = messages.map((m) =>
+      m.role === "user" ? `Reader: ${cut(m.content, READER_CHARACTERS)}` : `Companion: ${cut(m.content, COMPANION_CHARACTERS)}`,
+    );
+    let block = [...head, ...body].join("\n");
+    // The newest conversation always goes in, its latest messages if it's too long for the budget
+    if (full.length === 0 && block.length > FULL_BUDGET) {
+      while (body.length > 1 && [...head, "(earlier messages left out)", ...body].join("\n").length > FULL_BUDGET) body.shift();
+      block = [...head, "(earlier messages left out)", ...body].join("\n").slice(0, FULL_BUDGET);
+    }
+    if (lines.length === 0 && used + block.length <= FULL_BUDGET) {
+      full.push(block);
+      used += block.length;
+      continue;
+    }
+    const firstWords = messages.find((m) => m.role === "user")?.content ?? "";
+    const line = `- ${conversationHeading(conversation)}: ${conversation.summary ?? `the reader opened with "${cut(firstWords, 200)}"`}`;
+    if (lineChars + line.length > LINE_BUDGET) break;
+    lines.push(line);
+    lineChars += line.length;
+  }
+  if (full.length === 0 && lines.length === 0) return { text: "No conversations yet.", inFull: 0 };
+  const text = [
+    ...full,
+    ...(lines.length > 0 ? [`### Earlier conversations, a line each\n${lines.join("\n")}`] : []),
+  ].join("\n\n");
+  return { text, inFull: full.length };
 }
 
 // The most recent excerpts, each cut to this length; together about 6,000 tokens at most
@@ -460,12 +597,12 @@ async function main() {
   }
 
   // Gather data
-  const [books, tagMap, memoryFiles, recentMessages, excerpts, previousProfile] =
+  const [books, tagMap, memoryFiles, conversations, excerpts, previousProfile] =
     await Promise.all([
       fetchAllBooks(),
       fetchCanonicalTags(),
       bootstrap ? Promise.resolve([]) : fetchMemoryFiles(),
-      bootstrap ? Promise.resolve([]) : fetchRecentMessages(100),
+      bootstrap ? Promise.resolve([]) : fetchConversations(),
       bootstrap ? Promise.resolve([]) : fetchExcerpts(),
       fetchPreviousProfile(),
     ]);
@@ -482,12 +619,8 @@ async function main() {
         memoryFiles.map((f) => `### ${f.path}\n${f.content}`).join("\n\n").slice(0, MAX_MEMORY_CHARS + 500)
       : "No memory files yet.";
 
-  const conversationText =
-    recentMessages.length > 0
-      ? recentMessages
-          .map((m) => `[${m.role}] ${m.content.slice(0, 500)}`)
-          .join("\n\n")
-      : "No conversations yet.";
+  const { text: conversationText, inFull } = formatConversations(conversations);
+  const messageCount = conversations.reduce((n, c) => n + c.messages.length, 0);
 
   const excerptText =
     excerpts.length > 0
@@ -496,7 +629,7 @@ async function main() {
           .join("\n")
       : "None saved yet.";
 
-  const userPrompt = `Generate a reader profile from the following data.
+  const userPrompt = `Generate a reader profile from the following data. Today is ${new Date().toISOString().slice(0, 10)}.
 
 ## Library (${books.length} books)
 
@@ -506,7 +639,7 @@ ${libraryText}
 
 ${memoryText}
 
-## Recent Conversations
+## Conversations With the Companion (newest first)
 
 ${conversationText}
 
@@ -521,7 +654,7 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   const mode = dryRun ? "dry-run" : "live";
   console.log(`  Mode: ${mode} | Model: ${MODEL} | Effort: ${EFFORT}${userId ? ` | User: ${userId}` : ""}`);
   console.log(
-    `  Context: ${books.length} books | ${memoryFiles.length} memory files | ${recentMessages.length} messages | ${excerpts.length} excerpts`,
+    `  Context: ${books.length} books | ${memoryFiles.length} memory files | ${conversations.length} conversations (${inFull} in full, ${messageCount} messages, ${conversationText.length.toLocaleString("en-US")} characters) | ${excerpts.length} excerpts`,
   );
   if (previousProfile) {
     console.log(`  Previous profile: yes`);
@@ -541,6 +674,10 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
     console.log(
       `Estimated input: ~${Math.ceil((SYSTEM_PROMPT.length + userPrompt.length) / 4)} tokens`,
     );
+    if (promptOut) {
+      writeFileSync(promptOut, `${SYSTEM_PROMPT}\n\n=====\n\n${userPrompt}`);
+      console.log(`Wrote the whole prompt to ${promptOut}`);
+    }
     console.log("Dry run complete.");
     return;
   }
@@ -552,7 +689,7 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 16000,
-    output_config: { effort: EFFORT },
+    output_config: { effort: EFFORT, format: { type: "json_schema", schema: PROFILE_SCHEMA } },
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -564,8 +701,8 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
     throw new Error("No text block in response");
   }
 
-  // Parse JSON response: the object itself, ignoring a code fence or any note the model
-  // writes before or after it
+  if (response.stop_reason === "max_tokens") throw new Error("The profile ran past max_tokens and is incomplete");
+  // Structured output makes it valid JSON; taking just the object is a leftover safeguard
   const raw = textBlock.text;
   const cleaned = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
 
@@ -590,7 +727,6 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
   if (profileData.poet_affinities?.length === 0) delete profileData.poet_affinities;
 
   if (compareFile) {
-    const { writeFileSync } = await import("node:fs");
     const { usageCost } = await import("../server/usage.js");
     writeFileSync(
       compareFile,
@@ -619,13 +755,14 @@ ${JSON.stringify(previousShiftLog, null, 2)}`;
     model: MODEL,
     book_count: books.length,
     memory_file_count: memoryFiles.length,
-    message_count: recentMessages.length,
+    message_count: messageCount,
+    conversation_count: conversations.length,
     bootstrap,
     input_tokens: response.usage.input_tokens,
     output_tokens: response.usage.output_tokens,
     activity_snapshot: activitySnapshot,
     // "refresh" profiles don't reset the monthly schedule (server/profile-scheduler.ts)
-    kind: keepPredictions ? "refresh" : bootstrap ? "first" : "monthly",
+    kind: keepPredictions ? "refresh" : first || bootstrap ? "first" : "monthly",
   };
 
   const insertRow: Record<string, unknown> = {
