@@ -1,4 +1,5 @@
 import { memoryFileTitle } from "./memory-limit";
+import { shiftWhen } from "./shift-log";
 import type { MessageAction, ReaderProfileData, SeminarContent } from "./types";
 
 // The files in "Download everything", built from the reader's data. Kept apart from the
@@ -150,7 +151,7 @@ function profileMarkdown(p: Profile): string {
     section("What draws you now", d.taste_evolution.current_gravitational_pulls);
     section("What stays constant", d.taste_evolution.consistent_throughlines);
     if (d.taste_evolution.shift_log?.length) {
-      lines.push("", "## Shift log", "", ...d.taste_evolution.shift_log.map((s) => `- ${s.noted_at}: ${s.description}`));
+      lines.push("", "## Shift log", "", ...d.taste_evolution.shift_log.map((s) => `- ${shiftWhen(s)}: ${s.description}`));
     }
   }
   section("Emotional patterns", d.emotional_patterns);

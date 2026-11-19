@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { shiftWhen } from "../src/lib/shift-log.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage, recordClaudeUsage } from "../server/usage.js";
 import { runMessageBatch, type BatchRequest } from "./claude-batch.js";
@@ -160,11 +161,7 @@ function formatPillar(pillar: ThematicPillar): string {
 }
 
 function formatShift(shift: TasteShift): string {
-  const date = new Date(shift.noted_at).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-  });
-  return `- ${date}: ${shift.description}`;
+  return `- ${shiftWhen(shift)}: ${shift.description}`;
 }
 
 // --- Data Gathering ---

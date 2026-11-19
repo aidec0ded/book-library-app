@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, createContext, useContext } from "react";
+import { shiftWhen } from "@/lib/shift-log";
 import { useProfileGeneration } from "@/hooks/useProfileGeneration";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -545,10 +546,7 @@ export function Profile() {
                   </div>
                   <div className="pb-5">
                     <span className="text-xs font-medium text-muted-foreground">
-                      {new Date(shift.noted_at).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "short",
-                      })}
+                      {shiftWhen(shift)}
                     </span>
                     <p className="mt-0.5 text-sm leading-relaxed">
                       {renderInlineMarkdown(shift.description)}

@@ -103,7 +103,11 @@ Return ONLY valid JSON matching this exact structure (no markdown, no explanatio
 
 Guidelines:
 - thematic_pillars: 4-7 pillars. Each with 2-3 example_books as title-only strings (no author). Pillars can span book types — a "Power and Systems" pillar might include both fiction and nonfiction.
-- shift_log: PRESERVE all existing entries provided, then add 0-2 new ones if warranted. Each entry needs "noted_at" (ISO timestamp: today's date for a new entry, since it's when the shift was noted) and "description".
+- shift_log: how the reader's taste has moved, as a timeline. PRESERVE every existing entry provided, with its text unchanged. Each entry has "noted_at" (ISO timestamp: today's date for a new entry, since it's when the shift was noted), "period", and "description".
+  - Shifts you see happening now: add 0-2 if warranted, with "period" null.
+  - Shifts in the reader's past: read books show the month they were finished. If the existing entries don't yet cover the history those dates show, add 2-4 entries tracing how their reading moved before now, each with "period" set to the stretch it describes in plain words ("2023", "Spring–fall 2024", "2019–2021") and grounded in the books finished then and how they were rated. Once the history is covered, only add a past entry when new dates reveal something the log misses.
+  - Return the whole log in the order of what each entry describes, earliest first: past periods by their dates, then shifts noted as they happened.
+  - Many books finished on one day usually means the reader marked old reads in a batch when they started tracking, not that they read them then: treat those as "before" that date, not as a period of their own. Books without a finish month have no place in the timeline.
 - Be specific: name authors, titles, styles. Avoid generic platitudes.
 - The reader_identity should feel like it was written by a perceptive friend who knows you well.
 - nonfiction_identity and poetry_identity: set to null if the library has fewer than 5 books of that type. Otherwise, write a substantive essay.
@@ -131,7 +135,10 @@ const PROFILE_SCHEMA = object({
   },
   taste_evolution: object({
     current_gravitational_pulls: { type: "string" },
-    shift_log: { type: "array", items: object({ noted_at: { type: "string" }, description: { type: "string" } }) },
+    shift_log: {
+      type: "array",
+      items: object({ noted_at: { type: "string" }, period: nullableString, description: { type: "string" } }),
+    },
     consistent_throughlines: { type: "string" },
   }),
   emotional_patterns: { type: "string" },
@@ -445,6 +452,10 @@ function formatLibrary(
     if (b.genre) parts.push(b.genre);
     else if (b.category) parts.push(b.category);
     if (b.is_favorite) parts.push("♥ favorite");
+    // The month it was finished (or put down), so the profile can see how reading has moved
+    if (b.date_finished && (b.status === "read" || b.status === "unfinished")) {
+      parts.push(`${b.status === "unfinished" ? "stopped" : "finished"} ${b.date_finished.slice(0, 7)}`);
+    }
     const tags = tagMap.get(b.id);
     if (tags) {
       const formatted = formatTagsForBook(tags, bookType);

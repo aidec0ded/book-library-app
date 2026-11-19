@@ -126,6 +126,8 @@ export interface ThematicPillar {
 export interface TasteShift {
   noted_at: string;
   description: string;
+  /** The period a shift traced from reading dates describes ("2023", "Spring–fall 2024"); null or absent for one noted as it happened */
+  period?: string | null;
 }
 
 export interface TasteEvolution {

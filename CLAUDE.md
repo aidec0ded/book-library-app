@@ -238,7 +238,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/SeminarSection.tsx` — Expandable seminar content (pre-reading context, focus questions, post-reading prompts) with inline editing
 - `src/components/PersonalCanonEditor.tsx` — Canon grid with add/remove
 - `server/profile-loader.ts` — Cached profile loader for chat system prompt (10min TTL)
-- `scripts/generate-profile.ts` — Reader profile generation from the library, memory, every conversation, and saved excerpts (Sonnet 5.5, high effort, structured output, about a minute and $0.20 for a 900-book library; chosen over Opus 5.5 in November 2026). Conversations go in newest first: the reader's messages in full (up to 2,000 characters each) and the companion's cut to 300 for context, until 60,000 characters, then a line each (title, dates, book, summary) up to 15,000 more. `--keep-predictions` for a weekly refresh
+- `scripts/generate-profile.ts` — Reader profile generation from the library, memory, every conversation, and saved excerpts (Sonnet 5.5, high effort, structured output, about a minute and $0.20 for a 900-book library; chosen over Opus 5.5 in November 2026). Each read book shows the month it was finished, so the shift log can trace past periods (an entry's optional `period`, shown by `shiftWhen` in `src/lib/shift-log.ts`). Conversations go in newest first: the reader's messages in full (up to 2,000 characters each) and the companion's cut to 300 for context, until 60,000 characters, then a line each (title, dates, book, summary) up to 15,000 more. `--keep-predictions` for a weekly refresh
 - `scripts/predict-ratings.ts` — AI predicted rating generation for unread books (20 books per request, Sonnet 5.5, the reader's profile cached across requests, --dry-run/--limit/--force/--batch flags)
 - `scripts/enrich-isbndb.ts` — Bulk ISBNdb enrichment script (1 req/sec, retries, --dry-run/--limit/--force flags)
 - `src/pages/SyllabiPage.tsx` — Syllabi course catalog index with editorial card layout
@@ -291,7 +291,6 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ### Future
 
-- Reading Life narrative (AI-identified eras in the reader's journey)
 - Social features (shared lists/shelves/profiles)
 - Mobile application
 
