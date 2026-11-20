@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { ReleaseLibraryMatches } from "@/components/ReleaseLibraryMatches";
 import { useSearchParams } from "react-router-dom";
 import {
   fetchReleasesByMonth,
@@ -248,6 +249,8 @@ function ReleaseGrid({
                     )}
                   </div>
                 )}
+
+                <ReleaseLibraryMatches releaseId={release.id} />
 
                 {release.subjects.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">

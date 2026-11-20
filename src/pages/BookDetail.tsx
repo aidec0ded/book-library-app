@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { VibeEditor } from "@/components/VibeEditor";
 import { AlsoByAuthor } from "@/components/AlsoByAuthor";
 import { MoreLikeThis } from "@/components/MoreLikeThis";
+import { NewReleasesLikeThis } from "@/components/NewReleasesLikeThis";
 import { BookListsSection } from "@/components/BookListsSection";
 import { ReadingDates } from "@/components/ReadingDates";
 import { authorLibraryPath, updateBook, deleteBook, formatRating } from "@/lib/books";
@@ -811,6 +812,8 @@ function BookDetailContent({ id }: { id: string | undefined }) {
         ))}
 
         <MoreLikeThis book={book} />
+
+        <NewReleasesLikeThis bookId={book.id} />
       </div>
     </div>
   );

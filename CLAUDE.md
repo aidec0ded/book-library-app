@@ -163,6 +163,8 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/components/ReadingDates.tsx` — Start and finish dates on the book page, with inline editing. The end date's calendar opens on the start date's month
 - `src/components/DateField.tsx` — A date typed or picked from a calendar with month and year menus, in place of the browser's date input (where typing a year resets on each key in some browsers)
 - `src/components/AlsoByAuthor.tsx` — "Also by" section on the book page: the reader's other books by an author, in-progress and unread first
+- `src/components/NewReleasesLikeThis.tsx` — "New releases like this" on the book page: notable releases from the last three months on closest to the book (`fetchReleasesLikeBook`, the `match_releases` function), leaving out what's in the library or dismissed; opening one shows its synopsis and "Want to Read"
+- `src/components/ReleaseLibraryMatches.tsx` — "Like books you've read" on an opened release: the reader's read books closest to it, with their ratings (`release_library_matches`)
 - `src/components/MoreLikeThis.tsx` — "More like this" on the book page, from the reader's own library through the book embeddings (`fetchSimilarBooks` in `src/lib/books.ts`, the `match_books` function; no AI call). For a book not started: the closest books they've read, with their ratings. Otherwise: the closest unread and wishlist books. Leaves out the same author and other editions, and matches under 0.55
 - `src/components/ChangeEditionModal.tsx` — Switch a library book to another edition from the book page
 - `src/components/EditionDetailsForm.tsx` — Inline editor for a book's format, publisher, page count, publication year, ISBN, and cover image URL
@@ -187,7 +189,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `server/chat-prompt.ts` — The chat instructions, the reader context block, and the tools (`chatTools`, a subset for free readers), apart from the request handling so a test can send exactly what the server sends
 - `server/library-index.ts` — Builds the library index for the chat system prompt (cached 10min): what the reader is reading, has read, rated, or marked a favorite, plus a summary of the unread books and wishlist, which the AI finds with `search_library`. Onboarding gets every book. Stable ordering keeps the prompt cache valid. Dropped from the cache when the companion changes a book, so its next message sees the change
 - `server/library-search.ts` — `search_library` tool executor: the reader's whole library by title/author words, status, tags, and type, sortable by predicted rating; or by meaning (`about`, a description, or `like_title`, books like one in the library) through the `match_books` database function. Results include page counts
-- `server/embeddings.ts` — Voyage AI embeddings (`voyage-4`, 1024 dimensions, through MongoDB Atlas): the client, the text a book is embedded from (title, author, type, genre, summary; nothing that differs between readers, so it's shared), and the job that embeds new and changed books every 10 minutes
+- `server/embeddings.ts` — Voyage AI embeddings (`voyage-4`, 1024 dimensions, through MongoDB Atlas): the client, the text a book is embedded from (title, author, type, genre, summary; nothing that differs between readers, so it's shared), and the job that embeds new and changed books every 10 minutes, then notable releases (general 6+, kept by triage) from the same kind of text so they compare with books
 - `scripts/embed-books.ts` — Embeds every pending book in one go (first fill, or catching up by hand)
 - `server/book-lookup.ts` — `findBookByTitle` (punctuation-insensitive match, then contains) and `findOrCreateBook` (title + author + ISBN check against the library, otherwise insert with details from the likeliest ISBNdb edition + auto-link external list items)
 - `src/lib/editions.ts` — Pure edition logic shared by browser, server, and scripts: title/author matching, author name parsing ("Last, First", co-authors, credentials), edition grouping and scoring, format and language normalization, field mapping
@@ -296,7 +298,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ## Data Model
 
-Thirty tables in Supabase:
+Thirty-one tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
 - `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
@@ -344,6 +346,8 @@ Thirty tables in Supabase:
 - `updated_at` — auto-updated via trigger
 
 **text_embeddings** — One vector per distinct text, keyed by `content_hash` (SHA-256 of model, dimensions, and text), so a book in many libraries is embedded once (migration 031). Holds no text and no reader. `embedding` is `halfvec(1024)`. Signed-in readers can read it; only the service role writes.
+
+**release_embeddings** — Links each notable release to the vector of its current text: `release_id` (PK, CASCADE delete), `content_hash`. A trigger deletes the row when the title, authors, synopsis, or fiction flag changes. Signed-in readers can read it. `match_releases(like_book_id, since_month, match_count)` and `release_library_matches(for_release_id, statuses, match_count)` run as the caller (migration 041)
 
 **book_embeddings** — Links each library book to the vector of its current text: `book_id` (PK, CASCADE delete), `user_id`, `content_hash`. A trigger deletes a book's row when its title, subtitle, author, genre, summary, or type changes, so the embedding job picks it up again. Readers can read their own rows. `match_books(query_embedding, like_book_id, statuses, only_type, match_count)` runs as the caller, so it only searches their books; it scans the reader's books without an index, which is fast at library sizes
 

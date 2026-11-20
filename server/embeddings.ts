@@ -36,6 +36,7 @@ interface VoyageResponse {
 export async function embedTexts(
   texts: string[],
   inputType: "document" | "query",
+  feature?: string,
 ): Promise<{ embeddings: number[][]; tokens: number }> {
   const key = process.env.VOYAGE_AI_API_KEY;
   if (!key) throw new Error("Search by meaning isn't set up (VOYAGE_AI_API_KEY is missing).");
@@ -79,7 +80,7 @@ export async function embedTexts(
         tokens += batchTokens;
         await recordUsage({
           provider: "voyage",
-          feature: inputType === "query" ? "search_by_meaning" : "book_embeddings",
+          feature: feature ?? (inputType === "query" ? "search_by_meaning" : "book_embeddings"),
           model: EMBEDDING_MODEL,
           inputTokens: batchTokens,
           costUsd: (batchTokens * VOYAGE_PRICE_PER_MTOK) / 1e6,
@@ -153,6 +154,31 @@ export function bookEmbeddingText(book: EmbeddableBook): string {
   return lines.join("\n");
 }
 
+export interface EmbeddableRelease {
+  id: string;
+  title: string;
+  authors: string[] | null;
+  is_fiction: boolean | null;
+  synopsis: string | null;
+}
+
+/**
+ * A release's text in the same shape as a book's, so the two compare directly and a
+ * release that's also in a library shares its vector when the details match.
+ */
+export function releaseEmbeddingText(release: EmbeddableRelease): string {
+  return bookEmbeddingText({
+    id: release.id,
+    user_id: "",
+    title: release.title,
+    subtitle: null,
+    author: (release.authors ?? []).join(", ") || null,
+    genre: null,
+    book_type: release.is_fiction === false ? "nonfiction" : "fiction",
+    summary: release.synopsis,
+  });
+}
+
 export function contentHash(text: string): string {
   return createHash("sha256").update(`${EMBEDDING_MODEL}:${EMBEDDING_DIMENSIONS}\n${text}`).digest("hex");
 }
@@ -197,7 +223,28 @@ export async function embedPendingBooks(
     return { book, text, hash: contentHash(text) };
   });
 
-  // Which texts are already embedded
+  const { newTexts, reusedTexts, tokens } = await storeTexts(supabase, prepared, "book_embeddings");
+
+  const links = prepared.map((p) => ({ book_id: p.book.id, user_id: p.book.user_id, content_hash: p.hash }));
+  for (let i = 0; i < links.length; i += 200) {
+    const { error: linkError } = await supabase
+      .from("book_embeddings")
+      .upsert(links.slice(i, i + 200), { onConflict: "book_id" });
+    if (linkError) throw linkError;
+  }
+
+  return { books: books.length, newTexts, reusedTexts, tokens };
+}
+
+/**
+ * Makes sure every text has a stored vector: texts already embedded (in any library, or
+ * as a release) are reused, the rest embedded in one go.
+ */
+async function storeTexts(
+  supabase: SupabaseClient,
+  prepared: { text: string; hash: string }[],
+  feature: string,
+): Promise<{ newTexts: number; reusedTexts: number; tokens: number }> {
   const uniqueHashes = [...new Set(prepared.map((p) => p.hash))];
   const existing = new Set<string>();
   for (let i = 0; i < uniqueHashes.length; i += 100) {
@@ -215,7 +262,7 @@ export async function embedPendingBooks(
   let tokens = 0;
   if (toEmbed.size > 0) {
     const hashes = [...toEmbed.keys()];
-    const result = await embedTexts([...toEmbed.values()], "document");
+    const result = await embedTexts([...toEmbed.values()], "document", feature);
     tokens = result.tokens;
     const rows = hashes.map((hash, i) => ({
       content_hash: hash,
@@ -229,21 +276,50 @@ export async function embedPendingBooks(
       if (insertError) throw insertError;
     }
   }
+  return { newTexts: toEmbed.size, reusedTexts: uniqueHashes.length - toEmbed.size, tokens };
+}
 
-  const links = prepared.map((p) => ({ book_id: p.book.id, user_id: p.book.user_id, content_hash: p.hash }));
+/** A release is embedded once it's notable: kept by triage with a general score of this or more. */
+const RELEASE_MIN_GENERAL = 6;
+
+/**
+ * Embeds up to `limit` notable releases with no embedding for their current text
+ * (migration 041). Returns null when the table isn't there yet, before the migration runs.
+ */
+export async function embedPendingReleases(
+  supabase: SupabaseClient,
+  { limit = 500 }: { limit?: number } = {},
+): Promise<{ releases: number; newTexts: number; reusedTexts: number; tokens: number } | null> {
+  const { data, error } = await supabase
+    .from("new_releases")
+    .select("id, title, authors, is_fiction, synopsis, release_embeddings!left(release_id)")
+    .is("skip_reason", null)
+    .gte("general_signal_score", RELEASE_MIN_GENERAL)
+    .is("release_embeddings", null)
+    .order("ingested_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    // No release_embeddings table, or no relationship to it, until migration 041 runs
+    if (/release_embeddings/.test(error.message) || error.code === "PGRST200" || error.code === "42P01") return null;
+    throw error;
+  }
+  const releases = (data ?? []) as unknown as EmbeddableRelease[];
+  if (releases.length === 0) return { releases: 0, newTexts: 0, reusedTexts: 0, tokens: 0 };
+
+  const prepared = releases.map((release) => {
+    const text = releaseEmbeddingText(release);
+    return { release, text, hash: contentHash(text) };
+  });
+  const stored = await storeTexts(supabase, prepared, "release_embeddings");
+
+  const links = prepared.map((p) => ({ release_id: p.release.id, content_hash: p.hash }));
   for (let i = 0; i < links.length; i += 200) {
     const { error: linkError } = await supabase
-      .from("book_embeddings")
-      .upsert(links.slice(i, i + 200), { onConflict: "book_id" });
+      .from("release_embeddings")
+      .upsert(links.slice(i, i + 200), { onConflict: "release_id" });
     if (linkError) throw linkError;
   }
-
-  return {
-    books: books.length,
-    newTexts: toEmbed.size,
-    reusedTexts: uniqueHashes.length - toEmbed.size,
-    tokens,
-  };
+  return { releases: releases.length, ...stored };
 }
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -276,6 +352,17 @@ export function startEmbeddingScheduler(supabase: SupabaseClient): void {
         console.log(
           `[embeddings] Embedded ${total.books} books: ${total.newTexts} new texts, ${total.reusedTexts} reused, ${total.tokens} tokens.`,
         );
+      }
+      // Notable releases, for "New releases like this" and the library matches on a release
+      for (let i = 0; i < MAX_BATCHES_PER_CHECK; i++) {
+        const r = await embedPendingReleases(supabase);
+        if (!r) break;
+        if (r.releases > 0) {
+          console.log(
+            `[embeddings] Embedded ${r.releases} releases: ${r.newTexts} new texts, ${r.reusedTexts} reused, ${r.tokens} tokens.`,
+          );
+        }
+        if (r.releases < 500) break;
       }
       await recordJobRun("embeddings", { ok: true });
     } catch (err) {

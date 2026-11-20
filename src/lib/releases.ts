@@ -312,3 +312,63 @@ export async function fetchLibraryIsbns(): Promise<Set<string>> {
   }
   return isbns;
 }
+
+// Below this, a release and a book share little more than a genre (book-to-book matches
+// use 0.55; releases are written in publisher's copy, which runs a little less alike)
+const RELEASE_MIN_SIMILARITY = 0.5;
+/** How far back "New releases like this" looks, in months before the current one. */
+const RELEASES_LIKE_MONTHS_BACK = 3;
+
+/**
+ * Notable releases closest to one of the reader's books, from the last few months and
+ * those coming up, through the release embeddings (migration 041). Leaves out what's
+ * already in their library and what they dismissed. No AI call.
+ */
+export async function fetchReleasesLikeBook(bookId: string, count: number): Promise<NewRelease[]> {
+  const now = new Date();
+  const sinceMonth = now.getFullYear() * 12 + now.getMonth() - RELEASES_LIKE_MONTHS_BACK;
+  const { data: matches, error } = await supabase.rpc("match_releases", {
+    like_book_id: bookId,
+    since_month: sinceMonth,
+    match_count: count,
+  });
+  if (error) throw error;
+  const ids = ((matches ?? []) as { release_id: string; similarity: number }[])
+    .filter((m) => m.similarity >= RELEASE_MIN_SIMILARITY)
+    .map((m) => m.release_id);
+  if (ids.length === 0) return [];
+
+  const { data, error: rowsError } = await supabase
+    .from("new_releases")
+    .select("*, user_release_scores(*)")
+    .in("id", ids);
+  if (rowsError) throw rowsError;
+  const byId = new Map(((data ?? []) as unknown as ReleaseRow[]).map((row) => [row.id, mapRow(row)]));
+  return ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+}
+
+export interface ReleaseLibraryMatch {
+  id: string;
+  title: string;
+  author: string;
+  rating: number | null;
+}
+
+/** The books the reader has read that are closest to a release, with their ratings. */
+export async function fetchLibraryMatchesForRelease(releaseId: string, count = 3): Promise<ReleaseLibraryMatch[]> {
+  const { data: matches, error } = await supabase.rpc("release_library_matches", {
+    for_release_id: releaseId,
+    statuses: ["read", "unfinished"],
+    match_count: count,
+  });
+  if (error) throw error;
+  const ids = ((matches ?? []) as { book_id: string; similarity: number }[])
+    .filter((m) => m.similarity >= RELEASE_MIN_SIMILARITY)
+    .map((m) => m.book_id);
+  if (ids.length === 0) return [];
+
+  const { data, error: rowsError } = await supabase.from("books").select("id, title, author, rating").in("id", ids);
+  if (rowsError) throw rowsError;
+  const byId = new Map(((data ?? []) as ReleaseLibraryMatch[]).map((b) => [b.id, b]));
+  return ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+}
