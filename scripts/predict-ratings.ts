@@ -440,7 +440,7 @@ Rules:
 - Personal canon themes should pull related predictions UP
 - Be honest: use the full range. Most predictions should have genuine spread.
 - Consider the book's type: the reader may rate nonfiction or poetry on different criteria than fiction
-- Include a brief rationale (1-2 sentences) explaining why this reader would rate the book this way
+- Include a brief rationale (1-2 sentences) explaining why they would rate the book this way. Write it to the reader, who reads it on the page: second person ("you", "your"), as in "Fits your pull toward cold, cerebral SF, though the romance subplot may drag for you." Never "this reader", "the reader", or he, she, or they for them. The reader profile is written to them the same way
 
 Return ONLY a JSON array with id, predicted_rating, and rationale fields. No other text.`;
 }

@@ -487,7 +487,7 @@ ${calibrationSection}
 ## Rules
 - Use the full 1-10 range for both scores. Most books are ordinary.
 - Be selective with 8+ personal scores — reserve for books with strong specific connections to this reader's taste.
-- Rationale should be 1 sentence focusing on why this reader specifically would or wouldn't connect with this book.
+- Rationale should be 1 sentence focusing on why they specifically would or wouldn't connect with this book. Write it to the reader, who reads it on the page: second person ("you", "your"), as in "Fits your pull toward cold, cerebral SF, though the romance subplot may drag for you." Never "this reader", "the reader", or he, she, or they for them. The reader profile is written to them the same way.
 - If metadata is sparse, score conservatively (lean toward 4-5).
 
 Return ONLY a JSON array. No other text.
