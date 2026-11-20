@@ -34,6 +34,24 @@ import type { Book, BookExcerpt, BookType, Conversation } from "@/lib/types";
 
 const STATUS_OPTIONS = ["unread", "reading", "read", "unfinished", "wishlist"] as const;
 
+/** "today", "yesterday", "Oct 29", or "Oct 29, 2025" for an earlier year. */
+function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const days = Math.round(
+    (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() -
+      new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) /
+      86_400_000,
+  );
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== today.getFullYear() && { year: "numeric" }),
+  });
+}
+
 // Audiobooks can list a whole cast as authors, so the header stays short
 const MAX_LISTED_AUTHORS = 4;
 // Later names are often narrators or illustrators, who aren't worth a section of their own
@@ -259,6 +277,8 @@ function BookDetailContent({ id }: { id: string | undefined }) {
   }
 
   const authors = parseAuthorNames(book.author);
+  // The one "Discuss this book" reopens (the list is newest first)
+  const latestConversation = bookConversations[0] ?? null;
   const listedAuthors = showAllAuthors ? authors : authors.slice(0, MAX_LISTED_AUTHORS);
 
   const showPredictedRating =
@@ -667,7 +687,7 @@ function BookDetailContent({ id }: { id: string | undefined }) {
               }}
             />
           ) : (
-            <div className="mx-auto lg:mx-0">
+            <div className="mx-auto w-fit lg:mx-0">
               <BookCover
                 title={book.title}
                 author={book.author}
@@ -676,6 +696,25 @@ function BookDetailContent({ id }: { id: string | undefined }) {
               />
             </div>
           )}
+
+          {/* The page's main action: talking about the book. Opening the panel picks up the
+              latest conversation about it when there is one, so the button says which. */}
+          <div className="mx-auto w-full max-w-[240px] lg:mx-0">
+            <button
+              onClick={() =>
+                openPanel({ book: { id: book.id, title: book.title, status: book.status } })
+              }
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+            >
+              <MessageCircle className="h-4 w-4" />
+              {latestConversation ? "Continue the conversation" : "Discuss this book"}
+            </button>
+            {latestConversation && (
+              <p className="mt-1.5 text-center text-xs text-muted-foreground lg:text-left">
+                Last talked {formatShortDate(latestConversation.last_message_at)}
+              </p>
+            )}
+          </div>
 
           <Separator />
 
@@ -751,17 +790,6 @@ function BookDetailContent({ id }: { id: string | undefined }) {
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
-
-          {/* Discuss this book */}
-          <button
-            onClick={() =>
-              openPanel({ book: { id: book.id, title: book.title, status: book.status } })
-            }
-            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-          >
-            <MessageCircle className="h-3.5 w-3.5" />
-            Discuss this book
-          </button>
 
           <Separator />
 
