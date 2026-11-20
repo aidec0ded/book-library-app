@@ -16,3 +16,20 @@ export async function fetchAllRows<T>(
     if (!data || data.length < PAGE) return rows;
   }
 }
+
+/**
+ * Every row matching a list of ids too long for one request: a long `in` list makes the
+ * request URL too long for the server, so the ids go in chunks, each read page by page.
+ */
+export async function fetchAllRowsIn<T>(
+  ids: string[],
+  page: (chunk: string[], from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  chunkSize = 150,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    rows.push(...(await fetchAllRows<T>((from, to) => page(chunk, from, to))));
+  }
+  return rows;
+}

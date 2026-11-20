@@ -243,18 +243,20 @@ async function fetchAllCanonicalTags(): Promise<
 async function fetchCalibrationSet(
   tagMap: Map<string, { vibe: string; tag_category: string }[]>,
 ): Promise<CalibratedBook[]> {
-  let query = supabase
-    .from("books")
-    .select("id, title, author, book_type, rating, genre")
-    .gt("rating", 0)
-    .order("rating");
-
-  if (userId) query = query.eq("user_id", userId);
-
-  const { data, error } = await query;
-
-  if (error) throw new Error(`fetchCalibrationSet: ${error.message}`);
-  if (!data || data.length === 0) return [];
+  // Every rated book: ordered lowest first, a cut at 1,000 would drop exactly the favorites
+  const data = await fetchAllRows<{ id: string; title: string; author: string; book_type: string | null; rating: number; genre: string | null }>(
+    (from, to) => {
+      let query = supabase
+        .from("books")
+        .select("id, title, author, book_type, rating, genre")
+        .gt("rating", 0);
+      if (userId) query = query.eq("user_id", userId);
+      return query.order("rating").order("id").range(from, to);
+    },
+  ).catch((err: Error) => {
+    throw new Error(`fetchCalibrationSet: ${err.message}`);
+  });
+  if (data.length === 0) return [];
 
   // Group by rating tier
   const tiers: Map<string, typeof data> = new Map();

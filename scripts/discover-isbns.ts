@@ -10,6 +10,7 @@ import {
 } from "../src/lib/editions.js";
 
 import { backgroundBudget, isbndbSearch } from "../server/isbndb.js";
+import { fetchAllRows } from "./fetch-all.js";
 
 config();
 
@@ -72,23 +73,15 @@ async function main() {
   console.log("Rekollekt ISBN Discovery");
 
   // Step 1: Fetch books without ISBNs
-  let query = supabase
-    .from("books")
-    .select("id, title, author")
-    .is("isbn", null)
-    .order("title");
-
-  // In auto mode, only search books that haven't been through discovery yet
-  if (autoMode) {
-    query = query.is("isbndb_enriched_at", null);
-  }
-
-  const { data: books, error: fetchError } = await query;
-
-  if (fetchError) {
-    console.error("Failed to fetch books:", fetchError.message);
+  const books = await fetchAllRows<{ id: string; title: string; author: string }>((from, to) => {
+    let query = supabase.from("books").select("id, title, author").is("isbn", null);
+    // In auto mode, only search books that haven't been through discovery yet
+    if (autoMode) query = query.is("isbndb_enriched_at", null);
+    return query.order("title").order("id").range(from, to);
+  }).catch((err: Error) => {
+    console.error("Failed to fetch books:", err.message);
     process.exit(1);
-  }
+  });
 
   let candidates: BookCandidate[] = (books ?? []) as BookCandidate[];
 

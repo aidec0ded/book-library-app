@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { linkExternalItemsToBook } from "@/lib/lists";
 import { capture } from "@/lib/posthog";
 import {
@@ -77,15 +78,19 @@ export function ImportBooks() {
 
     async function loadExisting() {
       setDedupLoading(true);
-      const { data, error } = await supabase
-        .from("books")
-        .select("isbn, title, author");
-      if (cancelled) return;
-      if (error) {
+      // Every book, page by page: a library past 1,000 would otherwise let duplicates through
+      let data: { isbn: string | null; title: string; author: string }[];
+      try {
+        data = await fetchAllRows((from, to) =>
+          supabase.from("books").select("isbn, title, author").order("id").range(from, to),
+        );
+      } catch (error) {
+        if (cancelled) return;
         console.error("Failed to load library for dedup:", error);
         setDedupLoading(false);
         return;
       }
+      if (cancelled) return;
 
       const isbns = new Set<string>();
       const keys = new Set<string>();

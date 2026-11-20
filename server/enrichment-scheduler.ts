@@ -1,6 +1,7 @@
 import { backgroundBudget } from "./isbndb.js";
 import { runScript } from "./jobs.js";
 import { recordJobRun } from "./usage.js";
+import { fetchAllRows } from "../src/lib/fetch-all.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -155,13 +156,13 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
     // (requires a profile + enough rated books). Predictions are user-scoped:
     // each user's books are predicted from their own profile and calibration,
     // so we find one user with pending work per cycle and spawn for just them.
-    const { data: profileRows } = await supabase
-      .from("reader_profile")
-      .select("user_id")
-      .order("generated_at", { ascending: false });
+    // One row per profile generated, so this passes 1,000 rows as readers accumulate months
+    const profileRows = await fetchAllRows<{ user_id: string }>((from, to) =>
+      supabase.from("reader_profile").select("user_id").order("generated_at", { ascending: false }).order("id").range(from, to),
+    );
 
     // Deduplicate — a user may have multiple profile generations
-    const profileUserIds = [...new Set((profileRows ?? []).map((r) => r.user_id))];
+    const profileUserIds = [...new Set(profileRows.map((r) => r.user_id))];
 
     for (const uid of profileUserIds) {
       const { count: ratedCount } = await supabase

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { fetchBookIdsByTagFilters } from "@/lib/vibes";
+import { fetchAllRows } from "@/lib/fetch-all";
 import type {
   Book,
   Shelf,
@@ -14,30 +14,14 @@ export type ShelfBook = Pick<
   "id" | "title" | "author" | "cover_image_url" | "status" | "rating" | "book_type" | "page_count" | "is_favorite" | "summary"
 >;
 
-async function buildAutoShelfQuery(filter: ShelfFilter) {
-  let q = supabase
-    .from("books")
-    .select("id, title, author, cover_image_url, status, rating, book_type, page_count, is_favorite, summary");
+const SHELF_BOOK_FIELDS = "id, title, author, cover_image_url, status, rating, book_type, page_count, is_favorite, summary";
 
-  if (filter.status) {
-    q = q.eq("status", filter.status);
-  }
-  if (filter.genre) {
-    q = q.eq("genre", filter.genre);
-  }
-  if (filter.rating_min != null) {
-    q = q.gte("rating", filter.rating_min);
-  }
-  if (filter.timing_month != null) {
-    q = q.eq("timing_month", filter.timing_month);
-  }
-  if (filter.book_type) {
-    q = q.eq("book_type", filter.book_type);
-  }
-  if (filter.is_favorite) {
-    q = q.eq("is_favorite", true);
-  }
-  // Tag-category filtering: OR within each category, AND across categories
+/**
+ * Every book an auto shelf's filter matches, page by page (a shelf of read books passes
+ * 1,000 for a heavy reader). Tag rules join to the tags in the same query, one alias per
+ * category: OR within a category, AND across them.
+ */
+async function fetchAutoShelfBooks(filter: ShelfFilter): Promise<ShelfBook[]> {
   const tagFilters: { tags: string[]; category: TagCategory }[] = [];
   if (filter.vibes?.length) tagFilters.push({ tags: filter.vibes, category: "vibe" });
   if (filter.topics?.length) tagFilters.push({ tags: filter.topics, category: "topic" });
@@ -46,14 +30,32 @@ async function buildAutoShelfQuery(filter: ShelfFilter) {
   if (filter.movement?.length) tagFilters.push({ tags: filter.movement, category: "movement" });
   if (filter.formal_feel?.length) tagFilters.push({ tags: filter.formal_feel, category: "formal_feel" });
   if (filter.accessibility?.length) tagFilters.push({ tags: filter.accessibility, category: "accessibility" });
-  if (tagFilters.length > 0) {
-    const ids = await fetchBookIdsByTagFilters(tagFilters);
-    if (ids.length === 0) return null;
-    q = q.in("id", ids);
-  }
 
-  q = q.order("title");
-  return q;
+  const joins = tagFilters.map((_, i) => `t${i}:book_vibes!inner(vibe)`);
+  const select = [SHELF_BOOK_FIELDS, ...joins].join(", ");
+
+  const rows = await fetchAllRows<ShelfBook & Record<string, unknown>>((from, to) => {
+    let q = supabase.from("books").select(select);
+    if (filter.status) q = q.eq("status", filter.status);
+    if (filter.genre) q = q.eq("genre", filter.genre);
+    if (filter.rating_min != null) q = q.gte("rating", filter.rating_min);
+    if (filter.timing_month != null) q = q.eq("timing_month", filter.timing_month);
+    if (filter.book_type) q = q.eq("book_type", filter.book_type);
+    if (filter.is_favorite) q = q.eq("is_favorite", true);
+    tagFilters.forEach(({ tags, category }, i) => {
+      q = q.in(`t${i}.vibe`, tags).eq(`t${i}.tag_category`, category).eq(`t${i}.is_canonical`, true);
+    });
+    return q.order("title").order("id").range(from, to) as unknown as PromiseLike<{
+      data: (ShelfBook & Record<string, unknown>)[] | null;
+      error: unknown;
+    }>;
+  });
+  // Drop the joined tag rows, which only did the filtering
+  return rows.map((row) => {
+    const book = { ...row };
+    tagFilters.forEach((_, i) => delete book[`t${i}`]);
+    return book as ShelfBook;
+  });
 }
 
 export async function fetchShelves(): Promise<ShelfWithCover[]> {
@@ -116,14 +118,8 @@ export async function fetchShelves(): Promise<ShelfWithCover[]> {
   const results: ShelfWithCover[] = await Promise.all(
     shelves.map(async (shelf) => {
       if (shelf.shelf_type === "auto" && shelf.filter) {
-        // Auto shelf: execute the filter query
-        const q = await buildAutoShelfQuery(shelf.filter as ShelfFilter);
-        if (q === null) {
-          return { ...shelf, book_count: 0, cover_book: null, cover_books: [] };
-        }
-        const { data, error } = await q;
-        if (error) throw error;
-        const books = data ?? [];
+        // Auto shelf: run its filter
+        const books = await fetchAutoShelfBooks(shelf.filter as ShelfFilter);
         return {
           ...shelf,
           book_count: books.length,
@@ -164,11 +160,7 @@ export async function fetchShelf(id: string): Promise<Shelf | null> {
 
 export async function fetchShelfBooks(shelf: Shelf): Promise<ShelfBook[]> {
   if (shelf.shelf_type === "auto" && shelf.filter) {
-    const q = await buildAutoShelfQuery(shelf.filter);
-    if (q === null) return [];
-    const { data, error } = await q;
-    if (error) throw error;
-    return data ?? [];
+    return fetchAutoShelfBooks(shelf.filter);
   }
 
   // Manual shelf: join through shelf_items

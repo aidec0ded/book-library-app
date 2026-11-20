@@ -1,5 +1,6 @@
 import { runScript } from "./jobs.js";
 import { recordJobRun } from "./usage.js";
+import { fetchAllRowsIn } from "../src/lib/fetch-all.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { personallyScorableOnly, scorableOnly } from "../src/lib/release-scoring.js";
 
@@ -112,12 +113,13 @@ async function curatingReaders(supabase: SupabaseClient, now: Date): Promise<str
   const ids = (curation ?? []).map((r) => r.user_id as string);
   if (ids.length === 0) return [];
 
-  const { data: profiles, error: profilesError } = await supabase
-    .from("reader_profile")
-    .select("user_id")
-    .in("user_id", ids);
-  if (profilesError) throw new Error(`reader_profile: ${profilesError.message}`);
-  const withProfile = new Set((profiles ?? []).map((p) => p.user_id as string));
+  // A row per profile generated, and maybe many readers: ids in chunks, each read page by page
+  const profiles = await fetchAllRowsIn<{ user_id: string }>(ids, (chunk, from, to) =>
+    supabase.from("reader_profile").select("user_id").in("user_id", chunk).order("id").range(from, to),
+  ).catch((err: Error) => {
+    throw new Error(`reader_profile: ${err.message}`);
+  });
+  const withProfile = new Set(profiles.map((p) => p.user_id));
   return ids.filter((id) => withProfile.has(id));
 }
 

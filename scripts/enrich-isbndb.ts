@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import { lookupIsbns, normalizeIsbn } from "../server/isbndb.js";
+import { fetchAllRows } from "./fetch-all.js";
 
 config();
 
@@ -125,22 +126,18 @@ async function main() {
   console.log("Rekollekt ISBNdb Enrichment");
 
   // Step 1: Fetch books with ISBNs
-  let query = supabase
-    .from("books")
-    .select("id, title, author, isbn, summary, cover_image_url, page_count, publisher, publication_year, format")
-    .not("isbn", "is", null)
-    .order("title");
-
-  if (!force) {
-    query = query.is("isbndb_enriched_at", null);
-  }
-
-  const { data: books, error: fetchError } = await query;
-
-  if (fetchError) {
-    console.error("Failed to fetch books:", fetchError.message);
+  // Every matching book, page by page (with --force that's every book with an ISBN)
+  const books = await fetchAllRows((from, to) => {
+    let query = supabase
+      .from("books")
+      .select("id, title, author, isbn, summary, cover_image_url, page_count, publisher, publication_year, format")
+      .not("isbn", "is", null);
+    if (!force) query = query.is("isbndb_enriched_at", null);
+    return query.order("title").order("id").range(from, to);
+  }).catch((err: Error) => {
+    console.error("Failed to fetch books:", err.message);
     process.exit(1);
-  }
+  });
 
   let booksToEnrich: BookForEnrichment[] = (books ?? []) as BookForEnrichment[];
 

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetch-all";
 import { fetchCanonicalVibesForBooks } from "@/lib/vibes";
 import { getCurrentTiming } from "@/lib/timing";
 import type { Book } from "@/lib/types";
@@ -22,12 +23,11 @@ export async function fetchRecommendations(
   const timing = getCurrentTiming();
 
   // Step 1: Reader's vibe profile — canonical vibes from books rated ≥ 4
-  const { data: ratedBooks } = await supabase
-    .from("books")
-    .select("id")
-    .gte("rating", 4);
+  const ratedBooks = await fetchAllRows<{ id: string }>((from, to) =>
+    supabase.from("books").select("id").gte("rating", 4).order("id").range(from, to),
+  ).catch(() => []);
 
-  const ratedIds = ratedBooks?.map((b) => b.id) ?? [];
+  const ratedIds = ratedBooks.map((b) => b.id);
   let topVibes: string[] = [];
 
   if (ratedIds.length > 0) {

@@ -3,6 +3,7 @@ import { shiftWhen } from "../src/lib/shift-log.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { trackClaudeUsage } from "../server/usage.js";
 import { runMessageBatch, type BatchRequest } from "./claude-batch.js";
+import { fetchAllRows } from "./fetch-all.js";
 import { config } from "dotenv";
 import type {
   ReaderProfileData,
@@ -147,12 +148,12 @@ function formatShift(shift: TasteShift): string {
 // --- Data Gathering (all queries scoped to a single user) ---
 
 async function fetchUsersWithProfiles(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("reader_profile")
-    .select("user_id")
-    .order("generated_at", { ascending: false });
-
-  if (error) throw new Error(`fetchUsersWithProfiles: ${error.message}`);
+  // One row per profile generated, so every reader adds a row a month
+  const data = await fetchAllRows<{ user_id: string }>((from, to) =>
+    supabase.from("reader_profile").select("user_id").order("generated_at", { ascending: false }).order("id").range(from, to),
+  ).catch((err: Error) => {
+    throw new Error(`fetchUsersWithProfiles: ${err.message}`);
+  });
 
   // Deduplicate — a user may have many profile generations
   const seen = new Set<string>();
@@ -202,16 +203,21 @@ async function fetchCalibrationSet(
   userId: string,
   tagMap: Map<string, { vibe: string; tag_category: string }[]>,
 ): Promise<CalibratedBook[]> {
-  // Fetch all rated books for this user
-  const { data, error } = await supabase
-    .from("books")
-    .select("id, title, author, book_type, rating, genre")
-    .eq("user_id", userId)
-    .gt("rating", 0)
-    .order("rating");
-
-  if (error) throw new Error(`fetchCalibrationSet: ${error.message}`);
-  if (!data || data.length === 0) return [];
+  // Every rated book: ordered lowest first, a cut at 1,000 would drop exactly the favorites
+  const data = await fetchAllRows<{ id: string; title: string; author: string; book_type: string | null; rating: number; genre: string | null }>(
+    (from, to) =>
+      supabase
+        .from("books")
+        .select("id, title, author, book_type, rating, genre")
+        .eq("user_id", userId)
+        .gt("rating", 0)
+        .order("rating")
+        .order("id")
+        .range(from, to),
+  ).catch((err: Error) => {
+    throw new Error(`fetchCalibrationSet: ${err.message}`);
+  });
+  if (data.length === 0) return [];
 
   // Group by rating tier
   const tiers: Map<string, typeof data> = new Map();
@@ -277,24 +283,18 @@ async function fetchCanonBooks(
 }
 
 async function fetchUnreadBooks(userId: string): Promise<BookForPrediction[]> {
-  let query = supabase
-    .from("books")
-    .select("id, title, author, book_type, genre, summary, notes")
-    .eq("user_id", userId)
-    .or("status.eq.unread,status.is.null")
-    .order("title");
-
-  if (!force) {
-    query = query.is("predicted_at", null);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    throw new Error(
-      `fetchUnreadBooks: ${error.message}${error.message.includes("Bad Request") ? " (has migration 010 been applied?)" : ""}`,
-    );
-  }
-  return data ?? [];
+  // Every unread book, page by page (the owner has over 800)
+  return fetchAllRows<BookForPrediction>((from, to) => {
+    let query = supabase
+      .from("books")
+      .select("id, title, author, book_type, genre, summary, notes")
+      .eq("user_id", userId)
+      .or("status.eq.unread,status.is.null");
+    if (!force) query = query.is("predicted_at", null);
+    return query.order("title").order("id").range(from, to);
+  }).catch((err: Error) => {
+    throw new Error(`fetchUnreadBooks: ${err.message}`);
+  });
 }
 
 async function fetchAllCanonicalTags(

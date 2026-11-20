@@ -139,7 +139,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/export.ts` — The library CSV (every row) and the download helper
 - `src/lib/export-all.ts` — "Download everything": reads the reader's conversations, messages, excerpts, memory, profiles, lists, and shelves, and downloads them with the library CSV as one .zip (`fflate`, loaded only then)
 - `src/lib/export-files.ts` — The files in that .zip (README, library CSV, Markdown per conversation, excerpts, memory, profiles, lists, and `rekollekt.json`), with no browser dependencies so it can be run outside the browser
-- `src/lib/fetch-all.ts` — `fetchAllRows`: every row of a query in the browser, page by page (Supabase returns at most 1,000 per request, with no error)
+- `src/lib/fetch-all.ts` — `fetchAllRows`: every row of a query, page by page (Supabase returns at most 1,000 per request, with no error); `fetchAllRowsIn` for a list of ids too long for one request URL, in chunks. No dependencies, so the server uses it too. Page with a stable order (`.order("id")` last)
 - `src/components/MemorySettings.tsx` — The Memory section of Settings: each of the companion's notes about the reader, with edit and delete, and "Forget everything". An edit only saves over the version the reader opened, so a change the companion made meanwhile isn't lost
 - `src/lib/memory.ts` — Memory reads and writes for the Settings page (straight to `memory_files`, under Row Level Security)
 - `src/lib/memory-limit.ts` — `MAX_MEMORY_CHARS` (12,000) and a note's name as readers see it, shared by the server and the Settings page

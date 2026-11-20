@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows, fetchAllRowsIn } from "@/lib/fetch-all";
 import type { BookVibe, BookSummary, TagCategory } from "@/lib/types";
 
 export async function fetchVibesForBook(bookId: string): Promise<BookVibe[]> {
@@ -13,11 +14,10 @@ export async function fetchVibesForBook(bookId: string): Promise<BookVibe[]> {
 }
 
 export async function fetchAllVibes(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("book_vibes")
-    .select("vibe");
-
-  if (error) throw error;
+  // A reader has a few rows per book, so this passes 1,000 rows early (3,000 for the owner)
+  const data = await fetchAllRows<{ vibe: string }>((from, to) =>
+    supabase.from("book_vibes").select("vibe").order("id").range(from, to),
+  );
 
   const unique = [...new Set(data.map((row) => row.vibe))];
   unique.sort();
@@ -108,13 +108,9 @@ export async function fetchBookIdsByCanonicalVibes(
 ): Promise<string[]> {
   if (vibes.length === 0) return [];
 
-  const { data, error } = await supabase
-    .from("book_vibes")
-    .select("book_id")
-    .in("vibe", vibes)
-    .eq("is_canonical", true);
-
-  if (error) throw error;
+  const data = await fetchAllRows<{ book_id: string }>((from, to) =>
+    supabase.from("book_vibes").select("book_id").in("vibe", vibes).eq("is_canonical", true).order("id").range(from, to),
+  );
   return [...new Set(data.map((r) => r.book_id))];
 }
 
@@ -125,13 +121,9 @@ export async function fetchBookIdsByAllTags(
   if (tags.length === 0) return [];
   if (tags.length === 1) return fetchBookIdsByCanonicalVibes(tags);
 
-  const { data, error } = await supabase
-    .from("book_vibes")
-    .select("book_id, vibe")
-    .in("vibe", tags)
-    .eq("is_canonical", true);
-
-  if (error) throw error;
+  const data = await fetchAllRows<{ book_id: string; vibe: string }>((from, to) =>
+    supabase.from("book_vibes").select("book_id, vibe").in("vibe", tags).eq("is_canonical", true).order("id").range(from, to),
+  );
 
   const counts = new Map<string, number>();
   for (const row of data) {
@@ -155,13 +147,16 @@ export async function fetchBookIdsByTagFilters(
   const perCategory: Set<string>[] = [];
 
   for (const { tags, category } of active) {
-    const { data, error } = await supabase
-      .from("book_vibes")
-      .select("book_id")
-      .in("vibe", tags)
-      .eq("tag_category", category)
-      .eq("is_canonical", true);
-    if (error) throw error;
+    const data = await fetchAllRows<{ book_id: string }>((from, to) =>
+      supabase
+        .from("book_vibes")
+        .select("book_id")
+        .in("vibe", tags)
+        .eq("tag_category", category)
+        .eq("is_canonical", true)
+        .order("id")
+        .range(from, to),
+    );
     perCategory.push(new Set(data.map((r) => r.book_id)));
   }
 
@@ -180,13 +175,9 @@ export async function fetchCanonicalVibesForBooks(
   const result = new Map<string, string[]>();
   if (bookIds.length === 0) return result;
 
-  const { data, error } = await supabase
-    .from("book_vibes")
-    .select("book_id, vibe")
-    .in("book_id", bookIds)
-    .eq("is_canonical", true);
-
-  if (error) throw error;
+  const data = await fetchAllRowsIn<{ book_id: string; vibe: string }>(bookIds, (chunk, from, to) =>
+    supabase.from("book_vibes").select("book_id, vibe").in("book_id", chunk).eq("is_canonical", true).order("id").range(from, to),
+  );
 
   for (const row of data) {
     const existing = result.get(row.book_id);
@@ -204,28 +195,19 @@ export async function fetchBooksByCanonicalVibe(
   page: number,
   pageSize: number,
 ): Promise<{ books: BookSummary[]; count: number }> {
-  // Get all book IDs with this canonical vibe
-  const { data: vibeRows, error: vibeError } = await supabase
-    .from("book_vibes")
-    .select("book_id")
-    .eq("vibe", vibe)
-    .eq("is_canonical", true);
-
-  if (vibeError) throw vibeError;
-
-  const bookIds = vibeRows.map((r) => r.book_id);
-  if (bookIds.length === 0) return { books: [], count: 0 };
-
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  // Joined to the tag in one query, so no list of ids (which outgrows a request URL)
   const { data, count, error } = await supabase
     .from("books")
-    .select("id, title, author, status, rating, timing_raw, cover_image_url", { count: "exact" })
-    .in("id", bookIds)
+    .select("id, title, author, status, rating, timing_raw, cover_image_url, book_vibes!inner(vibe)", { count: "exact" })
+    .eq("book_vibes.vibe", vibe)
+    .eq("book_vibes.is_canonical", true)
     .order("title")
     .range(from, to);
 
   if (error) throw error;
-  return { books: data ?? [], count: count ?? 0 };
+  const books = (data ?? []).map(({ book_vibes: _, ...book }) => book as BookSummary);
+  return { books, count: count ?? 0 };
 }

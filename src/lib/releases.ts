@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { fetchAllRows } from "@/lib/fetch-all";
 import type { NewRelease } from "@/lib/types";
 import { NOTABLE_MIN_GENERAL } from "@/lib/release-scoring";
 
@@ -299,12 +300,10 @@ export async function addReleaseToWishlist(release: NewRelease): Promise<string>
 }
 
 export async function fetchLibraryIsbns(): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from("books")
-    .select("isbn")
-    .not("isbn", "is", null);
-
-  if (error) throw error;
+  // Every book, page by page, so "In Library" holds past 1,000 books
+  const data = await fetchAllRows<{ isbn: string | null }>((from, to) =>
+    supabase.from("books").select("isbn").not("isbn", "is", null).order("id").range(from, to),
+  );
 
   const isbns = new Set<string>();
   for (const row of data ?? []) {
