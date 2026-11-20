@@ -313,9 +313,13 @@ export async function fetchLibraryIsbns(): Promise<Set<string>> {
   return isbns;
 }
 
-// Below this, a release and a book share little more than a genre (book-to-book matches
-// use 0.55; releases are written in publisher's copy, which runs a little less alike)
-const RELEASE_MIN_SIMILARITY = 0.5;
+// Cutoffs from the owner's library, November 2026. A book's closest notable releases
+// mostly scored 0.59-0.70 and made sense (Why We Get Sick → Doctors by Nature).
+const RELEASES_LIKE_BOOK_MIN = 0.58;
+// The other way is looser, since a reader has read far fewer books than there are
+// releases: under 0.6 most matches were coincidence (The Nazi Mind → an Epstein book),
+// from about 0.62 they held up (a Niels Bohr biography → Before the Big Bang)
+const LIBRARY_LIKE_RELEASE_MIN = 0.62;
 /** How far back "New releases like this" looks, in months before the current one. */
 const RELEASES_LIKE_MONTHS_BACK = 3;
 
@@ -334,7 +338,7 @@ export async function fetchReleasesLikeBook(bookId: string, count: number): Prom
   });
   if (error) throw error;
   const ids = ((matches ?? []) as { release_id: string; similarity: number }[])
-    .filter((m) => m.similarity >= RELEASE_MIN_SIMILARITY)
+    .filter((m) => m.similarity >= RELEASES_LIKE_BOOK_MIN)
     .map((m) => m.release_id);
   if (ids.length === 0) return [];
 
@@ -363,7 +367,7 @@ export async function fetchLibraryMatchesForRelease(releaseId: string, count = 3
   });
   if (error) throw error;
   const ids = ((matches ?? []) as { book_id: string; similarity: number }[])
-    .filter((m) => m.similarity >= RELEASE_MIN_SIMILARITY)
+    .filter((m) => m.similarity >= LIBRARY_LIKE_RELEASE_MIN)
     .map((m) => m.book_id);
   if (ids.length === 0) return [];
 
