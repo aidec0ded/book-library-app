@@ -58,6 +58,27 @@ const TAG_CATEGORY_LABELS: Record<string, string> = {
   accessibility: "Accessibility",
 };
 
+/**
+ * A title shown as a book jacket shows it: the part after the first colon is the subtitle
+ * ("Endurance: Shackleton's Incredible Voyage"), set smaller beneath the title.
+ */
+function splitTitle(title: string): { main: string; subtitle: string | null } {
+  const i = title.indexOf(": ");
+  if (i <= 0) return { main: title, subtitle: null };
+  return { main: title.slice(0, i), subtitle: title.slice(i + 2) };
+}
+
+/** Smaller type for longer titles, so two lines hold nearly all of them. */
+function titleSize(main: string): string {
+  if (main.length > 48) return "text-2xl sm:text-3xl md:text-[2rem]";
+  if (main.length > 24) return "text-3xl sm:text-4xl md:text-[2.5rem]";
+  return "text-3xl sm:text-4xl md:text-5xl";
+}
+
+// The cover takes what the window leaves after the header, the text block, and the footer,
+// within sensible limits, so the View Book button is always on screen
+const COVER_HEIGHT = "clamp(13rem, calc(100dvh - 31rem), 32rem)";
+
 function truncateWords(text: string, maxWords: number): string {
   const words = text.split(/\s+/);
   if (words.length <= maxWords) return text;
@@ -292,6 +313,7 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
   }
 
   const focusedBook = books[focusedIndex] ?? null;
+  const focusedTitle = splitTitle(focusedBook?.title ?? "");
   const prevBook = books[focusedIndex - 1] ?? null;
   const nextBook = books[focusedIndex + 1] ?? null;
 
@@ -456,19 +478,33 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
                 )}
                 <BookCoverImage
                   book={focusedBook!}
-                  className="h-80 w-52 rounded-xl border border-white/5 shadow-2xl sm:h-96 sm:w-64 md:h-[28rem] md:w-72 lg:h-[32rem] lg:w-80"
-                  style={{ boxShadow: "0 0 60px -15px rgba(232, 79, 48, 0.15)" }}
+                  className="rounded-xl border border-white/5 shadow-2xl"
+                  style={{
+                    height: COVER_HEIGHT,
+                    aspectRatio: "2 / 3",
+                    boxShadow: "0 0 60px -15px rgba(232, 79, 48, 0.15)",
+                  }}
                 />
               </div>
 
-              <div className="mt-7 max-w-md space-y-2 text-center">
-                <h2 className="font-serif text-3xl font-medium leading-tight tracking-tight text-white drop-shadow-lg sm:text-4xl md:text-5xl">
-                  {focusedBook?.title}
+              {/* A fixed height, so the cover doesn't move from book to book; text that would
+                  run longer is cut off, with the whole title on hover */}
+              <div className="mt-6 flex h-[17rem] w-full max-w-md flex-col items-center px-4 text-center sm:h-[18.5rem]">
+                <h2
+                  title={focusedBook?.title}
+                  className={`line-clamp-2 font-serif font-medium leading-tight tracking-tight text-white drop-shadow-lg ${titleSize(focusedTitle.main)}`}
+                >
+                  {focusedTitle.main}
                 </h2>
-                <p className="font-serif text-lg italic text-white/60 sm:text-xl">
+                {focusedTitle.subtitle && (
+                  <p title={focusedTitle.subtitle} className="mt-1.5 line-clamp-2 font-serif text-base leading-snug text-white/70 sm:text-lg">
+                    {focusedTitle.subtitle}
+                  </p>
+                )}
+                <p className="mt-2 line-clamp-1 font-serif text-lg italic text-white/60 sm:text-xl">
                   by {focusedBook?.author}
                 </p>
-                <div className="flex items-center justify-center gap-4 pt-2 text-xs font-medium uppercase tracking-widest text-white/40 sm:gap-6">
+                <div className="flex items-center justify-center gap-4 pt-3 text-xs font-medium uppercase tracking-widest text-white/40 sm:gap-6">
                   {focusedBook?.rating != null && focusedBook.rating > 0 && (
                     <>
                       <span className="flex items-center gap-1">
@@ -486,21 +522,21 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
                   )}
                   <span>{focusedBook?.book_type ?? "Fiction"}</span>
                 </div>
-              </div>
 
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => focusedBook && navigate(`/books/${focusedBook.id}`)}
-                  className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-white shadow-lg transition-all hover:bg-primary/90 hover:shadow-primary/20"
-                >
-                  <BookOpen className="h-4 w-4" />
-                  View Book
-                </button>
-                {focusedBook?.is_favorite && (
-                  <div className="flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-                    <Heart className="h-4 w-4 fill-primary text-primary" />
-                  </div>
-                )}
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => focusedBook && navigate(`/books/${focusedBook.id}`)}
+                    className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-white shadow-lg transition-all hover:bg-primary/90 hover:shadow-primary/20"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    View Book
+                  </button>
+                  {focusedBook?.is_favorite && (
+                    <div className="flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                      <Heart className="h-4 w-4 fill-primary text-primary" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
