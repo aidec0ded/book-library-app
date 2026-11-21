@@ -144,7 +144,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/memory.ts` — Memory reads and writes for the Settings page (straight to `memory_files`, under Row Level Security)
 - `src/lib/memory-limit.ts` — `MAX_MEMORY_CHARS` (12,000) and a note's name as readers see it, shared by the server and the Settings page
 - `src/lib/onboarding.ts` — Onboarding status check and completion
-- `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation
+- `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation. Keeps Goodreads' main author only: "Additional Authors" mixes co-authors with narrators, translators, and illustrators, with no roles
 - `src/lib/posthog.ts` — PostHog analytics wrapper (init, identify, reset, capture, pageview hook). No-op when VITE_POSTHOG_KEY unset.
 - `src/contexts/AuthContext.tsx` — Supabase Auth context with session state + PostHog identify/reset, wraps entire app
 - `server/auth.ts` — Server-side auth utilities (`authenticateRequest` checks a login token with Supabase and returns the user and a per-user Supabase client)

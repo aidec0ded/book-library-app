@@ -169,10 +169,11 @@ export function mapGoodreadsRow(
   const isbn13 = stripGoodreadsISBN(row.ISBN13);
   const isbn = isbn13 || stripGoodreadsISBN(row.ISBN);
 
-  const additionalAuthors = (row["Additional Authors"] || "").trim();
-  const author = additionalAuthors
-    ? `${row.Author.trim()}, ${additionalAuthors}`
-    : row.Author.trim();
+  // Goodreads' main author only. "Additional Authors" mixes real co-authors with narrators,
+  // translators, illustrators, editors, and foreword writers, with no roles to tell them
+  // apart (one audiobook lists 131 people), so it's left out. Goodreads also leaves double
+  // spaces in some names ("Richard  Bachman").
+  const author = row.Author.trim().replace(/\s+/g, " ");
 
   const pubYear =
     parseInt(row["Original Publication Year"] || "", 10) ||
