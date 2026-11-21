@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
-import { trackClaudeUsage } from "../server/usage.js";
+import { recordJobRun, trackClaudeUsage } from "../server/usage.js";
 import { config } from "dotenv";
 import { readFileSync, writeFileSync } from "fs";
 
@@ -93,6 +93,9 @@ const outputIdx = args.indexOf("--output");
 const outputFile = outputIdx !== -1 ? args[outputIdx + 1] : "genre-review.json";
 const applyIdx = args.indexOf("--apply");
 const applyFile = applyIdx !== -1 ? args[applyIdx + 1] : null;
+// Classify and save straight away, with no review file: for books with no genre yet (the
+// background job runs this for new books)
+const auto = args.includes("--auto");
 
 // --- Constants ---
 
@@ -127,7 +130,7 @@ ${TAXONOMY_LIST}
 - Architecture, house & home, interior design → "Design".
 - Language arts, dictionaries, foreign language → "Reference".
 
-Return ONLY a JSON array. No other text.`;
+Return a JSON object with a "genres" array.`;
 
 // --- Helpers ---
 
@@ -159,6 +162,7 @@ async function fetchBooksForClassification(): Promise<BookForClassification[]> {
       .from("books")
       .select("id, title, author, genre, summary")
       .order("title")
+      .order("id")
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw new Error(`fetchBooks: ${error.message}`);
@@ -193,6 +197,7 @@ async function fetchAllVibes(): Promise<Map<string, string[]>> {
     const { data, error } = await supabase
       .from("book_vibes")
       .select("book_id, vibe")
+      .order("id")
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw new Error(`fetchAllVibes: ${error.message}`);
@@ -227,23 +232,39 @@ function buildUserPrompt(batch: BookForClassification[]): string {
   return (
     "Classify these books into the genre taxonomy:\n\n" +
     blocks.join("\n\n") +
-    '\n\nJSON: [{"id":"uuid","genre":"Genre Name"},...]'
+    '\n\nJSON: {"genres":[{"id":"uuid","genre":"Genre Name"},...]}'
   );
 }
 
 // --- Response Parsing ---
 
-function parseResponse(raw: string, batchIds: Set<string>): GenreResult[] {
-  let cleaned = raw.trim();
-  cleaned = cleaned
-    .replace(/^```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/, "")
-    .trim();
+// Structured output keeps the reply to this shape, and the genre to the taxonomy (two
+// batches of 89 failed in November 2026 on text the model added after its JSON)
+const RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    genres: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          genre: { type: "string", enum: GENRE_TAXONOMY.map((g) => g.genre) },
+        },
+        required: ["id", "genre"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["genres"],
+  additionalProperties: false,
+};
 
-  const parsed = JSON.parse(cleaned);
+function parseResponse(raw: string, batchIds: Set<string>): GenreResult[] {
+  const parsed = (JSON.parse(raw) as { genres?: unknown }).genres;
 
   if (!Array.isArray(parsed)) {
-    throw new Error("Response is not a JSON array");
+    throw new Error("Response has no genres array");
   }
 
   const results: GenreResult[] = [];
@@ -400,7 +421,7 @@ async function generateReviewFile(): Promise<void> {
         const response = await anthropic.messages.create({
           model: MODEL,
           max_tokens: 16000,
-          output_config: { effort: "low" },
+          output_config: { effort: "low", format: { type: "json_schema", schema: RESPONSE_SCHEMA } },
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: userPrompt }],
         });
@@ -477,6 +498,19 @@ async function generateReviewFile(): Promise<void> {
     if (genreCompare !== 0) return genreCompare;
     return a.title.localeCompare(b.title);
   });
+
+  if (auto) {
+    // Save each genre now (only valid ones get this far)
+    let saved = 0;
+    for (const entry of allResults) {
+      const { error } = await supabase.from("books").update({ genre: entry.new_genre }).eq("id", entry.id);
+      if (error) console.error(`  Error saving "${entry.title}": ${error.message}`);
+      else saved++;
+    }
+    console.log(`\nSaved ${saved} genres (${totalErrors} batch error${totalErrors !== 1 ? "s" : ""})`);
+    await recordJobRun("genre_classification", totalErrors > 0 && saved === 0 ? { ok: false, error: `${totalErrors} batches failed` } : { ok: true });
+    return;
+  }
 
   // Write review file
   writeFileSync(outputFile, JSON.stringify(allResults, null, 2));

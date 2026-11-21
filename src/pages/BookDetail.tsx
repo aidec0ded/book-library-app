@@ -658,7 +658,7 @@ function BookDetailContent({ id }: { id: string | undefined }) {
         {book.series && (
           <p className="text-sm text-muted-foreground">
             {book.series}
-            {book.volume ? `, Vol. ${book.volume}` : ""}
+            {book.volume ? ` #${book.volume}` : ""}
           </p>
         )}
       </div>

@@ -144,7 +144,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/memory.ts` — Memory reads and writes for the Settings page (straight to `memory_files`, under Row Level Security)
 - `src/lib/memory-limit.ts` — `MAX_MEMORY_CHARS` (12,000) and a note's name as readers see it, shared by the server and the Settings page
 - `src/lib/onboarding.ts` — Onboarding status check and completion
-- `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation. Keeps Goodreads' main author only: "Additional Authors" mixes co-authors with narrators, translators, and illustrators, with no roles
+- `src/lib/goodreads.ts` — Goodreads CSV parser, shelf detection, field mapping, dedup key generation. Keeps Goodreads' main author only: "Additional Authors" mixes co-authors with narrators, translators, and illustrators, with no roles. `splitSeries` takes the series out of a title ("Changes (The Dresden Files, #12)")
 - `src/lib/posthog.ts` — PostHog analytics wrapper (init, identify, reset, capture, pageview hook). No-op when VITE_POSTHOG_KEY unset.
 - `src/contexts/AuthContext.tsx` — Supabase Auth context with session state + PostHog identify/reset, wraps entire app
 - `server/auth.ts` — Server-side auth utilities (`authenticateRequest` checks a login token with Supabase and returns the user and a per-user Supabase client)
@@ -259,7 +259,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 - `src/lib/release-scoring.ts` — `scorableOnly` (which releases get general scores) and `personallyScorableOnly` (which get personal scores: general score of `NOTABLE_MIN_GENERAL`, 6, or more), shared by the scorer and the releases scheduler so they agree on what's left to do
 - `server/releases-scheduler.ts` — Every 4 hours: imports any target month with no releases (current month, plus next month from the 25th), then per month triages, gives general scores, and gives personal scores on notable releases to each reader who asked for curation and visited Releases in the last 60 days. Starts the next job as soon as one finishes, and right away when a reader asks (`POST /api/releases/curate`). `planReleasesJob` decides the next job and only reads
 - `scripts/score-releases.ts` — AI release scoring script (general signal + personal match, 25 releases per request, Sonnet 5.5, the system prompt cached so a reader's profile is paid for once a run, --dry-run/--limit/--month/--force/--batch flags, --batch-size and --compare for checking a change)
-- `scripts/reclassify-genres.ts` — AI genre reclassification script (two-phase: generate review JSON → apply to DB, 29-genre taxonomy, batches of 20, Sonnet 5.5, --dry-run/--limit/--force/--output/--apply flags)
+- `scripts/reclassify-genres.ts` — AI genre classification (29-genre taxonomy, batches of 20, Sonnet 5.5 at low effort): `--auto` classifies books with no genre and saves them (the enrichment job runs it for new books); otherwise two-phase, a review JSON then `--apply`. --dry-run/--limit/--force/--output flags
 - `scripts/ingest-awards.ts` — Wikidata SPARQL ingestion of literary awards (17 awards, 4 query patterns) + library matching (--dry-run/--match-only/--force/--limit flags)
 - `src/lib/awards.ts` — Award queries for book detail (join award_entries + literary_awards)
 - `src/components/ShelvesView.tsx` — Shelf index with cards + create form (manual and auto shelves)
@@ -269,7 +269,7 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 
 ### What's Built
 
-**Foundation** — Searchable/paginated book library, seasonal filtering, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, author links and an "Also by" section on the book page, editable reading dates, library filter by author, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
+**Foundation** — Searchable/paginated book library, vibe system (17 AI-assigned canonical tags + user-created custom tags), book detail with inline editing, ISBNdb enrichment pipeline, add books via ISBNdb search with an edition picker, change edition and edit edition details on the book page, author links and an "Also by" section on the book page, editable reading dates, library filter by author, AI genre reclassification (29-genre taxonomy), ISBN discovery for books without ISBNs
 
 **Reflection Loop** — AI reading companion chat (streaming, memory, tool use with book management + releases search), floating chat panel accessible from every page, reader profile generation (monthly, activity-gated via snapshot delta checking), conversations linked to books with that book's context for the AI, excerpts saved to book pages by hand or automatically after a book conversation
 
@@ -301,7 +301,9 @@ Never commit directly to `main`. Each task or bug fix gets its own branch.
 Thirty-one tables in Supabase:
 
 **books** — 1,711 rows. Key fields beyond the obvious:
-- `timing_month` (1-12), `timing_position` (early/mid/late), `timing_raw` — seasonal reading data from the fiction spreadsheet. ~917 books have timing; ~794 catalog-only books have nulls.
+- `timing_month`, `timing_position`, `timing_raw` — seasonal "when to read" data from the original fiction spreadsheet. Empty for every book since migration 020 reset the library (February 2026), and no longer used: the shelf month rule and the seasonal weighting on Recommendations were removed in November 2026. Columns kept
+- `genre` — one of the 29-genre taxonomy in `scripts/reclassify-genres.ts`, set by the background enrichment job (`--auto`) for any book without one
+- `series`, `volume` — from a Goodreads title ("Changes (The Dresden Files, #12)" is split on import) or the owner's original catalog
 - `predicted_rating` — AI-predicted rating (0.5–5.0), generated by `predict-ratings.ts` based on reader profile
 - `predicted_at` — timestamp of last prediction (null = never predicted)
 - `book_type` — `fiction`, `nonfiction`, or `poetry` (check-constrained, default `'fiction'`). Backfilled from 29-genre taxonomy; auto-detected from ISBNdb subjects on Add Book.
@@ -430,7 +432,7 @@ Thirty-one tables in Supabase:
 - `name` — required, non-empty
 - `description` — optional
 - `shelf_type` — `'manual'` or `'auto'` (check-constrained)
-- `filter` (jsonb) — filter rules for auto shelves (status, genre, rating_min, timing_month, vibes, is_favorite); null for manual shelves
+- `filter` (jsonb) — filter rules for auto shelves (status, genre, rating_min, vibes, is_favorite; a timing_month rule is no longer offered or applied); null for manual shelves
 - `updated_at` — auto-updated via trigger
 
 **shelf_items** — Ordered book references within manual shelves (structurally identical to `list_items`). Key fields:

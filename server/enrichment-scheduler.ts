@@ -123,6 +123,17 @@ async function runEnrichmentCycle(supabase: SupabaseClient): Promise<void> {
       );
     }
 
+    // Genres for books that have none (the 29-genre taxonomy, Sonnet at low effort, about
+    // a cent per 20 books): new books from any source, which arrive without one
+    const { count: genrePending } = await supabase
+      .from("books")
+      .select("id", { count: "exact", head: true })
+      .is("genre", null);
+
+    if ((genrePending ?? 0) > 0) {
+      await run(`Genres (${genrePending} pending)`, "npx tsx scripts/reclassify-genres.ts --auto --limit 200");
+    }
+
     // Stage 2: Vibe tagging — fiction books without canonical vibes
     const untaggedFiction = await countUntagged(supabase, "fiction");
 

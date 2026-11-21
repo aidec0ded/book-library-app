@@ -39,7 +39,6 @@ async function fetchAutoShelfBooks(filter: ShelfFilter): Promise<ShelfBook[]> {
     if (filter.status) q = q.eq("status", filter.status);
     if (filter.genre) q = q.eq("genre", filter.genre);
     if (filter.rating_min != null) q = q.gte("rating", filter.rating_min);
-    if (filter.timing_month != null) q = q.eq("timing_month", filter.timing_month);
     if (filter.book_type) q = q.eq("book_type", filter.book_type);
     if (filter.is_favorite) q = q.eq("is_favorite", true);
     tagFilters.forEach(({ tags, category }, i) => {

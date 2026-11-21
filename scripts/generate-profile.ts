@@ -160,7 +160,6 @@ interface BookRow {
   rating: number | null;
   genre: string | null;
   category: string | null;
-  timing_raw: string | null;
   notes: string | null;
   is_favorite: boolean;
   date_finished: string | null;
@@ -175,7 +174,7 @@ async function fetchAllBooks(): Promise<BookRow[]> {
     let query = supabase
       .from("books")
       .select(
-        "id, title, author, book_type, status, rating, genre, category, timing_raw, notes, is_favorite, date_finished",
+        "id, title, author, book_type, status, rating, genre, category, notes, is_favorite, date_finished",
       )
       .order("title")
       .range(from, from + PAGE_SIZE - 1);
@@ -461,7 +460,6 @@ function formatLibrary(
       const formatted = formatTagsForBook(tags, bookType);
       if (formatted) parts.push(formatted);
     }
-    if (b.timing_raw) parts.push(`when: ${b.timing_raw}`);
     if (b.notes) parts.push(`notes: ${b.notes.slice(0, 200)}`);
     return parts.join(" | ");
   });

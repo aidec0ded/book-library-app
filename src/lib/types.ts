@@ -16,7 +16,6 @@ export interface BookSummary {
   book_type: BookType;
   status: string | null;
   rating: number | null;
-  timing_raw: string | null;
   cover_image_url: string | null;
 }
 
@@ -218,7 +217,6 @@ export interface ShelfFilter {
   status?: string;
   genre?: string;
   rating_min?: number;
-  timing_month?: number;
   vibes?: string[];
   topics?: string[];
   form?: string[];

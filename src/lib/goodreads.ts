@@ -22,6 +22,8 @@ export interface GoodreadsRow {
 
 export interface ParsedGoodreadsBook {
   title: string;
+  series: string | null;
+  volume: string | null;
   author: string;
   isbn: string | null;
   rating: number | null;
@@ -107,6 +109,19 @@ export function getShelfCounts(
 
 // --- Match Key (reimplemented from scripts/import-books.ts) ---
 
+const SERIES_SUFFIX = /^(.+?)\s*\(([^()]+?),\s*#\s*(\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?)\)\s*$/;
+
+/**
+ * Goodreads puts a book's series in its title: "Changes (The Dresden Files, #12)" is
+ * the title "Changes" in the series "The Dresden Files", number 12. Titles without one
+ * come back as they are.
+ */
+export function splitSeries(title: string): { title: string; series: string | null; volume: string | null } {
+  const match = title.trim().match(SERIES_SUFFIX);
+  if (!match?.[1] || !match[2] || !match[3]) return { title: title.trim(), series: null, volume: null };
+  return { title: match[1].trim(), series: match[2].trim(), volume: match[3].replace(/\s+/g, "") };
+}
+
 function normalizeTitle(title: string): string {
   // "Da Vinci Code, The" → "The Da Vinci Code"
   const match = title.match(/^(.+),\s+(The|A|An)$/i);
@@ -117,7 +132,8 @@ function normalizeTitle(title: string): string {
 }
 
 export function makeMatchKey(title: string, author: string): string {
-  const normTitle = normalizeTitle(title.trim());
+  // With or without the series in the title, the same book gets the same key
+  const normTitle = normalizeTitle(splitSeries(title).title);
   return (
     normTitle
       .toLowerCase()
@@ -188,8 +204,12 @@ export function mapGoodreadsRow(
     .map((s) => s.trim())
     .filter(Boolean);
 
+  const { title, series, volume } = splitSeries(row.Title);
+
   return {
-    title: row.Title.trim(),
+    title,
+    series,
+    volume,
     author,
     isbn,
     rating: rating > 0 ? rating : null,
@@ -206,6 +226,6 @@ export function mapGoodreadsRow(
     is_up_next: false,
     goodreadsShelf: shelf,
     bookshelves,
-    matchKey: makeMatchKey(row.Title, row.Author),
+    matchKey: makeMatchKey(title, row.Author),
   };
 }

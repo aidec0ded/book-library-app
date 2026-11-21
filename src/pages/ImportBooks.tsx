@@ -159,6 +159,8 @@ export function ImportBooks() {
       const batch = toImport.slice(i, i + BATCH_SIZE);
       const payload = batch.map((b) => ({
         title: b.title,
+        series: b.series,
+        volume: b.volume,
         author: b.author,
         isbn: b.isbn,
         rating: b.rating,

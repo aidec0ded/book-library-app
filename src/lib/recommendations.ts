@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { fetchCanonicalVibesForBooks } from "@/lib/vibes";
-import { getCurrentTiming } from "@/lib/timing";
 import type { Book } from "@/lib/types";
 
 export type RecommendedBook = Pick<
@@ -12,16 +11,12 @@ export type RecommendedBook = Pick<
   | "cover_image_url"
   | "status"
   | "predicted_rating"
-  | "timing_month"
-  | "timing_position"
   | "created_at"
 >;
 
 export async function fetchRecommendations(
   limit: number,
 ): Promise<RecommendedBook[]> {
-  const timing = getCurrentTiming();
-
   // Step 1: Reader's vibe profile — canonical vibes from books rated ≥ 4
   const ratedBooks = await fetchAllRows<{ id: string }>((from, to) =>
     supabase.from("books").select("id").gte("rating", 4).order("id").range(from, to),
@@ -48,7 +43,7 @@ export async function fetchRecommendations(
   const { data: candidates } = await supabase
     .from("books")
     .select(
-      "id, title, author, cover_image_url, status, predicted_rating, timing_month, timing_position, created_at",
+      "id, title, author, cover_image_url, status, predicted_rating, created_at",
     )
     .eq("status", "unread")
     .not("predicted_rating", "is", null)
@@ -64,14 +59,6 @@ export async function fetchRecommendations(
   // Step 4: Score each candidate
   const scored = candidates.map((book) => {
     let score = book.predicted_rating ?? 0;
-
-    // Seasonal boost
-    if (book.timing_month === timing.month) {
-      score += 0.3;
-      if (book.timing_position === timing.position) {
-        score += 0.1;
-      }
-    }
 
     // Vibe boost
     if (topVibes.length > 0) {

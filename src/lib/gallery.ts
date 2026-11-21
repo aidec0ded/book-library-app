@@ -21,7 +21,7 @@ export async function fetchGalleryBooks(
 
   let q = supabase
     .from("books")
-    .select("id, title, author, book_type, status, rating, timing_raw, cover_image_url", {
+    .select("id, title, author, book_type, status, rating, cover_image_url", {
       count: "exact",
     })
     .eq("book_type", bookType)

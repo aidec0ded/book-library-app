@@ -36,7 +36,6 @@ interface BookForTagging {
   notes: string | null;
   genre: string | null;
   category: string | null;
-  timing_raw: string | null;
 }
 
 interface VibeResult {
@@ -98,7 +97,6 @@ function formatBookBlock(book: BookForTagging, index: number): string {
   if (book.genre) lines.push(`Genre: ${book.genre}`);
   else if (book.category) lines.push(`Category: ${book.category}`);
 
-  if (book.timing_raw) lines.push(`When to Read: ${book.timing_raw}`);
   if (book.summary) lines.push(`Summary: ${truncate(book.summary, 400)}`);
   if (book.notes) lines.push(`Notes: ${truncate(book.notes, 200)}`);
 
@@ -254,7 +252,7 @@ async function main() {
       supabase
         .from("books")
         .select(
-          "id, user_id, title, author, summary, notes, genre, category, timing_raw"
+          "id, user_id, title, author, summary, notes, genre, category"
         )
         .eq("book_type", "fiction")
         .order("title")

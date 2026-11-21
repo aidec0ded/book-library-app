@@ -9,7 +9,6 @@ import {
 } from "@/components/ui/select";
 import { fetchDistinctGenres } from "@/lib/filters";
 import { fetchCanonicalTags, formatCanonicalVibe } from "@/lib/canonical-vibes";
-import { MONTH_NAMES } from "@/lib/timing";
 import type { BookType, CanonicalTag, ShelfFilter, TagCategory } from "@/lib/types";
 
 const RATING_OPTIONS = [
@@ -203,33 +202,6 @@ export function ShelfFilterBuilder({
               {RATING_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Month */}
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">
-            Month
-          </label>
-          <Select
-            value={
-              filter.timing_month != null ? String(filter.timing_month) : "any"
-            }
-            onValueChange={(v) =>
-              update({ timing_month: v === "any" ? undefined : Number(v) })
-            }
-          >
-            <SelectTrigger size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">Any</SelectItem>
-              {MONTH_NAMES.map((name, i) => (
-                <SelectItem key={i} value={String(i + 1)}>
-                  {name}
                 </SelectItem>
               ))}
             </SelectContent>

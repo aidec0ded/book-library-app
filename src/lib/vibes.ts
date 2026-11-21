@@ -201,7 +201,7 @@ export async function fetchBooksByCanonicalVibe(
   // Joined to the tag in one query, so no list of ids (which outgrows a request URL)
   const { data, count, error } = await supabase
     .from("books")
-    .select("id, title, author, status, rating, timing_raw, cover_image_url, book_vibes!inner(vibe)", { count: "exact" })
+    .select("id, title, author, status, rating, cover_image_url, book_vibes!inner(vibe)", { count: "exact" })
     .eq("book_vibes.vibe", vibe)
     .eq("book_vibes.is_canonical", true)
     .order("title")
