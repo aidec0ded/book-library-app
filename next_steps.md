@@ -228,7 +228,14 @@ Everything free until 1 January 2027, announced publicly, then pricing starts. T
 
 **Add Book experience**
 
-- Improve search results: deduplicate by work (group editions of the same title+author, surface best edition, collapse the rest behind "X editions" indicator), prioritize books *by* an author over books *about* them when searching by author name — edition grouping, subtitle normalization, and parallel author-column search all shipped; works well for most authors but very famous authors (e.g. Rushdie) still get noisy results from ISBNdb. Revisit if needed
+- Improve search results **[DONE]** — what shipped:
+  - **Editions grouped by work:** one row per book with an "N editions" count, matching authors regardless of name order or initials ("Andy Weir" and "Weir, Andy"), stripping subtitles like "A Novel", and loading 100 results a page so editions group fully
+  - **Books by an author first:** a name search runs a general search and an author search at once, with the author's own books on top
+  - **Advanced search:** separate Title and Author fields, for a precise search when a famous author's name brings back noise (books about Rushdie, not just by him)
+  - **Edition picker:** "Which edition do you have?" lists every edition with format and language filters, the reader's language first, instead of quietly taking the top listing (how a *Project Hail Mary* search once landed on the Italian hardcover). "Change edition" and "Edit details" on the book page use the same picker
+  - **Duplicate notice:** a soft note when adding another edition of a book already in the library
+  - **Shared ISBNdb cache:** every book a search returns is kept, so details are instant and cost nothing the next time anyone looks the book up
+  - Very famous authors can still bring back some noise from ISBNdb's own ranking in a simple search; Advanced search is the way around it
 - Fix premature "No results found" message that appears while typing before search is submitted; add clear indication that Enter executes search **[DONE]**
 - Add "Add to Wishlist" option in the Add Book flow (currently only available on New Releases page) **[DONE]**
 
