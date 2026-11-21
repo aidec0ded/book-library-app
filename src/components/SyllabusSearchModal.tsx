@@ -80,7 +80,7 @@ export function SyllabusSearchModal({
         .from("books")
         .select("*")
         .or(`title.ilike.${pattern},author.ilike.${pattern}`)
-        .order("title")
+        .order("sort_title")
         .limit(5)
         .then(({ data, error }) => {
           if (error) throw error;

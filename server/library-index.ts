@@ -156,7 +156,7 @@ export async function buildLibraryIndex(
     const { data, error } = await supabase
       .from("books")
       .select("id, title, author, book_type, status, rating, genre, is_favorite")
-      .order("title")
+      .order("sort_title")
       .order("id")
       .range(from, from + PAGE_SIZE - 1);
 

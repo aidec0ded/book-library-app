@@ -133,13 +133,13 @@ export async function executeLibrarySearch(
   if (tags.length > 0) query = query.in("book_vibes.vibe", tags);
 
   if (command.sort === "predicted_rating") {
-    query = query.order("predicted_rating", { ascending: false, nullsFirst: false }).order("title");
+    query = query.order("predicted_rating", { ascending: false, nullsFirst: false }).order("sort_title");
   } else if (command.sort === "recently_finished") {
-    query = query.order("date_finished", { ascending: false, nullsFirst: false }).order("title");
+    query = query.order("date_finished", { ascending: false, nullsFirst: false }).order("sort_title");
   } else if (command.sort === "recently_added") {
     query = query.order("created_at", { ascending: false });
   } else {
-    query = query.order("title");
+    query = query.order("sort_title");
   }
 
   const { data, count, error } = await query.range(0, limit - 1);

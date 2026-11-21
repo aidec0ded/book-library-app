@@ -204,7 +204,8 @@ export async function fetchBooksByCanonicalVibe(
     .select("id, title, author, status, rating, cover_image_url, book_vibes!inner(vibe)", { count: "exact" })
     .eq("book_vibes.vibe", vibe)
     .eq("book_vibes.is_canonical", true)
-    .order("title")
+    .order("sort_title")
+    .order("id")
     .range(from, to);
 
   if (error) throw error;

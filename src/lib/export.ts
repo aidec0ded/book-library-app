@@ -73,7 +73,7 @@ export async function libraryCSV(): Promise<{ csv: string; count: number }> {
       .select(
         "title, author, isbn, rating, status, date_started, date_finished, publication_year, page_count, publisher, format, notes, book_type, genre, is_favorite",
       )
-      .order("title")
+      .order("sort_title")
       .order("id")
       .range(from, to),
   );

@@ -25,7 +25,8 @@ export async function fetchGalleryBooks(
       count: "exact",
     })
     .eq("book_type", bookType)
-    .order("title", { ascending: true })
+    .order("sort_title", { ascending: true })
+    .order("id")
     .range(offset, offset + limit - 1);
 
   if (tagBookIds) {

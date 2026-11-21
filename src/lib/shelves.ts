@@ -44,7 +44,7 @@ async function fetchAutoShelfBooks(filter: ShelfFilter): Promise<ShelfBook[]> {
     tagFilters.forEach(({ tags, category }, i) => {
       q = q.in(`t${i}.vibe`, tags).eq(`t${i}.tag_category`, category).eq(`t${i}.is_canonical`, true);
     });
-    return q.order("title").order("id").range(from, to) as unknown as PromiseLike<{
+    return q.order("sort_title").order("id").range(from, to) as unknown as PromiseLike<{
       data: (ShelfBook & Record<string, unknown>)[] | null;
       error: unknown;
     }>;

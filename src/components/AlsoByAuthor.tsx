@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BookCover } from "@/components/BookCover";
+import { compareTitles } from "@/lib/sort-title";
 import { authorLibraryPath, fetchBooksByAuthor, formatRating, type AuthorBook } from "@/lib/books";
 
 const MAX_SHOWN = 8;
@@ -14,7 +15,7 @@ function sortForBrowsing(books: AuthorBook[]): AuthorBook[] {
     (a, b) =>
       (STATUS_ORDER[a.status ?? "unread"] ?? 3) - (STATUS_ORDER[b.status ?? "unread"] ?? 3) ||
       score(b) - score(a) ||
-      a.title.localeCompare(b.title),
+      compareTitles(a.title, b.title),
   );
 }
 

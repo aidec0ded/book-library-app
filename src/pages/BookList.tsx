@@ -416,7 +416,8 @@ export function BookList() {
       .select("id, title, author, book_type, status, rating, cover_image_url", {
         count: "exact",
       })
-      .order("title", { ascending: true })
+      .order("sort_title", { ascending: true })
+      .order("id")
       .range(from, to);
 
     // Apply filters

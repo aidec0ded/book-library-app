@@ -60,7 +60,7 @@ export function BookSearchModal({ onSelect, onClose }: BookSearchModalProps) {
           .from("books")
           .select("*")
           .or(`title.ilike.${pattern},author.ilike.${pattern}`)
-          .order("title")
+          .order("sort_title")
           .limit(10);
 
         if (error) throw error;
