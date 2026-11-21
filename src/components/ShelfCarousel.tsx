@@ -381,7 +381,7 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
                   if (e.key === "Escape") { setEditingName(false); setNameDraft(shelf.name); }
                 }}
               />
-              <button onClick={handleSaveName} className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs text-white hover:bg-primary/90">Save</button>
+              <button onClick={handleSaveName} className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-xs text-white hover:bg-accent/90">Save</button>
               <button onClick={() => { setEditingName(false); setNameDraft(shelf.name); }} className="shrink-0 rounded-md border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">Cancel</button>
             </div>
           ) : (
@@ -401,7 +401,7 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
                 onKeyDown={(e) => { if (e.key === "Escape") { setEditingDesc(false); setDescDraft(shelf.description ?? ""); } }}
               />
               <div className="flex gap-2">
-                <button onClick={handleSaveDesc} className="rounded-md bg-primary px-3 py-1.5 text-xs text-white hover:bg-primary/90">Save</button>
+                <button onClick={handleSaveDesc} className="rounded-md bg-accent px-3 py-1.5 text-xs text-white hover:bg-accent/90">Save</button>
                 <button onClick={() => { setEditingDesc(false); setDescDraft(shelf.description ?? ""); }} className="rounded-md border border-white/20 px-3 py-1.5 text-xs text-white/70 hover:bg-white/10">Cancel</button>
               </div>
             </div>
@@ -415,13 +415,13 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
             <div className="space-y-2">
               <p className="text-xs font-medium text-white/50">Filter Rules</p>
               <ShelfFilterBuilder filter={filterDraft} onChange={setFilterDraft} />
-              <button onClick={handleSaveFilter} className="rounded-md bg-primary px-3 py-1.5 text-xs text-white hover:bg-primary/90">Apply Filter</button>
+              <button onClick={handleSaveFilter} className="rounded-md bg-accent px-3 py-1.5 text-xs text-white hover:bg-accent/90">Apply Filter</button>
             </div>
           )}
 
           {shelf.shelf_type === "manual" && (
             <div className="flex items-center gap-2">
-              <button onClick={() => setShowSearch(true)} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90">
+              <button onClick={() => setShowSearch(true)} className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90">
                 <Plus className="h-3 w-3" />Add Book
               </button>
               {focusedBook && (
@@ -446,9 +446,9 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
           <div className="space-y-3 text-center">
             <p className="text-white/50">This shelf is empty.</p>
             {shelf.shelf_type === "manual" ? (
-              <button onClick={() => { setShowSettings(true); setShowSearch(true); }} className="text-sm text-primary hover:underline">Add books</button>
+              <button onClick={() => { setShowSettings(true); setShowSearch(true); }} className="text-sm text-accent hover:underline">Add books</button>
             ) : (
-              <button onClick={() => setShowSettings(true)} className="text-sm text-primary hover:underline">Adjust filter</button>
+              <button onClick={() => setShowSettings(true)} className="text-sm text-accent hover:underline">Adjust filter</button>
             )}
           </div>
         ) : (
@@ -472,7 +472,7 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
                 onClick={() => focusedBook && navigate(`/books/${focusedBook.id}`)}
               >
                 {focusedBook?.status && (
-                  <div className="absolute -top-3 left-1/2 z-30 -translate-x-1/2 rounded-full border border-white/10 bg-primary px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-lg">
+                  <div className="absolute -top-3 left-1/2 z-30 -translate-x-1/2 rounded-full border border-white/10 bg-accent px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-lg">
                     {STATUS_LABELS[focusedBook.status] ?? focusedBook.status}
                   </div>
                 )}
@@ -508,7 +508,7 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
                   {focusedBook?.rating != null && focusedBook.rating > 0 && (
                     <>
                       <span className="flex items-center gap-1">
-                        <Star className="h-3 w-3 fill-primary text-primary" />
+                        <Star className="h-3 w-3 fill-accent text-accent" />
                         {focusedBook.rating}
                       </span>
                       <span className="text-white/20">&middot;</span>
@@ -526,14 +526,14 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
                 <div className="mt-5 flex gap-3">
                   <button
                     onClick={() => focusedBook && navigate(`/books/${focusedBook.id}`)}
-                    className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-white shadow-lg transition-all hover:bg-primary/90 hover:shadow-primary/20"
+                    className="flex items-center gap-2 rounded-lg bg-accent px-6 py-2.5 text-sm font-medium text-white shadow-lg transition-all hover:bg-accent/90 hover:shadow-accent/20"
                   >
                     <BookOpen className="h-4 w-4" />
                     View Book
                   </button>
                   {focusedBook?.is_favorite && (
                     <div className="flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-                      <Heart className="h-4 w-4 fill-primary text-primary" />
+                      <Heart className="h-4 w-4 fill-accent text-accent" />
                     </div>
                   )}
                 </div>
@@ -630,7 +630,7 @@ export function ShelfCarousel({ shelf: initialShelf, onClose }: ShelfCarouselPro
             style={{ backgroundColor: "rgba(33, 20, 17, 0.7)", backdropFilter: "blur(12px)" }}
           >
             <span className="font-serif text-sm italic text-white/50">Book</span>
-            <span className="text-lg font-bold text-primary">
+            <span className="text-lg font-bold text-accent">
               {String(focusedIndex + 1).padStart(2, "0")}
             </span>
             <span className="h-px w-6 bg-white/20" />
